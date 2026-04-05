@@ -111,15 +111,30 @@ module Brute
 
   # Resolve the LLM provider from environment variables.
   #
-  #   LLM_API_KEY      — the API key (required)
-  #   LLM_PROVIDER     — provider name (default: "anthropic")
+  # Checks in order:
+  #   1. LLM_API_KEY + LLM_PROVIDER (explicit)
+  #   2. ANTHROPIC_API_KEY (implicit: provider = anthropic)
+  #   3. OPENAI_API_KEY   (implicit: provider = openai)
+  #   4. GOOGLE_API_KEY   (implicit: provider = google)
   #
-  # Returns nil if LLM_API_KEY is not set. Error is deferred to Orchestrator#run.
+  # Returns nil if no key is found. Error is deferred to Orchestrator#run.
   def self.resolve_provider
-    key = ENV["LLM_API_KEY"]
-    return nil unless key
+    if ENV["LLM_API_KEY"]
+      key = ENV["LLM_API_KEY"]
+      name = ENV.fetch("LLM_PROVIDER", "anthropic").downcase
+    elsif ENV["ANTHROPIC_API_KEY"]
+      key = ENV["ANTHROPIC_API_KEY"]
+      name = "anthropic"
+    elsif ENV["OPENAI_API_KEY"]
+      key = ENV["OPENAI_API_KEY"]
+      name = "openai"
+    elsif ENV["GOOGLE_API_KEY"]
+      key = ENV["GOOGLE_API_KEY"]
+      name = "google"
+    else
+      return nil
+    end
 
-    name = ENV.fetch("LLM_PROVIDER", "anthropic").downcase
     factory = PROVIDERS[name]
     raise "Unknown LLM provider: #{name}. Available: #{PROVIDERS.keys.join(", ")}" unless factory
 
