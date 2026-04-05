@@ -1,2 +1,3 @@
 examples/tmp/
 Gemfile.lock
+*.gem
