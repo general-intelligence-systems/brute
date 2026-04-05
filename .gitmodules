@@ -1,0 +1,3 @@
+[submodule "examples/brute_cli"]
+	path = examples/brute_cli
+	url = https://github.com/general-intelligence-systems/brute_cli.git

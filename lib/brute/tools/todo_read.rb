@@ -7,7 +7,7 @@ module Brute
       description "Read the current todo list to check task status and progress."
       param :_placeholder, String, "Unused, pass any value"
 
-      def call
+      def call(_placeholder: nil)
         {todos: Brute::TodoStore.all}
       end
     end
