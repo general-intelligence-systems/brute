@@ -62,7 +62,7 @@ require_relative "brute/tools/delegate"
 require_relative "brute/orchestrator"
 
 module Brute
-  VERSION = "0.1.0"
+  VERSION = "0.1.2"
 
   # The complete set of tools available to the agent.
   TOOLS = [
