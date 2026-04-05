@@ -1,0 +1,42 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "erb"
+require_relative "../lib/brute/version"
+
+gemspec_path = Dir.glob(File.expand_path("../*.gemspec", __dir__)).first
+spec = Gem::Specification.load(gemspec_path)
+
+def prompt(label, default)
+  print "#{label} [#{default}] (y/N): "
+  return default unless $stdin.gets.chomp.downcase == "y"
+  print "#{label}: "
+  input = $stdin.gets.chomp
+  input.empty? ? default : input
+end
+
+def prompt_script(label, current, script)
+  print "#{label} [#{current}] (y/N): "
+  return unless $stdin.gets.chomp.downcase == "y"
+  system(File.expand_path(script, __dir__))
+end
+
+prompt_script("Gem name", spec.name, "rename-gem")
+authors      = prompt("Authors", spec.authors.join(", ")).split(",").map(&:strip)
+emails       = prompt("Emails", spec.email.join(", ")).split(",").map(&:strip)
+summary      = prompt("Summary", spec.summary)
+description  = prompt("Description", spec.description.strip)
+homepage     = prompt("Homepage", spec.homepage)
+prompt_script("License", spec.license, "choose-license")
+ruby_version = prompt("Min Ruby", spec.required_ruby_version.to_s.delete(">= "))
+
+gemspec_path = Dir.glob(File.expand_path("../*.gemspec", __dir__)).first
+spec = Gem::Specification.load(gemspec_path)
+gem_name = spec.name
+camel_name = "Brute"
+license = spec.license
+
+template_path = gemspec_path.sub(/\.gemspec$/, ".gemspec.erb")
+File.write(gemspec_path, ERB.new(File.read(template_path)).result(binding))
+
+puts "Updated #{File.basename(gemspec_path)}"

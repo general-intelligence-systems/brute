@@ -1,0 +1,32 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+require "net/http"
+require "uri"
+
+def fetch_json(url)
+  JSON.parse(Net::HTTP.get(URI(url)))
+end
+
+licenses = fetch_json("https://api.github.com/licenses")
+licenses.each_with_index { |l, i| puts "#{i + 1}. #{l['name']}" }
+
+print "\nPick a license: "
+choice = licenses[gets.to_i - 1]
+abort("Invalid choice") unless choice
+
+detail = fetch_json(choice["url"])
+
+license_path = File.expand_path("../LICENSE", __dir__)
+File.write(license_path, detail["body"])
+
+spdx_id = choice["spdx_id"]
+gemspec_path = Dir.glob(File.expand_path("../*.gemspec", __dir__)).first
+if gemspec_path
+  content = File.read(gemspec_path)
+  content.sub!(/spec\.license\s*=\s*"[^"]*"/, "spec.license = \"#{spdx_id}\"")
+  File.write(gemspec_path, content)
+end
+
+puts "Wrote #{spdx_id} license to LICENSE"

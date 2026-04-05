@@ -1,0 +1,17 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require_relative "../lib/brute/version"
+
+version = Brute::VERSION
+tag = "v#{version}"
+
+existing = `git tag -l #{tag}`.strip
+abort "ERROR: Tag #{tag} already exists" unless existing.empty?
+
+system("git tag #{tag}") || abort("ERROR: Failed to create tag #{tag}")
+
+puts "Tagged #{tag}"
+puts ""
+puts "To push the tag, run:"
+puts "  git push --tags"

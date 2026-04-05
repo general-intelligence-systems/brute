@@ -1,0 +1,66 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "fileutils"
+
+current_name = "brute"
+
+def to_camel(s) = s.split("_").map(&:capitalize).join
+
+args = ARGV.dup
+if (idx = args.index("--from"))
+  current_name = args.delete_at(idx + 1)&.tr("-", "_")
+  args.delete_at(idx)
+  abort "ERROR: --from requires a gem name" unless current_name && !current_name.empty?
+end
+
+name = args[0]
+if name.nil? || name.empty?
+  print "Gem name (snake_case): "
+  name = $stdin.gets.chomp
+end
+abort "Usage: bin/rename-gem <gem_name>" if name.empty?
+
+old_snake = current_name
+old_camel = to_camel(old_snake)
+snake = name.tr("-", "_")
+camel = to_camel(snake)
+
+abort "Already named #{snake}" if snake == old_snake
+
+root = File.expand_path("..", __dir__)
+
+old_dir = File.join(root, "lib", old_snake)
+new_dir = File.join(root, "lib", snake)
+FileUtils.mv(old_dir, new_dir) if File.directory?(old_dir)
+
+{
+  "lib/#{old_snake}.rb"           => "lib/#{snake}.rb",
+  "#{old_snake}.gemspec"          => "#{snake}.gemspec",
+  "#{old_snake}.gemspec.erb"      => "#{snake}.gemspec.erb",
+  "exe/#{old_snake}"              => "exe/#{snake}",
+  "test/#{old_snake}_test.rb"     => "test/#{snake}_test.rb",
+}.each do |old_rel, new_rel|
+  old_path = File.join(root, old_rel)
+  new_path = File.join(root, new_rel)
+  next unless File.exist?(old_path)
+  next if old_path == new_path
+  FileUtils.mv(old_path, new_path)
+end
+
+Dir.glob(File.join(root, "**/*"), File::FNM_DOTMATCH)
+  .reject { |f| File.directory?(f) || f.include?("/.git/") }
+  .each do |path|
+    content = File.read(path)
+    original = content.dup
+    content.gsub!(old_camel, camel)
+    content.gsub!(old_snake, snake)
+    File.write(path, content) if content != original
+  end
+
+script_path = File.join(root, "bin", "rename-gem")
+script = File.read(script_path)
+script.sub!(/^current_name = ".*"$/, "current_name = \"#{snake}\"")
+File.write(script_path, script)
+
+puts "Renamed #{old_snake} -> #{snake}"
