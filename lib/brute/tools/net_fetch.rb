@@ -1,0 +1,37 @@
+# frozen_string_literal: true
+
+require "net/http"
+require "uri"
+
+module Brute
+  module Tools
+    class NetFetch < LLM::Tool
+      name "fetch"
+      description "Fetch content from a URL. Returns the response body as text."
+
+      param :url, String, "The URL to fetch", required: true
+
+      MAX_BODY = 50_000
+      TIMEOUT = 30
+
+      def call(url:)
+        uri = URI.parse(url)
+        raise "Invalid URL scheme: #{uri.scheme}" unless %w[http https].include?(uri.scheme)
+
+        http = Net::HTTP.new(uri.host, uri.port)
+        http.use_ssl = uri.scheme == "https"
+        http.open_timeout = TIMEOUT
+        http.read_timeout = TIMEOUT
+
+        request = Net::HTTP::Get.new(uri)
+        request["User-Agent"] = "forge-rb/1.0"
+
+        response = http.request(request)
+        body = response.body.to_s
+        body = body[0...MAX_BODY] + "\n...(truncated)" if body.size > MAX_BODY
+
+        {status: response.code.to_i, body: body, content_type: response["content-type"]}
+      end
+    end
+  end
+end
