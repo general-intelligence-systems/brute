@@ -2,7 +2,7 @@
 
 Gem::Specification.new do |spec|
   spec.name          = "brute"
-  spec.version       = "0.1.2"
+  spec.version       = "0.1.3"
   spec.authors       = ["Brute Contributors"]
   spec.summary       = "A coding agent built on llm.rb"
   spec.description   = "Production-grade coding agent with tool execution, " \
