@@ -100,15 +100,30 @@ module Brute
     )
   end
 
+  PROVIDERS = {
+    "anthropic" => ->(key) { LLM.anthropic(key: key).tap { Patches::AnthropicToolRole.apply! } },
+    "openai"    => ->(key) { LLM.openai(key: key) },
+    "google"    => ->(key) { LLM.google(key: key) },
+    "deepseek"  => ->(key) { LLM.deepseek(key: key) },
+    "ollama"    => ->(key) { LLM.ollama(key: key) },
+    "xai"       => ->(key) { LLM.xai(key: key) },
+  }.freeze
+
+  # Resolve the LLM provider from environment variables.
+  #
+  #   LLM_API_KEY      — the API key (required)
+  #   LLM_PROVIDER     — provider name (default: "anthropic")
+  #
+  # Returns nil if LLM_API_KEY is not set. Error is deferred to Orchestrator#run.
   def self.resolve_provider
-    if (key = ENV["LLM_API_KEY"] || ENV["ANTHROPIC_API_KEY"])
-      LLM.anthropic(key: key).tap { Patches::AnthropicToolRole.apply! }
-    elsif ENV["OPENAI_API_KEY"]
-      LLM.openai(key: ENV["OPENAI_API_KEY"])
-    elsif ENV["GOOGLE_API_KEY"]
-      LLM.google(key: ENV["GOOGLE_API_KEY"])
-    end
-    # Returns nil if no key — error deferred to Orchestrator#run
+    key = ENV["LLM_API_KEY"]
+    return nil unless key
+
+    name = ENV.fetch("LLM_PROVIDER", "anthropic").downcase
+    factory = PROVIDERS[name]
+    raise "Unknown LLM provider: #{name}. Available: #{PROVIDERS.keys.join(", ")}" unless factory
+
+    factory.call(key)
   end
 
   private_class_method :resolve_provider
