@@ -29,6 +29,10 @@ require_relative "brute/session"
 require_relative "brute/pipeline"
 require_relative "brute/agent_stream"
 
+# Provider patches
+require_relative "brute/patches/anthropic_tool_role"
+require_relative "brute/patches/buffer_nil_guard"
+
 # Middleware (Rack-style)
 require_relative "brute/middleware/base"
 require_relative "brute/middleware/llm_call"
@@ -98,7 +102,7 @@ module Brute
 
   def self.resolve_provider
     if ENV["ANTHROPIC_API_KEY"]
-      LLM.anthropic(key: ENV["ANTHROPIC_API_KEY"])
+      LLM.anthropic(key: ENV["ANTHROPIC_API_KEY"]).tap { Patches::AnthropicToolRole.apply! }
     elsif ENV["OPENAI_API_KEY"]
       LLM.openai(key: ENV["OPENAI_API_KEY"])
     elsif ENV["GOOGLE_API_KEY"]

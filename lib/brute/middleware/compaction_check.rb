@@ -21,8 +21,8 @@ module Brute
         response = @app.call(env)
 
         ctx = env[:context]
-        messages = ctx.messages.to_a
-        usage = ctx.usage
+        messages = ctx.messages.to_a.compact
+        usage = ctx.usage rescue nil
 
         if @compactor.should_compact?(messages, usage: usage)
           result = @compactor.compact(messages)
