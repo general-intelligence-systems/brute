@@ -101,20 +101,14 @@ module Brute
   end
 
   def self.resolve_provider
-    if ENV["ANTHROPIC_API_KEY"]
-      LLM.anthropic(key: ENV["ANTHROPIC_API_KEY"]).tap { Patches::AnthropicToolRole.apply! }
+    if (key = ENV["LLM_API_KEY"] || ENV["ANTHROPIC_API_KEY"])
+      LLM.anthropic(key: key).tap { Patches::AnthropicToolRole.apply! }
     elsif ENV["OPENAI_API_KEY"]
       LLM.openai(key: ENV["OPENAI_API_KEY"])
     elsif ENV["GOOGLE_API_KEY"]
       LLM.google(key: ENV["GOOGLE_API_KEY"])
-    else
-      raise <<~MSG
-        No API key found. Set one of:
-          ANTHROPIC_API_KEY
-          OPENAI_API_KEY
-          GOOGLE_API_KEY
-      MSG
     end
+    # Returns nil if no key — error deferred to Orchestrator#run
   end
 
   private_class_method :resolve_provider

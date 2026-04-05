@@ -91,6 +91,10 @@ module Brute
     #
     # Returns the final assistant response.
     def run(user_message)
+      unless @provider
+        raise "No LLM provider configured. Set LLM_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_API_KEY"
+      end
+
       @request_count = 0
 
       # Build the initial prompt with system message on first turn
