@@ -38,7 +38,7 @@ class MockProvider
 
   def tracer=(*); end
 
-  def complete(prompt, **params)
+  def complete(prompt, params = {})
     @calls << { prompt: prompt, params: params }
     MockResponse.new(content: 'mock response')
   end

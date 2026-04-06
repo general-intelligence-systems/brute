@@ -20,7 +20,7 @@ module Brute
   class Orchestrator
     MAX_REQUESTS_PER_TURN = 100
 
-    attr_reader :context, :session, :pipeline, :env, :barrier
+    attr_reader :context, :session, :pipeline, :env, :barrier, :message_store
 
     def initialize(
       provider:,
@@ -40,6 +40,7 @@ module Brute
       @cwd = cwd
       @session = session || Session.new
       @logger = logger || Logger.new($stderr, level: Logger::INFO)
+      @message_store = @session.message_store
 
       # Build system prompt
       custom_rules = load_custom_rules
@@ -65,6 +66,7 @@ module Brute
         session: @session,
         logger: @logger,
         reasoning: reasoning,
+        message_store: @message_store,
       )
 
       # The shared env hash — passed to every pipeline.call()
@@ -115,7 +117,7 @@ module Brute
 
       # --- Agent loop ---
       loop do
-        break if @context.functions.empty?
+        break if @context.functions.empty? && (!@stream || @stream.queue.empty?)
 
         # Collect tool results.
         # Streaming: tools already spawned threads during the LLM response — just join them.
@@ -135,7 +137,7 @@ module Brute
         @request_count += 1
 
         # Check limits
-        break if @context.functions.empty?
+        break if @context.functions.empty? && (!@stream || @stream.queue.empty?)
         break if @request_count >= MAX_REQUESTS_PER_TURN
         break if @env[:metadata][:tool_error_limit_reached]
       end
@@ -149,13 +151,20 @@ module Brute
     # Pipeline construction
     # ------------------------------------------------------------------
 
-    def build_pipeline(compactor:, session:, logger:, reasoning:)
+    def build_pipeline(compactor:, session:, logger:, reasoning:, message_store:)
       sys_prompt = @system_prompt
       tools = @tool_classes
+      stream = @stream
 
       Pipeline.new do
-        # Outermost: timing and logging (sees total elapsed including retries)
+        # OTel span lifecycle (outermost — creates env[:span])
+        use Middleware::OTel::Span
+
+        # Timing and logging
         use Middleware::Tracing, logger: logger
+
+        # OTel: record tool results being sent back (pre-call)
+        use Middleware::OTel::ToolResults
 
         # Retry transient errors (wraps everything below)
         use Middleware::Retry
@@ -163,14 +172,21 @@ module Brute
         # Save after each successful LLM call
         use Middleware::SessionPersistence, session: session
 
+        # Record structured messages in OpenCode {info, parts} format
+        use Middleware::MessageTracking, store: message_store
+
         # Track cumulative token usage
         use Middleware::TokenTracking
+
+        # OTel: record token usage from response (post-call)
+        use Middleware::OTel::TokenUsage
 
         # Check context size and compact if needed
         use Middleware::CompactionCheck,
           compactor: compactor,
           system_prompt: sys_prompt,
-          tools: tools
+          tools: tools,
+          stream: stream
 
         # Track per-tool errors
         use Middleware::ToolErrorTracking
@@ -183,6 +199,9 @@ module Brute
 
         # Guard against tool-only responses dropping the assistant message
         use Middleware::ToolUseGuard
+
+        # OTel: record tool calls the LLM requested (post-call, after ToolUseGuard)
+        use Middleware::OTel::ToolCalls
 
         # Innermost: the actual LLM call
         run Middleware::LLMCall.new

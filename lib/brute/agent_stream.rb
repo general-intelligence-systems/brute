@@ -8,11 +8,22 @@ module Brute
   # response is still streaming. on_tool_result fires as each thread finishes.
   #
   class AgentStream < LLM::Stream
+    # Tool call metadata recorded during streaming, used by ToolUseGuard
+    # when ctx.functions is empty (nil-choice bug in llm.rb).
+    # Cleared by the guard after consumption to prevent stale data from
+    # causing duplicate synthetic assistant messages on subsequent calls.
+    attr_reader :pending_tool_calls
+
+    def clear_pending_tool_calls!
+      @pending_tool_calls.clear
+    end
+
     def initialize(on_content: nil, on_reasoning: nil, on_tool_call: nil, on_tool_result: nil)
       @on_content = on_content
       @on_reasoning = on_reasoning
       @on_tool_call = on_tool_call
       @on_tool_result = on_tool_result
+      @pending_tool_calls = []
     end
 
     def on_content(text)
@@ -24,6 +35,7 @@ module Brute
     end
 
     def on_tool_call(tool, error)
+      @pending_tool_calls << { id: tool.id, name: tool.name, arguments: tool.arguments }
       @on_tool_call&.call(tool.name, tool.arguments)
 
       if error

@@ -10,11 +10,12 @@ module Brute
     # rebuilds the context with the summary + recent messages.
     #
     class CompactionCheck < Base
-      def initialize(app, compactor:, system_prompt:, tools:)
+      def initialize(app, compactor:, system_prompt:, tools:, stream: nil)
         super(app)
         @compactor = compactor
         @system_prompt = system_prompt
         @tools = tools
+        @stream = stream
       end
 
       def call(env)
@@ -43,7 +44,9 @@ module Brute
 
       def rebuild_context!(env, summary_text)
         provider = env[:provider]
-        new_ctx = LLM::Context.new(provider, tools: @tools)
+        ctx_opts = { tools: @tools }
+        ctx_opts[:stream] = @stream if @stream
+        new_ctx = LLM::Context.new(provider, **ctx_opts)
         prompt = new_ctx.prompt do |p|
           p.system @system_prompt
           p.user "[Previous conversation summary]\n\n#{summary_text}"

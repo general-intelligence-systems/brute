@@ -28,6 +28,7 @@ require_relative 'brute/doom_loop'
 require_relative 'brute/hooks'
 require_relative 'brute/compactor'
 require_relative 'brute/system_prompt'
+require_relative 'brute/message_store'
 require_relative 'brute/session'
 require_relative 'brute/pipeline'
 require_relative 'brute/agent_stream'
@@ -44,10 +45,12 @@ require_relative 'brute/middleware/doom_loop_detection'
 require_relative 'brute/middleware/token_tracking'
 require_relative 'brute/middleware/compaction_check'
 require_relative 'brute/middleware/session_persistence'
+require_relative 'brute/middleware/message_tracking'
 require_relative 'brute/middleware/tracing'
 require_relative 'brute/middleware/tool_error_tracking'
 require_relative 'brute/middleware/reasoning_normalizer'
 require_relative "brute/middleware/tool_use_guard"
+require_relative "brute/middleware/otel"
 
 # Tools
 require_relative 'brute/tools/fs_read'
