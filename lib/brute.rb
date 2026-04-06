@@ -47,6 +47,7 @@ require_relative 'brute/middleware/session_persistence'
 require_relative 'brute/middleware/tracing'
 require_relative 'brute/middleware/tool_error_tracking'
 require_relative 'brute/middleware/reasoning_normalizer'
+require_relative "brute/middleware/tool_use_guard"
 
 # Tools
 require_relative 'brute/tools/fs_read'

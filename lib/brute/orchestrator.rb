@@ -181,6 +181,9 @@ module Brute
         # Handle reasoning params and model-switch normalization (pre-call)
         use Middleware::ReasoningNormalizer, **reasoning unless reasoning.empty?
 
+        # Guard against tool-only responses dropping the assistant message
+        use Middleware::ToolUseGuard
+
         # Innermost: the actual LLM call
         run Middleware::LLMCall.new
       end
