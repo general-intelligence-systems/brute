@@ -16,12 +16,25 @@ module Brute
         # (streaming delivers chunks incrementally via AgentStream)
         unless env[:streaming]
           if (cb = env.dig(:callbacks, :on_content)) && response
-            text = response.respond_to?(:content) ? response.content : nil
+            text = safe_content(response)
             cb.call(text) if text
           end
         end
 
         response
+      end
+
+      private
+
+      # Safely extract text content from an LLM response.
+      # Returns nil when the response contains only tool calls (no assistant text),
+      # which causes LLM::Contract::Completion#content to raise NoMethodError
+      # because messages.find(&:assistant?) returns nil.
+      def safe_content(response)
+        return nil unless response.respond_to?(:content)
+        response.content
+      rescue NoMethodError
+        nil
       end
     end
   end

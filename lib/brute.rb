@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
-require "llm"
-require "timeout"
-require "logger"
+require 'llm'
+require 'timeout'
+require 'logger'
 
 # Brute — a coding agent built on llm.rb
 #
@@ -11,6 +11,8 @@ require "logger"
 #
 #   Tracing → Retry → Session → Tokens → Compaction → ToolErrors → DoomLoop → Reasoning → [LLM Call]
 #
+require_relative 'brute/version'
+
 module Brute
   module Tools; end
   module Hooks; end
@@ -18,52 +20,51 @@ module Brute
 end
 
 # Infrastructure
-require_relative "brute/snapshot_store"
-require_relative "brute/todo_store"
-require_relative "brute/file_mutation_queue"
-require_relative "brute/doom_loop"
-require_relative "brute/hooks"
-require_relative "brute/compactor"
-require_relative "brute/system_prompt"
-require_relative "brute/session"
-require_relative "brute/pipeline"
-require_relative "brute/agent_stream"
+require_relative 'brute/diff'
+require_relative 'brute/snapshot_store'
+require_relative 'brute/todo_store'
+require_relative 'brute/file_mutation_queue'
+require_relative 'brute/doom_loop'
+require_relative 'brute/hooks'
+require_relative 'brute/compactor'
+require_relative 'brute/system_prompt'
+require_relative 'brute/session'
+require_relative 'brute/pipeline'
+require_relative 'brute/agent_stream'
 
 # Provider patches
-require_relative "brute/patches/anthropic_tool_role"
-require_relative "brute/patches/buffer_nil_guard"
+require_relative 'brute/patches/anthropic_tool_role'
+require_relative 'brute/patches/buffer_nil_guard'
 
 # Middleware (Rack-style)
-require_relative "brute/middleware/base"
-require_relative "brute/middleware/llm_call"
-require_relative "brute/middleware/retry"
-require_relative "brute/middleware/doom_loop_detection"
-require_relative "brute/middleware/token_tracking"
-require_relative "brute/middleware/compaction_check"
-require_relative "brute/middleware/session_persistence"
-require_relative "brute/middleware/tracing"
-require_relative "brute/middleware/tool_error_tracking"
-require_relative "brute/middleware/reasoning_normalizer"
+require_relative 'brute/middleware/base'
+require_relative 'brute/middleware/llm_call'
+require_relative 'brute/middleware/retry'
+require_relative 'brute/middleware/doom_loop_detection'
+require_relative 'brute/middleware/token_tracking'
+require_relative 'brute/middleware/compaction_check'
+require_relative 'brute/middleware/session_persistence'
+require_relative 'brute/middleware/tracing'
+require_relative 'brute/middleware/tool_error_tracking'
+require_relative 'brute/middleware/reasoning_normalizer'
 
 # Tools
-require_relative "brute/tools/fs_read"
-require_relative "brute/tools/fs_write"
-require_relative "brute/tools/fs_patch"
-require_relative "brute/tools/fs_remove"
-require_relative "brute/tools/fs_search"
-require_relative "brute/tools/fs_undo"
-require_relative "brute/tools/shell"
-require_relative "brute/tools/net_fetch"
-require_relative "brute/tools/todo_write"
-require_relative "brute/tools/todo_read"
-require_relative "brute/tools/delegate"
+require_relative 'brute/tools/fs_read'
+require_relative 'brute/tools/fs_write'
+require_relative 'brute/tools/fs_patch'
+require_relative 'brute/tools/fs_remove'
+require_relative 'brute/tools/fs_search'
+require_relative 'brute/tools/fs_undo'
+require_relative 'brute/tools/shell'
+require_relative 'brute/tools/net_fetch'
+require_relative 'brute/tools/todo_write'
+require_relative 'brute/tools/todo_read'
+require_relative 'brute/tools/delegate'
 
 # Orchestrator (depends on tools, middleware, and infrastructure)
-require_relative "brute/orchestrator"
+require_relative 'brute/orchestrator'
 
 module Brute
-  VERSION = "0.1.3"
-
   # The complete set of tools available to the agent.
   TOOLS = [
     Tools::FSRead,
@@ -76,7 +77,7 @@ module Brute
     Tools::NetFetch,
     Tools::TodoWrite,
     Tools::TodoRead,
-    Tools::Delegate,
+    Tools::Delegate
   ].freeze
 
   # Default provider, resolved from environment.
@@ -101,12 +102,12 @@ module Brute
   end
 
   PROVIDERS = {
-    "anthropic" => ->(key) { LLM.anthropic(key: key).tap { Patches::AnthropicToolRole.apply! } },
-    "openai"    => ->(key) { LLM.openai(key: key) },
-    "google"    => ->(key) { LLM.google(key: key) },
-    "deepseek"  => ->(key) { LLM.deepseek(key: key) },
-    "ollama"    => ->(key) { LLM.ollama(key: key) },
-    "xai"       => ->(key) { LLM.xai(key: key) },
+    'anthropic' => ->(key) { LLM.anthropic(key: key).tap { Patches::AnthropicToolRole.apply! } },
+    'openai' => ->(key) { LLM.openai(key: key) },
+    'google' => ->(key) { LLM.google(key: key) },
+    'deepseek' => ->(key) { LLM.deepseek(key: key) },
+    'ollama' => ->(key) { LLM.ollama(key: key) },
+    'xai' => ->(key) { LLM.xai(key: key) }
   }.freeze
 
   # Resolve the LLM provider from environment variables.
@@ -119,24 +120,24 @@ module Brute
   #
   # Returns nil if no key is found. Error is deferred to Orchestrator#run.
   def self.resolve_provider
-    if ENV["LLM_API_KEY"]
-      key = ENV["LLM_API_KEY"]
-      name = ENV.fetch("LLM_PROVIDER", "anthropic").downcase
-    elsif ENV["ANTHROPIC_API_KEY"]
-      key = ENV["ANTHROPIC_API_KEY"]
-      name = "anthropic"
-    elsif ENV["OPENAI_API_KEY"]
-      key = ENV["OPENAI_API_KEY"]
-      name = "openai"
-    elsif ENV["GOOGLE_API_KEY"]
-      key = ENV["GOOGLE_API_KEY"]
-      name = "google"
+    if ENV['LLM_API_KEY']
+      key = ENV['LLM_API_KEY']
+      name = ENV.fetch('LLM_PROVIDER', 'anthropic').downcase
+    elsif ENV['ANTHROPIC_API_KEY']
+      key = ENV['ANTHROPIC_API_KEY']
+      name = 'anthropic'
+    elsif ENV['OPENAI_API_KEY']
+      key = ENV['OPENAI_API_KEY']
+      name = 'openai'
+    elsif ENV['GOOGLE_API_KEY']
+      key = ENV['GOOGLE_API_KEY']
+      name = 'google'
     else
       return nil
     end
 
     factory = PROVIDERS[name]
-    raise "Unknown LLM provider: #{name}. Available: #{PROVIDERS.keys.join(", ")}" unless factory
+    raise "Unknown LLM provider: #{name}. Available: #{PROVIDERS.keys.join(', ')}" unless factory
 
     factory.call(key)
   end
