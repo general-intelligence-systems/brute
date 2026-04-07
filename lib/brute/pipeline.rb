@@ -22,7 +22,7 @@ module Brute
   #     tools:     [Tool, ...],       # tool classes
   #     params:    {},                # extra LLM call params (reasoning config, etc.)
   #     metadata:  {},                # shared scratchpad for middleware state
-  #     callbacks: {},                # :on_content, :on_tool_call, :on_tool_result
+  #     callbacks: {},                # :on_content, :on_tool_call_start, :on_tool_result
   #   }
   #
   # ## The response

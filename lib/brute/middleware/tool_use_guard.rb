@@ -56,7 +56,7 @@ module Brute
           stream = resolve_stream(ctx)
           if stream
             data = stream.pending_tool_calls.dup
-            stream.clear_pending_tool_calls!
+            stream.clear_pending!
             data
           else
             []

@@ -1,31 +1,37 @@
 # frozen_string_literal: true
 
 module Brute
-  # Bridges llm.rb's streaming callbacks to forge-rb's callback system.
+  # Bridges llm.rb's streaming callbacks to the host application.
   #
   # Text and reasoning chunks fire immediately as the LLM generates them.
-  # Tool calls spawn threads on arrival — tools start running while the
-  # response is still streaming. on_tool_result fires as each thread finishes.
+  # Tool calls are collected but NOT executed — execution is deferred to the
+  # orchestrator after the stream completes. This ensures text is never
+  # concurrent with tool execution.
+  #
+  # After the stream finishes, the orchestrator reads +pending_tools+ to
+  # dispatch all tool calls concurrently, then fires +on_tool_call_start+
+  # once with the full batch.
   #
   class AgentStream < LLM::Stream
     # Tool call metadata recorded during streaming, used by ToolUseGuard
     # when ctx.functions is empty (nil-choice bug in llm.rb).
-    # Cleared by the guard after consumption to prevent stale data from
-    # causing duplicate synthetic assistant messages on subsequent calls.
     attr_reader :pending_tool_calls
 
-    def clear_pending_tool_calls!
-      @pending_tool_calls.clear
-    end
+    # Deferred tool/error pairs: [(LLM::Function, error_or_nil), ...]
+    # The orchestrator reads these after the stream completes.
+    attr_reader :pending_tools
 
-    def initialize(on_content: nil, on_reasoning: nil, on_tool_call: nil, on_tool_result: nil, on_question: nil)
+    def initialize(on_content: nil, on_reasoning: nil, on_question: nil)
       @on_content = on_content
       @on_reasoning = on_reasoning
-      @on_tool_call = on_tool_call
-      @on_tool_result = on_tool_result
       @on_question = on_question
       @pending_tool_calls = []
+      @pending_tools = []
     end
+
+    # The on_question callback, needed by the orchestrator to set
+    # thread/fiber-locals before tool execution.
+    attr_reader :on_question
 
     def on_content(text)
       @on_content&.call(text)
@@ -35,30 +41,17 @@ module Brute
       @on_reasoning&.call(text)
     end
 
+    # Called by llm.rb per tool as it arrives during streaming.
+    # Records only — no execution, no threads, no queue pushes.
     def on_tool_call(tool, error)
       @pending_tool_calls << { id: tool.id, name: tool.name, arguments: tool.arguments }
-      @on_tool_call&.call(tool.name, tool.arguments)
-
-      if error
-        queue << error
-        @on_tool_result&.call(tool.name, error.value)
-      else
-        queue << LLM::Function::Task.new(spawn_with_callback(tool))
-      end
+      @pending_tools << [tool, error]
     end
 
-    private
-
-    def spawn_with_callback(tool)
-      on_result = @on_tool_result
-      on_question = @on_question
-      name = tool.name
-      Thread.new do
-        Thread.current[:on_question] = on_question
-        result = tool.call
-        on_result&.call(name, result.respond_to?(:value) ? result.value : result)
-        result
-      end
+    # Clear all deferred state after the orchestrator has consumed it.
+    def clear_pending!
+      @pending_tool_calls.clear
+      @pending_tools.clear
     end
   end
 end

@@ -31,7 +31,7 @@ tools_called = []
 Brute.agent(
   cwd: DIR,
   on_content: ->(_) { },
-  on_tool_call: ->(name, _) { tools_called << name },
+  on_tool_call_start: ->(tools) { tools.each { |t| tools_called << t[:name] } },
   on_tool_result: ->(_, _) { },
 ).run(
   "There's a bug in app.rb — the add method subtracts instead of adding. " \

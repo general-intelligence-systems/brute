@@ -2,69 +2,49 @@
 
 RSpec.describe Brute::AgentStream do
   # Build a mock tool that quacks like LLM::Function.
-  # LLM::Function#name is a dual getter/setter: name() returns the name,
-  # name("x") sets it. We only need the getter form here.
   def mock_tool(id:, name:, arguments: {})
-    tool = instance_double(LLM::Function,
+    instance_double(LLM::Function,
       id: id,
       name: name,
       arguments: arguments,
     )
-    # #call returns an LLM::Function::Return
-    allow(tool).to receive(:call).and_return(
-      LLM::Function::Return.new(id, name, { success: true })
-    )
-    tool
   end
 
   describe "#on_tool_call" do
-    it "pushes a Task onto the queue for a valid tool" do
+    it "records tool/error pairs in pending_tools without spawning threads" do
       stream = described_class.new
       tool = mock_tool(id: "toolu_1", name: "read")
 
       stream.on_tool_call(tool, nil)
 
-      expect(stream.queue).not_to be_empty
+      expect(stream.pending_tools.size).to eq(1)
+      recorded_tool, recorded_error = stream.pending_tools.first
+      expect(recorded_tool).to eq(tool)
+      expect(recorded_error).to be_nil
     end
 
-    it "pushes the error directly onto the queue for an errored tool" do
+    it "records error tools in pending_tools" do
       stream = described_class.new
       tool = mock_tool(id: "toolu_err", name: "bad_tool")
       error = LLM::Function::Return.new("toolu_err", "bad_tool", { error: true })
 
       stream.on_tool_call(tool, error)
 
-      expect(stream.queue).not_to be_empty
+      expect(stream.pending_tools.size).to eq(1)
+      _, recorded_error = stream.pending_tools.first
+      expect(recorded_error).to eq(error)
     end
 
-    it "fires the on_tool_call callback with name and arguments" do
-      received = nil
-      stream = described_class.new(
-        on_tool_call: ->(name, args) { received = { name: name, args: args } },
-      )
-      tool = mock_tool(id: "toolu_2", name: "write", arguments: { "file_path" => "f.rb" })
+    it "does not push anything to the queue" do
+      stream = described_class.new
+      tool = mock_tool(id: "toolu_1", name: "read")
 
       stream.on_tool_call(tool, nil)
 
-      expect(received).to eq({ name: "write", args: { "file_path" => "f.rb" } })
+      expect(stream.queue).to be_empty
     end
 
-    # ── Bug: stream does not track tool call metadata ─────────────────
-    #
-    # When the LLM responds with ONLY tool_use blocks (no text), llm.rb's
-    # adapt_choices produces nil choices. The assistant message is never
-    # stored, so ctx.functions is empty. The ToolUseGuard cannot inject a
-    # synthetic assistant message because it relies on ctx.functions for
-    # the tool IDs, names, and arguments.
-    #
-    # In streaming mode, AgentStream#on_tool_call receives the full tool
-    # object (with id, name, arguments) before spawning the thread. It
-    # should record this metadata so the ToolUseGuard (or orchestrator)
-    # can retrieve it when ctx.functions is empty.
-    #
-    # This test will FAIL until AgentStream stores pending tool metadata.
-
-    it "records pending tool call metadata for guard injection" do
+    it "records pending tool call metadata for ToolUseGuard" do
       stream = described_class.new
       tool = mock_tool(
         id: "toolu_abc",
@@ -73,10 +53,6 @@ RSpec.describe Brute::AgentStream do
       )
 
       stream.on_tool_call(tool, nil)
-
-      expect(stream).to respond_to(:pending_tool_calls),
-        "AgentStream must expose #pending_tool_calls so the ToolUseGuard " \
-        "can inject a synthetic assistant message when ctx.functions is empty."
 
       calls = stream.pending_tool_calls
       expect(calls).not_to be_empty
@@ -95,24 +71,48 @@ RSpec.describe Brute::AgentStream do
       stream.on_tool_call(tool1, nil)
       stream.on_tool_call(tool2, nil)
 
-      expect(stream).to respond_to(:pending_tool_calls)
+      expect(stream.pending_tool_calls.size).to eq(2)
+      expect(stream.pending_tool_calls.map { |c| c[:id] }).to eq(["toolu_1", "toolu_2"])
 
-      calls = stream.pending_tool_calls
-      expect(calls.size).to eq(2)
-      expect(calls.map { |c| c[:id] }).to eq(["toolu_1", "toolu_2"])
+      expect(stream.pending_tools.size).to eq(2)
+      expect(stream.pending_tools.map { |t, _| t }).to eq([tool1, tool2])
     end
   end
 
-  describe "#clear_pending_tool_calls!" do
-    it "empties the pending_tool_calls array" do
+  describe "#clear_pending!" do
+    it "empties both pending_tool_calls and pending_tools" do
       stream = described_class.new
       tool = mock_tool(id: "toolu_1", name: "read")
 
       stream.on_tool_call(tool, nil)
       expect(stream.pending_tool_calls).not_to be_empty
+      expect(stream.pending_tools).not_to be_empty
 
-      stream.clear_pending_tool_calls!
+      stream.clear_pending!
       expect(stream.pending_tool_calls).to be_empty
+      expect(stream.pending_tools).to be_empty
+    end
+  end
+
+  describe "#on_content" do
+    it "fires the content callback" do
+      received = nil
+      stream = described_class.new(on_content: ->(text) { received = text })
+
+      stream.on_content("hello")
+
+      expect(received).to eq("hello")
+    end
+  end
+
+  describe "#on_reasoning_content" do
+    it "fires the reasoning callback" do
+      received = nil
+      stream = described_class.new(on_reasoning: ->(text) { received = text })
+
+      stream.on_reasoning_content("thinking...")
+
+      expect(received).to eq("thinking...")
     end
   end
 end

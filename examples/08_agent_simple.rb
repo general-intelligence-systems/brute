@@ -34,7 +34,7 @@ tools_called = []
 Brute.agent(
   cwd: Dir.pwd,
   on_content: ->(_) { },
-  on_tool_call: ->(name, _) { tools_called << name },
+  on_tool_call_start: ->(tools) { tools.each { |t| tools_called << t[:name] } },
   on_tool_result: ->(_, _) { },
 ).run("List files in the current directory using the shell tool. Run 'ls'.").then do |_|
   puts "   Tools called: #{tools_called.inspect}"

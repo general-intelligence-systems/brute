@@ -110,7 +110,7 @@ RSpec.describe Brute::Middleware::ToolUseGuard do
   # ── Bug: streaming tool-only response — ctx.functions is empty ────────
   #
   # When the LLM responds with ONLY tool_use blocks in streaming mode:
-  #   1. AgentStream#on_tool_call fires and spawns tool threads
+  #   1. AgentStream#on_tool_call records tool metadata (deferred, no threads)
   #   2. llm.rb's adapt_choices produces nil (no text → empty choices)
   #   3. Context#talk appends nil, BufferNilGuard strips it
   #   4. No assistant message is stored → ctx.functions returns empty
@@ -120,8 +120,6 @@ RSpec.describe Brute::Middleware::ToolUseGuard do
   #
   # The guard must fall back to the stream's pending_tool_calls metadata
   # when ctx.functions is empty but the stream has pending tool work.
-  #
-  # This test will FAIL until the guard checks the stream fallback.
 
   it "injects using stream tool metadata when ctx.functions is empty (streaming)" do
     # Set up a stream that recorded tool call metadata
@@ -131,9 +129,6 @@ RSpec.describe Brute::Middleware::ToolUseGuard do
     # We can't call stream.on_tool_call with a real LLM::Function (needs
     # runner), so we stub the pending_tool_calls directly on the stream
     # for now. The agent_stream_spec tests the recording itself.
-    #
-    # When the fix lands, AgentStream#on_tool_call will populate this,
-    # and the guard will read it.
     tool_metadata = [
       { id: "toolu_stream1", name: "read", arguments: { "file_path" => "readme.md" } },
     ]

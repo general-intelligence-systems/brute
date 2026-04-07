@@ -17,6 +17,11 @@ module Brute
   #   2. Executes any tool calls the LLM requested
   #   3. Repeats until done or a limit is hit
   #
+  # Tool execution is always deferred until after the LLM response (including
+  # streaming) completes. Tools then run concurrently with each other via
+  # Async::Barrier. on_tool_call_start fires once with the full batch before
+  # execution begins; on_tool_result fires per-tool as each finishes.
+  #
   class Orchestrator
     MAX_REQUESTS_PER_TURN = 100
 
@@ -33,7 +38,7 @@ module Brute
       agent_name: nil,
       on_content: nil,
       on_reasoning: nil,
-      on_tool_call: nil,
+      on_tool_call_start: nil,
       on_tool_result: nil,
       on_question: nil,
       logger: nil
@@ -62,8 +67,6 @@ module Brute
         AgentStream.new(
           on_content: on_content,
           on_reasoning: on_reasoning,
-          on_tool_call: on_tool_call,
-          on_tool_result: on_tool_result,
           on_question: on_question,
         )
       end
@@ -95,7 +98,7 @@ module Brute
         callbacks: {
           on_content: on_content,
           on_reasoning: on_reasoning,
-          on_tool_call: on_tool_call,
+          on_tool_call_start: on_tool_call_start,
           on_tool_result: on_tool_result,
           on_question: on_question,
         },
@@ -131,15 +134,28 @@ module Brute
 
       # --- Agent loop ---
       loop do
-        break if @context.functions.empty? && (!@stream || @stream.queue.empty?)
+        # Collect pending tools from either source:
+        # - Streaming: AgentStream deferred tools (collected during stream)
+        # - Non-streaming: ctx.functions (populated by llm.rb after response)
+        pending = collect_pending_tools
+        break if pending.empty?
 
-        # Collect tool results.
-        # Streaming: tools already spawned threads during the LLM response — just join them.
-        # Non-streaming: execute manually (parallel or sequential).
-        results = if @stream && !@stream.queue.empty?
-          @context.wait(:thread)
-        else
-          execute_tool_calls
+        # Fire on_tool_call_start ONCE with the full batch
+        on_start = @env.dig(:callbacks, :on_tool_call_start)
+        on_start&.call(pending.map { |tool, _| { name: tool.name, arguments: tool.arguments } })
+
+        # Separate errors (tool not found) from executable tools
+        errors = pending.select { |_, err| err }
+        executable = pending.reject { |_, err| err }.map(&:first)
+
+        # Execute tools concurrently, collect results
+        results = execute_tool_calls(executable)
+
+        # Append error results (tool not found, etc.)
+        errors.each do |_, err|
+          on_result = @env.dig(:callbacks, :on_tool_result)
+          on_result&.call(err.name, result_value(err))
+          results << err
         end
 
         # Send results back through the pipeline
@@ -151,7 +167,7 @@ module Brute
         @request_count += 1
 
         # Check limits
-        break if @context.functions.empty? && (!@stream || @stream.queue.empty?)
+        break if collect_pending_tools.empty?
         break if @request_count >= MAX_REQUESTS_PER_TURN
         break if @env[:metadata][:tool_error_limit_reached]
       end
@@ -223,23 +239,54 @@ module Brute
     end
 
     # ------------------------------------------------------------------
+    # Pending tool collection
+    # ------------------------------------------------------------------
+
+    # Collect pending tools from the stream (streaming) or context (non-streaming).
+    # Returns an array of [tool, error_or_nil] pairs.
+    # Clears the stream's deferred state after consumption.
+    def collect_pending_tools
+      if @stream&.pending_tools&.any?
+        tools = @stream.pending_tools.dup
+        @stream.clear_pending!
+        tools
+      elsif @context.functions.any?
+        @context.functions.to_a.map { |fn| [fn, nil] }
+      else
+        []
+      end
+    end
+
+    # ------------------------------------------------------------------
     # Tool execution
     # ------------------------------------------------------------------
 
-    def execute_tool_calls
-      pending = @context.functions.to_a
-      return execute_sequential(pending) if pending.size <= 1
+    def execute_tool_calls(functions)
+      return [] if functions.empty?
 
-      execute_parallel(pending)
+      # Questions block execution — they must complete before other tools
+      # run, since the LLM may need the answer to inform subsequent work.
+      # Execute any question tools first (sequentially), then dispatch
+      # the remaining tools concurrently.
+      questions, others = functions.partition { |fn| fn.name == "question" }
+
+      results = []
+      results.concat(execute_sequential(questions)) if questions.any?
+      if others.size <= 1
+        results.concat(execute_sequential(others))
+      else
+        results.concat(execute_parallel(others))
+      end
+      results
     end
 
     # Run a single tool call synchronously.
     def execute_sequential(functions)
-      on_call = @env.dig(:callbacks, :on_tool_call)
       on_result = @env.dig(:callbacks, :on_tool_result)
+      on_question = @env.dig(:callbacks, :on_question)
 
       functions.map do |fn|
-        on_call&.call(fn.name, fn.arguments)
+        Thread.current[:on_question] = on_question
         result = fn.call
         on_result&.call(fn.name, result_value(result))
         result
@@ -256,8 +303,8 @@ module Brute
     # The barrier is stored in @barrier so abort! can cancel in-flight tools.
     #
     def execute_parallel(functions)
-      on_call = @env.dig(:callbacks, :on_tool_call)
       on_result = @env.dig(:callbacks, :on_tool_result)
+      on_question = @env.dig(:callbacks, :on_question)
 
       results = Array.new(functions.size)
 
@@ -266,7 +313,7 @@ module Brute
 
         functions.each_with_index do |fn, i|
           @barrier.async do
-            on_call&.call(fn.name, fn.arguments)
+            Thread.current[:on_question] = on_question
             results[i] = fn.call
             r = results[i]
             on_result&.call(r.name, result_value(r))
