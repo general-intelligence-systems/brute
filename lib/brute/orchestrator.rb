@@ -167,7 +167,7 @@ module Brute
         @request_count += 1
 
         # Check limits
-        break if collect_pending_tools.empty?
+        break if !has_pending_tools?
         break if @request_count >= MAX_REQUESTS_PER_TURN
         break if @env[:metadata][:tool_error_limit_reached]
       end
@@ -242,13 +242,20 @@ module Brute
     # Pending tool collection
     # ------------------------------------------------------------------
 
+    # Check whether there are pending tools without consuming them.
+    def has_pending_tools?
+      return true if @stream&.pending_tools&.any?
+      return true if @context.functions.any?
+      false
+    end
+
     # Collect pending tools from the stream (streaming) or context (non-streaming).
     # Returns an array of [tool, error_or_nil] pairs.
     # Clears the stream's deferred state after consumption.
     def collect_pending_tools
       if @stream&.pending_tools&.any?
         tools = @stream.pending_tools.dup
-        @stream.clear_pending!
+        @stream.clear_pending_tools!
         tools
       elsif @context.functions.any?
         @context.functions.to_a.map { |fn| [fn, nil] }

@@ -48,9 +48,15 @@ module Brute
       @pending_tools << [tool, error]
     end
 
-    # Clear all deferred state after the orchestrator has consumed it.
-    def clear_pending!
+    # Clear only the tool call metadata (used by ToolUseGuard after it
+    # has consumed the data for synthetic message injection).
+    def clear_pending_tool_calls!
       @pending_tool_calls.clear
+    end
+
+    # Clear the deferred execution queue after the orchestrator has
+    # consumed and dispatched all tool calls.
+    def clear_pending_tools!
       @pending_tools.clear
     end
   end
