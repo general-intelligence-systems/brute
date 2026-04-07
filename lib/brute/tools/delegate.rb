@@ -28,7 +28,31 @@ module Brute
           rounds += 1
         end
 
-        {result: res.content}
+        {result: extract_content(res, sub)}
+      end
+
+      private
+
+      # Safely extract text content from the sub-agent response.
+      #
+      # When the LLM returns only tool calls (no text content block),
+      # res.content raises NoMethodError because the response adapter's
+      # choices array is empty (it only maps over text blocks), or
+      # returns nil when the response has no text. Fall back to the
+      # last assistant text in the conversation history.
+      def extract_content(res, context)
+        text = begin
+          res.content
+        rescue NoMethodError
+          nil
+        end
+        return text if text.is_a?(::String) && !text.empty?
+
+        last_assistant = context.messages.to_a
+          .select(&:assistant?)
+          .reverse
+          .find { |m| m.content.is_a?(::String) && !m.content.empty? }
+        last_assistant&.content || "(sub-agent completed but produced no text response)"
       end
     end
   end

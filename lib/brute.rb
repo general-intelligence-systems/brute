@@ -90,6 +90,13 @@ require_relative 'brute/tools/todo_read'
 require_relative 'brute/tools/delegate'
 require_relative 'brute/tools/question'
 
+# Providers
+require_relative 'brute/providers/shell_response'
+require_relative 'brute/providers/shell'
+require_relative 'brute/providers/models_dev'
+require_relative 'brute/providers/opencode_zen'
+require_relative 'brute/providers/opencode_go'
+
 # Orchestrator (depends on tools, middleware, and infrastructure)
 require_relative 'brute/orchestrator'
 
@@ -139,10 +146,14 @@ module Brute
     'google' => ->(key) { LLM.google(key: key) },
     'deepseek' => ->(key) { LLM.deepseek(key: key) },
     'ollama' => ->(key) { LLM.ollama(key: key) },
-    'xai' => ->(key) { LLM.xai(key: key) }
+    'xai' => ->(key) { LLM.xai(key: key) },
+    'opencode_zen' => ->(key) { LLM::OpencodeZen.new(key: key) },
+    'opencode_go' => ->(key) { LLM::OpencodeGo.new(key: key) },
+    'shell' => ->(_key) { Providers::Shell.new },
   }.freeze
 
   # List provider names that have API keys configured in the environment.
+  # The shell provider is always available (no key needed).
   def self.configured_providers
     PROVIDERS.keys.select { |name| api_key_for(name) }
   end
@@ -161,6 +172,14 @@ module Brute
 
   # Look up the API key for a given provider name.
   def self.api_key_for(name)
+    # Shell provider needs no key.
+    return "none" if name == "shell"
+
+    # OpenCode providers: check OPENCODE_API_KEY, fall back to "public" for anonymous access.
+    if name == "opencode_zen" || name == "opencode_go"
+      return ENV["OPENCODE_API_KEY"] || "public"
+    end
+
     # Explicit generic key always works
     return ENV["LLM_API_KEY"] if ENV["LLM_API_KEY"]
 
@@ -178,6 +197,7 @@ module Brute
   #   2. ANTHROPIC_API_KEY (implicit: provider = anthropic)
   #   3. OPENAI_API_KEY   (implicit: provider = openai)
   #   4. GOOGLE_API_KEY   (implicit: provider = google)
+  #   5. OPENCODE_API_KEY  (implicit: provider = opencode_zen)
   #
   # Returns nil if no key is found. Error is deferred to Orchestrator#run.
   def self.resolve_provider
@@ -193,6 +213,9 @@ module Brute
     elsif ENV['GOOGLE_API_KEY']
       key = ENV['GOOGLE_API_KEY']
       name = 'google'
+    elsif ENV['OPENCODE_API_KEY']
+      key = ENV['OPENCODE_API_KEY']
+      name = 'opencode_zen'
     else
       return nil
     end

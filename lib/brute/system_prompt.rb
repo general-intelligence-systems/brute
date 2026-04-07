@@ -26,9 +26,17 @@ module Brute
     # prepare-time, then appends conditional sections based on runtime state.
     def self.default
       build do |prompt, ctx|
-        # Provider-specific base stack
+        # Provider-specific base stack.
+        # For gateway providers (opencode_zen, opencode_go), infer the
+        # upstream model family from the model name so we use the most
+        # appropriate prompt stack (e.g., anthropic stack for claude-*).
         provider = ctx[:provider_name].to_s
-        STACKS.fetch(provider, STACKS["default"]).each do |mod|
+        stack_key = if provider.start_with?("opencode")
+                      infer_stack_from_model(ctx[:model_name].to_s)
+                    else
+                      provider
+                    end
+        STACKS.fetch(stack_key, STACKS["default"]).each do |mod|
           prompt << mod.call(ctx)
         end
 
@@ -113,6 +121,21 @@ module Brute
         Prompts::Instructions,
       ],
     }.freeze
+
+    # Infer the best prompt stack from a model name.
+    # Used for gateway providers that route to multiple upstream model families.
+    def self.infer_stack_from_model(model_name)
+      case model_name
+      when /\bclaude\b/i, /\bbig.?pickle\b/i
+        "anthropic"
+      when /\bgpt\b/i, /\bo[134]\b/i, /\bcodex\b/i
+        "openai"
+      when /\bgemini\b/i, /\bgemma\b/i
+        "google"
+      else
+        "default"
+      end
+    end
 
     def initialize(block)
       @block = block
