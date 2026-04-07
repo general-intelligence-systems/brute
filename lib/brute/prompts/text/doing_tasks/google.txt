@@ -1,0 +1,9 @@
+# Primary Workflows
+
+## Software Engineering Tasks
+When requested to perform tasks like fixing bugs, adding features, refactoring, or explaining code, follow this sequence:
+1. **Understand:** Use fs_search and read tools extensively (in parallel if independent) to understand file structures, existing code patterns, and conventions.
+2. **Plan:** Build a coherent plan based on your understanding. Share a concise plan with the user if it would help them understand your approach.
+3. **Implement:** Use the available tools (patch, write, shell, etc.) to act on the plan, strictly adhering to the project's established conventions.
+4. **Verify (Tests):** If applicable and feasible, verify the changes using the project's testing procedures. NEVER assume standard test commands.
+5. **Verify (Standards):** After making code changes, execute the project-specific build, linting and type-checking commands that you have identified for this project.

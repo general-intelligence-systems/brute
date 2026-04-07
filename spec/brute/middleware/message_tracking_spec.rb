@@ -114,6 +114,39 @@ RSpec.describe Brute::Middleware::MessageTracking do
     end
   end
 
+  describe "model name resolution" do
+    it "records the provider default_model when no override is set" do
+      env = build_env(input: "Hello", tool_results: nil)
+      middleware.call(env)
+
+      asst_msg = store.messages.find { |m| m[:info][:role] == "assistant" }
+      expect(asst_msg[:info][:modelID]).to eq("mock-model")
+    end
+
+    it "records the overridden model when context was created with model:" do
+      provider = MockProvider.new
+      ctx = LLM::Context.new(provider, tools: [], model: "custom-haiku-model")
+
+      env = build_env(input: "Hello", tool_results: nil, context: ctx, provider: provider)
+      middleware.call(env)
+
+      asst_msg = store.messages.find { |m| m[:info][:role] == "assistant" }
+      expect(asst_msg[:info][:modelID]).to eq("custom-haiku-model")
+    end
+
+    it "does not fall back to default_model when an override is present" do
+      provider = MockProvider.new
+      ctx = LLM::Context.new(provider, tools: [], model: "claude-3-haiku-20240307")
+
+      env = build_env(input: "Hello", tool_results: nil, context: ctx, provider: provider)
+      middleware.call(env)
+
+      asst_msg = store.messages.find { |m| m[:info][:role] == "assistant" }
+      expect(asst_msg[:info][:modelID]).not_to eq(provider.default_model)
+      expect(asst_msg[:info][:modelID]).to eq("claude-3-haiku-20240307")
+    end
+  end
+
   describe "middleware passthrough" do
     it "stores itself in env[:message_tracking]" do
       env = build_env(input: "Hello", tool_results: nil)

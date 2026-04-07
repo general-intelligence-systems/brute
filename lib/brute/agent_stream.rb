@@ -18,11 +18,12 @@ module Brute
       @pending_tool_calls.clear
     end
 
-    def initialize(on_content: nil, on_reasoning: nil, on_tool_call: nil, on_tool_result: nil)
+    def initialize(on_content: nil, on_reasoning: nil, on_tool_call: nil, on_tool_result: nil, on_question: nil)
       @on_content = on_content
       @on_reasoning = on_reasoning
       @on_tool_call = on_tool_call
       @on_tool_result = on_tool_result
+      @on_question = on_question
       @pending_tool_calls = []
     end
 
@@ -50,8 +51,10 @@ module Brute
 
     def spawn_with_callback(tool)
       on_result = @on_tool_result
+      on_question = @on_question
       name = tool.name
       Thread.new do
+        Thread.current[:on_question] = on_question
         result = tool.call
         on_result&.call(name, result.respond_to?(:value) ? result.value : result)
         result

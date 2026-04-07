@@ -27,6 +27,30 @@ require_relative 'brute/file_mutation_queue'
 require_relative 'brute/doom_loop'
 require_relative 'brute/hooks'
 require_relative 'brute/compactor'
+require_relative 'brute/prompts/base'
+require_relative 'brute/prompts/identity'
+require_relative 'brute/prompts/tone_and_style'
+require_relative 'brute/prompts/objectivity'
+require_relative 'brute/prompts/task_management'
+require_relative 'brute/prompts/doing_tasks'
+require_relative 'brute/prompts/tool_usage'
+require_relative 'brute/prompts/conventions'
+require_relative 'brute/prompts/git_safety'
+require_relative 'brute/prompts/code_references'
+require_relative 'brute/prompts/environment'
+require_relative 'brute/prompts/instructions'
+require_relative 'brute/prompts/editing_approach'
+require_relative 'brute/prompts/autonomy'
+require_relative 'brute/prompts/editing_constraints'
+require_relative 'brute/prompts/frontend_tasks'
+require_relative 'brute/prompts/proactiveness'
+require_relative 'brute/prompts/code_style'
+require_relative 'brute/prompts/security_and_safety'
+require_relative 'brute/prompts/skills'
+require_relative 'brute/prompts/plan_reminder'
+require_relative 'brute/prompts/max_steps'
+require_relative 'brute/prompts/build_switch'
+require_relative 'brute/skill'
 require_relative 'brute/system_prompt'
 require_relative 'brute/message_store'
 require_relative 'brute/session'
@@ -64,6 +88,7 @@ require_relative 'brute/tools/net_fetch'
 require_relative 'brute/tools/todo_write'
 require_relative 'brute/tools/todo_read'
 require_relative 'brute/tools/delegate'
+require_relative 'brute/tools/question'
 
 # Orchestrator (depends on tools, middleware, and infrastructure)
 require_relative 'brute/orchestrator'
@@ -81,7 +106,8 @@ module Brute
     Tools::NetFetch,
     Tools::TodoWrite,
     Tools::TodoRead,
-    Tools::Delegate
+    Tools::Delegate,
+    Tools::Question
   ].freeze
 
   # Default provider, resolved from environment.
@@ -94,13 +120,15 @@ module Brute
   end
 
   # Create a new orchestrator with sensible defaults.
-  def self.agent(cwd: Dir.pwd, tools: TOOLS, session: nil, reasoning: {}, **callbacks)
+  def self.agent(cwd: Dir.pwd, model: nil, tools: TOOLS, session: nil, reasoning: {}, agent_name: nil, **callbacks)
     Orchestrator.new(
       provider: provider,
+      model: model,
       tools: tools,
       cwd: cwd,
       session: session,
       reasoning: reasoning,
+      agent_name: agent_name,
       **callbacks
     )
   end
@@ -113,6 +141,35 @@ module Brute
     'ollama' => ->(key) { LLM.ollama(key: key) },
     'xai' => ->(key) { LLM.xai(key: key) }
   }.freeze
+
+  # List provider names that have API keys configured in the environment.
+  def self.configured_providers
+    PROVIDERS.keys.select { |name| api_key_for(name) }
+  end
+
+  # Build a provider instance for the given name using available API keys.
+  # Returns nil if no key is found.
+  def self.provider_for(name)
+    key = api_key_for(name)
+    return nil unless key
+
+    factory = PROVIDERS[name]
+    return nil unless factory
+
+    factory.call(key)
+  end
+
+  # Look up the API key for a given provider name.
+  def self.api_key_for(name)
+    # Explicit generic key always works
+    return ENV["LLM_API_KEY"] if ENV["LLM_API_KEY"]
+
+    case name
+    when "anthropic" then ENV["ANTHROPIC_API_KEY"]
+    when "openai"    then ENV["OPENAI_API_KEY"]
+    when "google"    then ENV["GOOGLE_API_KEY"]
+    end
+  end
 
   # Resolve the LLM provider from environment variables.
   #

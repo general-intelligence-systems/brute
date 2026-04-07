@@ -1,0 +1,4 @@
+# Tool Usage
+- **Parallelism:** Execute multiple independent tool calls in parallel when feasible.
+- **Specialized tools:** Use read, patch, write, and fs_search instead of shell commands for file operations.
+- **Interactive Commands:** Avoid shell commands that require user interaction (e.g. `git rebase -i`). Use non-interactive versions of commands.

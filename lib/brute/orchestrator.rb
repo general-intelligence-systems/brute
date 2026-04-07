@@ -24,28 +24,38 @@ module Brute
 
     def initialize(
       provider:,
+      model: nil,
       tools: Brute::TOOLS,
       cwd: Dir.pwd,
       session: nil,
       compactor_opts: {},
       reasoning: {},
+      agent_name: nil,
       on_content: nil,
       on_reasoning: nil,
       on_tool_call: nil,
       on_tool_result: nil,
+      on_question: nil,
       logger: nil
     )
       @provider = provider
+      @model = model
+      @agent_name = agent_name
       @tool_classes = tools
       @cwd = cwd
       @session = session || Session.new
       @logger = logger || Logger.new($stderr, level: Logger::INFO)
       @message_store = @session.message_store
 
-      # Build system prompt
-      custom_rules = load_custom_rules
-      prompt_builder = SystemPrompt.new(cwd: @cwd, tools: @tool_classes, custom_rules: custom_rules)
-      @system_prompt = prompt_builder.build
+      # Build system prompt via deferred builder
+      @system_prompt_builder = SystemPrompt.default
+      @system_prompt = @system_prompt_builder.prepare(
+        provider_name: @provider&.name,
+        model_name: @model || @provider&.default_model,
+        cwd: @cwd,
+        custom_rules: load_custom_rules,
+        agent: @agent_name,
+      ).to_s
 
       # Initialize the LLM context (with streaming when callbacks provided)
       @stream = if on_content || on_reasoning
@@ -54,10 +64,13 @@ module Brute
           on_reasoning: on_reasoning,
           on_tool_call: on_tool_call,
           on_tool_result: on_tool_result,
+          on_question: on_question,
         )
       end
-      @context = LLM::Context.new(@provider, tools: @tool_classes,
-        **(@stream ? {stream: @stream} : {}))
+      ctx_opts = { tools: @tool_classes }
+      ctx_opts[:model]  = @model  if @model
+      ctx_opts[:stream] = @stream if @stream
+      @context = LLM::Context.new(@provider, **ctx_opts)
 
       # Build the middleware pipeline
       compactor = Compactor.new(provider, **compactor_opts)
@@ -84,6 +97,7 @@ module Brute
           on_reasoning: on_reasoning,
           on_tool_call: on_tool_call,
           on_tool_result: on_tool_result,
+          on_question: on_question,
         },
       }
     end

@@ -1,0 +1,4 @@
+# Tool usage policy
+- When doing file search, prefer to use the delegate tool in order to reduce context usage.
+- You can call multiple tools in a single response. When multiple independent pieces of information are requested, batch your tool calls together for optimal performance.
+- Use specialized tools (read, patch, write, fs_search) instead of shell commands for file operations.

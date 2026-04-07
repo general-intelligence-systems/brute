@@ -13,7 +13,7 @@ Gem::Specification.new do |spec|
   spec.license       = 'MIT'
   spec.required_ruby_version = '>= 3.2'
 
-  spec.files         = Dir['lib/**/*.rb']
+  spec.files         = Dir['lib/**/*.rb', 'lib/**/*.txt']
   spec.require_paths = ['lib']
 
   spec.add_dependency 'async', '~> 2.0'

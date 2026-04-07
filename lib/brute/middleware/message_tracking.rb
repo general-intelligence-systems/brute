@@ -87,7 +87,7 @@ module Brute
 
       def record_assistant_message(env, response)
         provider_name = env[:provider]&.class&.name&.split("::")&.last&.downcase
-        model_name = env[:provider]&.respond_to?(:default_model) ? env[:provider].default_model.to_s : nil
+        model_name = resolve_model_name(env)
 
         @current_assistant_id = @store.append_assistant(
           parent_id: @current_user_id,
@@ -163,6 +163,20 @@ module Brute
       end
 
       # ── Helpers ────────────────────────────────────────────────────
+
+      # Resolve the actual model used for the request.
+      # Prefers the model set on the LLM::Context (which respects user overrides)
+      # and falls back to the provider's default_model.
+      def resolve_model_name(env)
+        ctx = env[:context]
+        if ctx && ctx.instance_variable_defined?(:@params)
+          ctx_model = ctx.instance_variable_get(:@params)&.dig(:model)
+          return ctx_model.to_s if ctx_model
+        end
+
+        # Fall back to provider default
+        env[:provider]&.respond_to?(:default_model) ? env[:provider].default_model.to_s : nil
+      end
 
       def safe_content(response)
         return nil unless response.respond_to?(:content)
