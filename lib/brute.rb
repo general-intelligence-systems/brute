@@ -194,16 +194,19 @@ module Brute
   #
   # Checks in order:
   #   1. LLM_API_KEY + LLM_PROVIDER (explicit)
-  #   2. ANTHROPIC_API_KEY (implicit: provider = anthropic)
-  #   3. OPENAI_API_KEY   (implicit: provider = openai)
-  #   4. GOOGLE_API_KEY   (implicit: provider = google)
-  #   5. OPENCODE_API_KEY  (implicit: provider = opencode_zen)
+  #   2. OPENCODE_API_KEY (implicit: provider = opencode_zen)
+  #   3. ANTHROPIC_API_KEY (implicit: provider = anthropic)
+  #   4. OPENAI_API_KEY   (implicit: provider = openai)
+  #   5. GOOGLE_API_KEY   (implicit: provider = google)
   #
   # Returns nil if no key is found. Error is deferred to Orchestrator#run.
   def self.resolve_provider
     if ENV['LLM_API_KEY']
       key = ENV['LLM_API_KEY']
-      name = ENV.fetch('LLM_PROVIDER', 'anthropic').downcase
+      name = ENV.fetch('LLM_PROVIDER', 'opencode_zen').downcase
+    elsif ENV['OPENCODE_API_KEY']
+      key = ENV['OPENCODE_API_KEY']
+      name = 'opencode_zen'
     elsif ENV['ANTHROPIC_API_KEY']
       key = ENV['ANTHROPIC_API_KEY']
       name = 'anthropic'
@@ -213,9 +216,6 @@ module Brute
     elsif ENV['GOOGLE_API_KEY']
       key = ENV['GOOGLE_API_KEY']
       name = 'google'
-    elsif ENV['OPENCODE_API_KEY']
-      key = ENV['OPENCODE_API_KEY']
-      name = 'opencode_zen'
     else
       return nil
     end

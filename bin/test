@@ -1,14 +1,10 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-$LOAD_PATH.unshift File.expand_path("../test", __dir__)
-
-require "bundler/setup"
-
 Dir.chdir(File.expand_path("..", __dir__))
 
 if ARGV.empty?
-  Dir.glob("test/**/*_test.rb").sort.each { |f| require_relative "../#{f}" }
+  Dir["lib/**/*.rb"].each { |f| system("bundle", "exec", "ruby", f) || exit(1) }
 else
-  ARGV.each { |f| require_relative "../#{f}" }
+  ARGV.each { |f| system("bundle", "exec", "ruby", f) || exit(1) }
 end

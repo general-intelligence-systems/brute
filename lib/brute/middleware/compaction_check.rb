@@ -1,5 +1,10 @@
 # frozen_string_literal: true
 
+if __FILE__ == $0
+  require "bundler/setup"
+  require "brute"
+end
+
 module Brute
   module Middleware
     # Checks context size after each LLM call and triggers compaction
@@ -53,6 +58,134 @@ module Brute
         end
         new_ctx.talk(prompt)
         env[:context] = new_ctx
+      end
+    end
+  end
+end
+
+if __FILE__ == $0
+  require_relative "../../../spec/spec_helper"
+
+  RSpec.describe Brute::Middleware::CompactionCheck do
+    let(:response) { MockResponse.new(content: "compaction response") }
+    let(:inner_app) { ->(_env) { response } }
+    let(:compactor) { double("compactor") }
+    let(:system_prompt) { "You are a helpful assistant." }
+    let(:tools) { [] }
+    let(:middleware) do
+      described_class.new(inner_app, compactor: compactor, system_prompt: system_prompt, tools: tools)
+    end
+
+    it "passes the response through when compaction is not needed" do
+      allow(compactor).to receive(:should_compact?).and_return(false)
+      env = build_env
+
+      result = middleware.call(env)
+
+      expect(result).to eq(response)
+      expect(env[:metadata][:compaction]).to be_nil
+    end
+
+    it "does not replace context when compaction is not triggered" do
+      allow(compactor).to receive(:should_compact?).and_return(false)
+      env = build_env
+      original_ctx = env[:context]
+
+      middleware.call(env)
+
+      expect(env[:context]).to equal(original_ctx)
+    end
+
+    it "triggers compaction and rebuilds context when threshold is exceeded" do
+      allow(compactor).to receive(:should_compact?).and_return(true)
+      allow(compactor).to receive(:compact).and_return(["Summary of conversation", []])
+
+      provider = MockProvider.new
+      ctx = LLM::Context.new(provider, tools: [])
+      prompt = ctx.prompt { |p| p.system("sys"); p.user("hello") }
+      ctx.talk(prompt)
+
+      env = build_env(context: ctx, provider: provider)
+      middleware.call(env)
+
+      expect(env[:metadata][:compaction]).to include(:messages_before, :timestamp)
+      expect(env[:context]).not_to equal(ctx)
+    end
+
+    it "handles compactor returning nil gracefully" do
+      allow(compactor).to receive(:should_compact?).and_return(true)
+      allow(compactor).to receive(:compact).and_return(nil)
+
+      env = build_env
+      original_ctx = env[:context]
+
+      middleware.call(env)
+
+      expect(env[:context]).to equal(original_ctx)
+      expect(env[:metadata][:compaction]).to be_nil
+    end
+
+    context "when streaming is enabled" do
+      let(:stream) { double("AgentStream") }
+
+      let(:middleware_with_stream) do
+        described_class.new(inner_app,
+          compactor: compactor,
+          system_prompt: system_prompt,
+          tools: tools,
+          stream: stream,
+        )
+      end
+
+      it "preserves the stream parameter on the rebuilt context" do
+        allow(compactor).to receive(:should_compact?).and_return(true)
+        allow(compactor).to receive(:compact).and_return(["Summary of conversation", []])
+
+        provider = MockProvider.new
+        original_ctx = LLM::Context.new(provider, tools: [], stream: stream)
+        prompt = original_ctx.prompt { |p| p.system("sys"); p.user("hello") }
+        original_ctx.talk(prompt)
+
+        env = build_env(context: original_ctx, provider: provider, streaming: true)
+        middleware_with_stream.call(env)
+
+        new_ctx = env[:context]
+        expect(new_ctx).not_to equal(original_ctx)
+
+        ctx_params = new_ctx.instance_variable_get(:@params)
+        expect(ctx_params[:stream]).to eq(stream),
+          "Expected rebuilt context to have stream: #{stream.inspect} " \
+          "in @params, but got: #{ctx_params[:stream].inspect}. " \
+          "This causes on_content callbacks to silently stop firing after compaction."
+      end
+
+      it "fires on_content callback on the rebuilt context when streaming" do
+        received_content = nil
+        callback = ->(text) { received_content = text }
+
+        allow(compactor).to receive(:should_compact?).and_return(true)
+        allow(compactor).to receive(:compact).and_return(["Summary", []])
+
+        provider = MockProvider.new
+        original_ctx = LLM::Context.new(provider, tools: [], stream: stream)
+        prompt = original_ctx.prompt { |p| p.system("sys"); p.user("hello") }
+        original_ctx.talk(prompt)
+
+        env = build_env(
+          context: original_ctx,
+          provider: provider,
+          streaming: true,
+          callbacks: { on_content: callback },
+        )
+        middleware_with_stream.call(env)
+
+        new_ctx = env[:context]
+
+        ctx_params = new_ctx.instance_variable_get(:@params)
+        expect(ctx_params).to have_key(:stream),
+          "Rebuilt context is missing :stream in @params. " \
+          "LLMCall will skip the on_content fallback because env[:streaming] is true, " \
+          "so content from the next LLM call will be silently dropped."
       end
     end
   end

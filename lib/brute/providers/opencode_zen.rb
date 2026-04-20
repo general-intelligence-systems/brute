@@ -1,5 +1,10 @@
 # frozen_string_literal: true
 
+if __FILE__ == $0
+  require "bundler/setup"
+  require "brute"
+end
+
 # Ensure the OpenAI provider is loaded (llm.rb lazy-loads providers).
 unless defined?(LLM::OpenAI)
   require "llm/providers/openai"
@@ -41,10 +46,10 @@ module LLM
     end
 
     ##
-    # Returns the default model (Claude Sonnet 4, the most common Zen model).
+    # Returns the default model.
     # @return [String]
     def default_model
-      "claude-sonnet-4-20250514"
+      "zen-bickpickle"
     end
 
     ##

@@ -1,9 +1,13 @@
 # frozen_string_literal: true
 
-require 'brute'
-require 'tmpdir'
+require "bundler/setup"
+require "rspec/autorun"
+require "brute"
+require "tmpdir"
+require "logger"
+require "stringio"
 
-Dir[File.join(__dir__, 'support', '**', '*.rb')].each { |f| require f }
+Dir[File.join(__dir__, "support", "**", "*.rb")].each { |f| require f }
 
 RSpec.configure do |config|
   config.before(:each) do

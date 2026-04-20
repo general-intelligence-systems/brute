@@ -1,5 +1,10 @@
 # frozen_string_literal: true
 
+if __FILE__ == $0
+  require "bundler/setup"
+  require "brute"
+end
+
 # Monkey-patch: Guard LLM::Buffer against nil entries.
 #
 # llm.rb's Context#talk can sometimes concatenate nil into the message
