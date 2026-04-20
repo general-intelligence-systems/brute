@@ -29,5 +29,7 @@ output_path   = File.expand_path("../lib/brute/version.rb", __dir__)
 template = ERB.new(File.read(template_path))
 result = template.result(binding)
 
+`bundle install`
+
 File.write(output_path, result)
 puts "#{current} -> #{version}"
