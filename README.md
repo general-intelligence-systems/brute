@@ -1,6 +1,6 @@
 # Brute
 
-Production-grade coding agent framework for Ruby. Rack-style middleware pipeline, concurrent tool execution, multi-provider LLM support, session persistence, context compaction, and doom loop detection -- all built on [llm.rb](https://rubygems.org/gems/llm.rb).
+Production-grade coding agent framework for Ruby. Built on [llm.rb](https://rubygems.org/gems/llm.rb).
 
 ## Install
 
@@ -8,23 +8,15 @@ Production-grade coding agent framework for Ruby. Rack-style middleware pipeline
 gem "brute" # requires Ruby >= 3.2
 ```
 
-## Quick Start
+## Setup
 
-```ruby
-require "brute"
-
-agent = Brute.agent(cwd: Dir.pwd)
-response = agent.run("Read app.rb and fix any bugs")
-puts response.content
-```
-
-Provider is auto-detected from environment variables (checked in order):
+Brute auto-detects your LLM provider from environment variables (checked in order):
 
 ```sh
-export ANTHROPIC_API_KEY=sk-...    # Claude
-export OPENAI_API_KEY=sk-...       # GPT / o-series
-export GOOGLE_API_KEY=AIza...      # Gemini
-export OLLAMA_HOST=http://localhost:11434  # Local Ollama
+export ANTHROPIC_API_KEY=sk-...              # Claude
+export OPENAI_API_KEY=sk-...                 # GPT / o-series
+export GOOGLE_API_KEY=AIza...                # Gemini
+export OLLAMA_HOST=http://localhost:11434     # Local Ollama (no key needed)
 ```
 
 Or set explicitly:
@@ -34,19 +26,89 @@ export LLM_API_KEY=your-key
 export LLM_PROVIDER=anthropic  # openai | google | deepseek | ollama | xai
 ```
 
-## Streaming Callbacks
+## Example
+
+This is a complete, runnable script. It creates an agent, queues three turns against a shared session, and lets the agent create a file, modify it, then read it back — all autonomously.
 
 ```ruby
-agent = Brute.agent(
-  cwd: Dir.pwd,
-  on_content:        ->(text)  { print text },
-  on_reasoning:      ->(text)  { print text },
-  on_tool_call_start: ->(tools) { puts tools.map { |t| t[:name] }.join(", ") },
-  on_tool_result:    ->(name, val) { puts "#{name} done" },
-  on_question:       ->(questions, queue) { queue << answers },
+require "brute"
+
+# 1. Pick a provider (auto-detected from env vars above)
+provider = Brute::Providers.guess_from_env
+
+# 2. Create a session (keeps conversation history across turns)
+session       = Brute::Store::Session.new
+message_store = session.message_store
+
+# 3. Build the system prompt
+system_prompt = Brute::SystemPrompt.default.prepare(
+  provider_name: provider.name.to_s,
+  model_name:    provider.default_model.to_s,
+  cwd:           Dir.pwd,
+).to_s
+
+# 4. Build the middleware pipeline
+compactor = Brute::Loop::Compactor.new(provider)
+logger    = Logger.new($stderr, level: Logger::INFO)
+
+pipeline = Brute::Pipeline.new do
+  use Brute::Middleware::Tracing, logger: logger
+  use Brute::Middleware::Retry
+  use Brute::Middleware::SessionPersistence, session: session
+  use Brute::Middleware::MessageTracking, store: message_store
+  use Brute::Middleware::TokenTracking
+  use Brute::Middleware::CompactionCheck,
+    compactor: compactor,
+    system_prompt: system_prompt
+  use Brute::Middleware::ToolErrorTracking
+  use Brute::Middleware::DoomLoopDetection
+  use Brute::Middleware::ToolUseGuard
+  run Brute::Middleware::LLMCall.new
+end
+
+# 5. Create the agent
+agent = Brute::Agent.new(
+  provider:      provider,
+  model:         provider.default_model,
+  tools:         Brute::Tools::ALL,
+  system_prompt: system_prompt,
 )
-agent.run("Refactor the auth module")
+
+# 6. Queue three turns — the agent will execute them in order
+Sync do
+  queue = Brute::Queue::SequentialQueue.new
+
+  queue << Brute::Loop::AgentTurn.new(
+    agent: agent, session: session, pipeline: pipeline,
+    input: "Create a file called config.yml with settings for a web app: port, host, database_url, log_level.",
+  )
+
+  queue << Brute::Loop::AgentTurn.new(
+    agent: agent, session: session, pipeline: pipeline,
+    input: "Change the port to 8080 and add a redis_url setting.",
+  )
+
+  queue << Brute::Loop::AgentTurn.new(
+    agent: agent, session: session, pipeline: pipeline,
+    input: "Read config.yml and summarize all the settings.",
+  )
+
+  queue.start
+  queue.drain
+
+  queue.steps.each_with_index do |step, i|
+    puts "Turn #{i + 1}: #{step.state}"
+  end
+end
 ```
+
+### What just happened?
+
+- **Turn 1** — The agent used its `write` tool to create `config.yml` with the requested settings.
+- **Turn 2** — Same session. The agent remembered the file it just created, used `read` to open it, then `patch` to update the port and add `redis_url`.
+- **Turn 3** — The agent read the file back and returned a plain-text summary.
+
+All three turns share one session, so the agent has full conversational context throughout. The middleware pipeline handles retries, token tracking, compaction, doom loop detection, and session persistence automatically.
 
 ## Tools (12 built-in)
 
@@ -65,160 +127,6 @@ agent.run("Refactor the auth module")
 | `delegate` | Spawn read-only sub-agent |
 | `question` | Ask user interactive questions |
 
-```ruby
-# Use tools directly
-Brute::Tools::FSRead.new.call(file_path: "app.rb")
-Brute::Tools::FSPatch.new.call(file_path: "app.rb", old_string: "foo", new_string: "bar")
-Brute::Tools::Shell.new.call(command: "bundle exec rspec", cwd: "/project")
-Brute::Tools::FSSearch.new.call(pattern: "def initialize", path: ".", glob: "*.rb")
-```
-
-## Middleware Pipeline
-
-Every LLM call passes through a Rack-style middleware chain:
-
-```
-OTel → Tracing → Retry → Session → Messages → Tokens → Compaction → ToolErrors → DoomLoop → Reasoning → ToolGuard → [LLM Call]
-```
-
-### Build a Custom Pipeline
-
-```ruby
-pipeline = Brute::Pipeline.new do
-  use Brute::Middleware::Tracing, logger: logger
-  use Brute::Middleware::Retry, max_attempts: 3, base_delay: 2
-  use Brute::Middleware::TokenTracking
-  run Brute::Middleware::LLMCall.new
-end
-pipeline.call(env)
-```
-
-### Write Custom Middleware
-
-```ruby
-class MyMiddleware < Brute::Middleware::Base
-  def call(env)
-    # before
-    result = @app.call(env)
-    # after
-    result
-  end
-end
-```
-
-### Short-Circuit
-
-```ruby
-class RateLimiter < Brute::Middleware::Base
-  def call(env)
-    return { error: "rate limited" } if over_limit?
-    @app.call(env)
-  end
-end
-```
-
-## Sessions
-
-```ruby
-# Create and use
-session = Brute::Session.new
-agent = Brute.agent(session: session)
-agent.run("Start the feature")
-
-# Resume later
-sessions = Brute::Session.list          # newest first
-session = Brute::Session.new(id: sessions.first[:id])
-agent = Brute.agent(session: session)
-agent.run("Continue where we left off")
-
-# Clean up
-session.delete
-```
-
-## Context Compaction
-
-Automatically summarizes old messages when context grows too large:
-
-```ruby
-compactor = Brute::Compactor.new(provider,
-  token_threshold:   100_000, # compact above this token count
-  message_threshold: 200,     # compact above this message count
-  retention_window:  6,       # keep N most recent messages
-)
-
-if compactor.should_compact?(messages, usage: token_usage)
-  summary, recent = compactor.compact(messages)
-end
-```
-
-## Doom Loop Detection
-
-Detects when the agent repeats the same tool calls in a loop:
-
-```ruby
-detector = Brute::DoomLoopDetector.new(threshold: 3)
-
-reps = detector.detect(messages)   # returns count or nil
-puts detector.warning_message(reps) if reps
-# => "You've repeated the same tool call pattern 3 times..."
-```
-
-Catches both consecutive identical calls (`A,A,A`) and repeating sequences (`A,B,A,B,A,B`).
-
-## Lifecycle Hooks
-
-```ruby
-class MetricsHook < Brute::Hooks::Base
-  private
-  def on_start(**)            = StatsD.increment("agent.start")
-  def on_end(**)              = StatsD.increment("agent.end")
-  def on_request(**)          = StatsD.increment("agent.request")
-  def on_response(**)         = StatsD.increment("agent.response")
-  def on_toolcall_start(**k)  = StatsD.increment("tool.#{k[:tool_name]}")
-  def on_toolcall_end(**k)    = StatsD.increment("tool.#{k[:tool_name]}.done")
-end
-
-# Compose multiple hooks
-hooks = Brute::Hooks::Composite.new(MetricsHook.new, Brute::Hooks::Logging.new(logger))
-hooks.call(:start)
-```
-
-## File Undo (Copy-on-Write)
-
-Every file mutation snapshots the previous state:
-
-```ruby
-Brute::SnapshotStore.save("/path/to/file.rb")   # before mutation
-Brute::SnapshotStore.depth("/path/to/file.rb")   # => 1
-content = Brute::SnapshotStore.pop("/path/to/file.rb")  # restore
-```
-
-## System Prompt
-
-Provider-aware prompt assembly with per-provider stacks (Anthropic, OpenAI, Google, Ollama, default):
-
-```ruby
-prompt = Brute::SystemPrompt.default
-result = prompt.prepare(
-  provider_name: "anthropic",
-  model_name: "claude-sonnet-4-20250514",
-  cwd: Dir.pwd,
-  custom_rules: "Always use RSpec.",
-  agent: "build",
-)
-puts result.to_s
-```
-
-## Skills
-
-Discovers `SKILL.md` files from `.brute/skills/` (project) and `~/.config/brute/skills/` (global):
-
-```ruby
-Brute::Skill.all(cwd: Dir.pwd)          # => [Skill::Info, ...]
-skill = Brute::Skill.get("tdd", cwd: Dir.pwd)
-puts skill.content
-```
-
 ## Providers
 
 | Name | Auto-detect env var |
@@ -229,48 +137,18 @@ puts skill.content
 | `deepseek` | `LLM_API_KEY` + `LLM_PROVIDER=deepseek` |
 | `ollama` | `OLLAMA_HOST` (no key needed) |
 | `xai` | `LLM_API_KEY` + `LLM_PROVIDER=xai` |
-| `opencode_zen` | `OPENCODE_API_KEY` |
-| `opencode_go` | `OPENCODE_API_KEY` |
-| `shell` | (always available) |
 
-```ruby
-Brute.configured_providers  # => ["anthropic", "opencode_zen", "ollama", "shell"]
-Brute.provider_for("openai") # => LLM::OpenAI instance
-```
+## More Examples
 
-### Local Models with Ollama
+See the [`examples/`](examples/) directory for more:
 
-Run any example against a local [Ollama](https://ollama.ai/) instance:
-
-```sh
-ollama serve
-ollama pull qwen2.5:14b
-
-export OLLAMA_HOST=http://localhost:11434
-export OLLAMA_MODEL=qwen2.5:14b   # optional, defaults to qwen3:latest
-
-ruby examples/01_basic_agent.rb
-```
-
-`OLLAMA_HOST` accepts a full URL (`http://192.168.1.50:11434`), a `host:port` pair, or a bare hostname. No API key is needed. The model must support tool/function calling (qwen2.5, llama3.1, mistral-nemo, command-r, etc.).
-
-## OpenTelemetry
-
-When `opentelemetry-sdk` is loaded, the pipeline automatically emits spans, tool call/result events, and token usage attributes. No-op when the SDK is absent.
-
-## Configuration Reference
-
-| Option | Default | Where |
-|--------|---------|-------|
-| `token_threshold` | 100,000 | `Compactor` |
-| `message_threshold` | 200 | `Compactor` |
-| `retention_window` | 6 | `Compactor` |
-| `max_attempts` | 3 | `Middleware::Retry` |
-| `base_delay` | 2s | `Middleware::Retry` |
-| `max_failures` | 3 per tool | `Middleware::ToolErrorTracking` |
-| `MAX_REQUESTS_PER_TURN` | 100 | `Orchestrator` |
-| `TIMEOUT` | 300s | `Tools::Shell` |
-| `MAX_OUTPUT` | 50KB | `Tools::Shell` |
+- `01_basic_agent.rb` — Ask a question, get a response
+- `02_fix_a_bug.rb` — Agent reads a buggy file, patches it, runs tests to verify
+- `03_session_persistence.rb` — Two turns sharing the same session
+- `04_custom_rules.rb` — Inject project-specific rules into the system prompt
+- `05_multi_turn.rb` — Three sequential turns with a shared session (this README example)
+- `06_read_only_agent.rb` — Restricted tool set, read-only code analysis
+- `07_agent_turn.rb` — Single turn, no tools
 
 ## License
 
