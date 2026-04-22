@@ -30,7 +30,7 @@ GEM
     fiber-storage (1.0.1)
     io-event (1.15.1)
     json (2.19.4)
-    llm.rb (4.21.0)
+    llm.rb (4.22.0)
     metrics (0.15.0)
     rake (13.4.2)
     rspec (3.13.2)
@@ -46,7 +46,7 @@ GEM
       diff-lcs (>= 1.2.0, < 2.0)
       rspec-support (~> 3.13.0)
     rspec-support (3.13.7)
-    scampi (0.1.5)
+    scampi (0.1.7)
       colorize-extended
     traces (0.18.2)
 

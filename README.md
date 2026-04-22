@@ -24,6 +24,7 @@ Provider is auto-detected from environment variables (checked in order):
 export ANTHROPIC_API_KEY=sk-...    # Claude
 export OPENAI_API_KEY=sk-...       # GPT / o-series
 export GOOGLE_API_KEY=AIza...      # Gemini
+export OLLAMA_HOST=http://localhost:11434  # Local Ollama
 ```
 
 Or set explicitly:
@@ -194,7 +195,7 @@ content = Brute::SnapshotStore.pop("/path/to/file.rb")  # restore
 
 ## System Prompt
 
-Provider-aware prompt assembly with per-provider stacks (Anthropic, OpenAI, Google, default):
+Provider-aware prompt assembly with per-provider stacks (Anthropic, OpenAI, Google, Ollama, default):
 
 ```ruby
 prompt = Brute::SystemPrompt.default
@@ -226,16 +227,32 @@ puts skill.content
 | `openai` | `OPENAI_API_KEY` |
 | `google` | `GOOGLE_API_KEY` |
 | `deepseek` | `LLM_API_KEY` + `LLM_PROVIDER=deepseek` |
-| `ollama` | `LLM_API_KEY` + `LLM_PROVIDER=ollama` |
+| `ollama` | `OLLAMA_HOST` (no key needed) |
 | `xai` | `LLM_API_KEY` + `LLM_PROVIDER=xai` |
 | `opencode_zen` | `OPENCODE_API_KEY` |
 | `opencode_go` | `OPENCODE_API_KEY` |
 | `shell` | (always available) |
 
 ```ruby
-Brute.configured_providers  # => ["anthropic", "opencode_zen", "shell"]
+Brute.configured_providers  # => ["anthropic", "opencode_zen", "ollama", "shell"]
 Brute.provider_for("openai") # => LLM::OpenAI instance
 ```
+
+### Local Models with Ollama
+
+Run any example against a local [Ollama](https://ollama.ai/) instance:
+
+```sh
+ollama serve
+ollama pull qwen2.5:14b
+
+export OLLAMA_HOST=http://localhost:11434
+export OLLAMA_MODEL=qwen2.5:14b   # optional, defaults to qwen3:latest
+
+ruby examples/01_basic_agent.rb
+```
+
+`OLLAMA_HOST` accepts a full URL (`http://192.168.1.50:11434`), a `host:port` pair, or a bare hostname. No API key is needed. The model must support tool/function calling (qwen2.5, llama3.1, mistral-nemo, command-r, etc.).
 
 ## OpenTelemetry
 

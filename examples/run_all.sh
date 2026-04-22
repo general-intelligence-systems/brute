@@ -1,8 +1,5 @@
 #!/bin/bash
-# Run all example scripts.
-# Scripts 01-07 need no API key.
-# Scripts 08-09 require ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_API_KEY.
-# Flow examples live in brute_flow/examples.
+# Run all example scripts. All require an API key.
 
 set -e
 cd "$(dirname "$0")/.."
@@ -18,10 +15,9 @@ skip=0
 
 run_example() {
   local file="$1"
-  local needs_key="${2:-false}"
   local name=$(basename "$file" .rb)
 
-  if [ "$needs_key" = "true" ] && [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "$GOOGLE_API_KEY" ]; then
+  if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "$GOOGLE_API_KEY" ] && [ -z "$LLM_API_KEY" ]; then
     printf "${YELLOW}SKIP${NC} %s (no API key)\n" "$name"
     skip=$((skip + 1))
     return
@@ -34,7 +30,6 @@ run_example() {
   else
     printf "${RED}FAIL${NC}\n"
     fail=$((fail + 1))
-    # Re-run to show output
     bundle exec ruby "$file" 2>&1 | tail -5 | sed 's/^/     /'
   fi
 }
@@ -42,15 +37,12 @@ run_example() {
 echo "=== Brute Examples ==="
 echo
 
-run_example examples/01_tools.rb
-run_example examples/02_snapshot_undo.rb
-run_example examples/03_doom_loop.rb
-run_example examples/04_hooks.rb
-run_example examples/05_session.rb
-run_example examples/06_system_prompt.rb
-run_example examples/07_pipeline.rb
-run_example examples/08_agent_simple.rb true
-run_example examples/09_agent_multi_tool.rb true
+run_example examples/01_basic_agent.rb
+run_example examples/02_fix_a_bug.rb
+run_example examples/03_session_persistence.rb
+run_example examples/04_custom_rules.rb
+run_example examples/05_multi_turn.rb
+run_example examples/06_read_only_agent.rb
 
 echo
 echo "=== $pass passed, $fail failed, $skip skipped ==="
