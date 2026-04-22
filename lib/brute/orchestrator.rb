@@ -52,7 +52,6 @@ module Brute
       @logger = logger || Logger.new($stderr, level: Logger::INFO)
       @message_store = @session.message_store
 
-      # Build system prompt via deferred builder
       @system_prompt_builder = SystemPrompt.default
       @system_prompt = @system_prompt_builder.prepare(
         provider_name: @provider&.name,
@@ -62,7 +61,6 @@ module Brute
         agent: @agent_name,
       ).to_s
 
-      # Initialize the LLM context (with streaming when callbacks provided)
       @stream = if on_content || on_reasoning
         AgentStream.new(
           on_content: on_content,
@@ -75,7 +73,6 @@ module Brute
       ctx_opts[:stream] = @stream if @stream
       @context = LLM::Context.new(@provider, **ctx_opts)
 
-      # Build the middleware pipeline
       compactor = Compactor.new(provider, **compactor_opts)
       @pipeline = build_pipeline(
         compactor: compactor,
@@ -187,53 +184,24 @@ module Brute
       stream = @stream
 
       Pipeline.new do
-        # OTel span lifecycle (outermost — creates env[:span])
         use Middleware::OTel::Span
-
-        # Timing and logging
         use Middleware::Tracing, logger: logger
-
-        # OTel: record tool results being sent back (pre-call)
         use Middleware::OTel::ToolResults
-
-        # Retry transient errors (wraps everything below)
         use Middleware::Retry
-
-        # Save after each successful LLM call
         use Middleware::SessionPersistence, session: session
-
-        # Record structured messages in OpenCode {info, parts} format
         use Middleware::MessageTracking, store: message_store
-
-        # Track cumulative token usage
         use Middleware::TokenTracking
-
-        # OTel: record token usage from response (post-call)
         use Middleware::OTel::TokenUsage
-
-        # Check context size and compact if needed
         use Middleware::CompactionCheck,
           compactor: compactor,
           system_prompt: sys_prompt,
           tools: tools,
           stream: stream
-
-        # Track per-tool errors
         use Middleware::ToolErrorTracking
-
-        # Detect and break doom loops (pre-call)
         use Middleware::DoomLoopDetection
-
-        # Handle reasoning params and model-switch normalization (pre-call)
         use Middleware::ReasoningNormalizer, **reasoning unless reasoning.empty?
-
-        # Guard against tool-only responses dropping the assistant message
         use Middleware::ToolUseGuard
-
-        # OTel: record tool calls the LLM requested (post-call, after ToolUseGuard)
         use Middleware::OTel::ToolCalls
-
-        # Innermost: the actual LLM call
         run Middleware::LLMCall.new
       end
     end
@@ -525,8 +493,6 @@ if __FILE__ == $0
       end
     end
 
-    # ── Provider-specific stacks ──
-
     context "provider-specific identity text" do
       it "uses mock provider (falls back to default stack)" do
         prompt = system_prompt_for(build_orchestrator)
@@ -535,8 +501,6 @@ if __FILE__ == $0
         expect(prompt).not_to be_empty
       end
     end
-
-    # ── Working directory is embedded ──
 
     context "cwd propagation" do
       it "embeds the given cwd in the system prompt" do
