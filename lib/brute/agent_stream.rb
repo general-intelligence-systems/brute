@@ -19,7 +19,7 @@ module Brute
   #
   class AgentStream < LLM::Stream
     # Tool call metadata recorded during streaming, used by ToolUseGuard
-    # when ctx.functions is empty (nil-choice bug in llm.rb).
+    # when ctx.functions is empty and the middleware needs stream metadata.
     attr_reader :pending_tool_calls
 
     # Deferred tool/error pairs: [(LLM::Function, error_or_nil), ...]

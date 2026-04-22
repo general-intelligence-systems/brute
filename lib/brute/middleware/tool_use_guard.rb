@@ -5,11 +5,10 @@ module Brute
     # Guards against tool-only LLM responses where the assistant message
     # is dropped from the context buffer.
     #
-    # When the LLM responds with only tool_use blocks (no text), llm.rb's
-    # response adapter produces empty choices. Context#talk appends nil,
-    # BufferNilGuard strips it, and the assistant message carrying tool_use
-    # blocks is lost. This causes "unexpected tool_use_id" on the next call
-    # because tool_result references a tool_use that's missing from the buffer.
+    # Historically this covered an llm.rb bug where tool-only responses could
+    # lose their assistant message, leaving later tool_result messages orphaned.
+    # With modern llm.rb this should be a no-op, but it remains a defensive
+    # guard against missing assistant tool-call messages.
     #
     # This middleware runs post-call and ensures every pending tool_use ID
     # is covered by an assistant message in the buffer. It handles three
@@ -18,7 +17,7 @@ module Brute
     #   1. ctx.functions is non-empty and the assistant message exists → no-op
     #   2. ctx.functions is non-empty but the assistant message is missing
     #      (or has different IDs) → inject synthetic message
-    #   3. ctx.functions is empty (nil-choice bug) but the stream recorded
+    #   3. ctx.functions is empty but the stream recorded
     #      tool calls → inject synthetic message using stream metadata
     #
     class ToolUseGuard
@@ -32,7 +31,7 @@ module Brute
         ctx = env[:context]
 
         # Collect pending tool data from ctx.functions (primary) or the
-        # stream's recorded metadata (fallback for nil-choice bug).
+        # stream's recorded metadata.
         tool_data = collect_tool_data(ctx, env)
         return response if tool_data.empty?
 
