@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Brute
+  module Loop
   # Context compaction service. When the conversation grows past configurable
   # thresholds, older messages are summarized into a condensed form and the
   # original messages are dropped, keeping the context window manageable.
@@ -101,5 +102,6 @@ module Brute
       res = @provider.complete(prompt, model: model)
       res.content
     end
+  end
   end
 end

@@ -29,7 +29,7 @@ module Brute
     #   5. GOOGLE_API_KEY   (implicit: provider = google)
     #   6. OLLAMA_HOST      (implicit: provider = ollama, local inference)
     #
-    # Returns nil if no key is found. Error is deferred to Orchestrator#run.
+    # Returns nil if no key is found. Error is deferred to the caller.
     def self.guess_from_env
       if ENV['LLM_API_KEY']
         key = ENV['LLM_API_KEY']

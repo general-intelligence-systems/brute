@@ -43,6 +43,7 @@ run_example examples/03_session_persistence.rb
 run_example examples/04_custom_rules.rb
 run_example examples/05_multi_turn.rb
 run_example examples/06_read_only_agent.rb
+run_example examples/07_agent_turn.rb
 
 echo
 echo "=== $pass passed, $fail failed, $skip skipped ==="

@@ -2,22 +2,33 @@
 # frozen_string_literal: true
 
 # Read-only agent — restricted tool set, no write/patch/shell access.
-#
-# Uses a local Ollama instance. Start Ollama first:
-#   ollama serve
-#   ollama pull qwen2.5:14b
 
-require_relative "../lib/brute"
-require "json"
+require_relative "helper"
 
-readonly_tools = [
-  Brute::Tools::FSRead,
-  Brute::Tools::FSSearch,
-  Brute::Tools::TodoRead,
-  Brute::Tools::TodoWrite,
-]
+provider_for_example :ollama
 
-agent = Brute.agent(provider: Brute::Providers::Ollama.new, model: "qwen2.5:14b", cwd: Dir.pwd, tools: readonly_tools)
-agent.run("Search the lib/ directory for any TODO or FIXME comments and summarize what you find.")
+@session      = Brute::Store::Session.new
+@model        = "tinyllama"
+@tools        = [Brute::Tools::FSRead, Brute::Tools::FSSearch]
+@custom_rules = "You are a read-only code analysis agent. You can read files and search but cannot modify anything."
 
-agent.message_store.messages.each { |msg| puts JSON.generate(msg) }
+agent = Brute::Agent.new(
+  provider: @provider,
+  model: @model,
+  tools: @tools,
+  system_prompt: system_prompt,
+)
+
+step = Brute::Loop::AgentTurn.perform(
+  agent: agent,
+  session: @session,
+  pipeline: full_pipeline,
+  input: "Search the lib/ directory for any TODO or FIXME comments and summarize what you find.",
+)
+
+puts "State: #{step.state}"
+if step.state == :completed
+  puts step.result.content
+else
+  puts "Error: #{step.error}"
+end

@@ -10,7 +10,7 @@ module Brute
     module OTel
       # Records tool results being sent back to the LLM as span events.
       #
-      # Runs PRE-call: when env[:tool_results] is present, the orchestrator
+      # Runs PRE-call: when env[:tool_results] is present, the agent loop
       # is sending tool execution results back to the LLM. Each result gets
       # a span event with the tool name and success/error status.
       #

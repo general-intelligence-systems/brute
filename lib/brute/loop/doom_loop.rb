@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Brute
+  module Loop
   # Detects when the agent is stuck in a repeating pattern of tool calls.
   #
   # Two types of loops are detected:
@@ -80,5 +81,6 @@ module Brute
 
       count
     end
+  end
   end
 end

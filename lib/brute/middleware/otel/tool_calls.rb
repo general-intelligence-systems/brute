@@ -20,7 +20,7 @@ module Brute
 
           span = env[:span]
           if span
-            functions = env[:context].functions
+            functions = env[:pending_functions]
             if functions && !functions.empty?
               span.set_attribute("brute.tool_calls.count", functions.size)
 
@@ -59,11 +59,9 @@ if __FILE__ == $0
 
     context "when env[:span] is nil" do
       it "passes through without error even with pending functions" do
-        ctx = build_env[:context]
         fn = double("function", name: "fs_read", id: "tc_001", arguments: { "path" => "/tmp" })
-        allow(ctx).to receive(:functions).and_return([fn])
 
-        env = build_env(context: ctx)
+        env = build_env(pending_functions: [fn])
         result = middleware.call(env)
         expect(result).to eq(response)
       end
@@ -73,10 +71,7 @@ if __FILE__ == $0
       let(:span) { mock_span }
 
       it "does nothing when there are no pending functions" do
-        ctx = build_env[:context]
-        allow(ctx).to receive(:functions).and_return([])
-
-        env = build_env(context: ctx, span: span)
+        env = build_env(pending_functions: [], span: span)
         middleware.call(env)
 
         expect(span).not_to have_received(:add_event)
@@ -84,22 +79,17 @@ if __FILE__ == $0
       end
 
       it "does nothing when functions is nil" do
-        ctx = build_env[:context]
-        allow(ctx).to receive(:functions).and_return(nil)
-
-        env = build_env(context: ctx, span: span)
+        env = build_env(pending_functions: nil, span: span)
         middleware.call(env)
 
         expect(span).not_to have_received(:add_event)
       end
 
       it "records a tool_call event per pending function" do
-        ctx = build_env[:context]
         fn1 = double("function", name: "fs_read", id: "tc_001", arguments: { "path" => "/src/main.rb" })
         fn2 = double("function", name: "shell", id: "tc_002", arguments: { "command" => "rspec" })
-        allow(ctx).to receive(:functions).and_return([fn1, fn2])
 
-        env = build_env(context: ctx, span: span)
+        env = build_env(pending_functions: [fn1, fn2], span: span)
         middleware.call(env)
 
         expect(span).to have_received(:set_attribute).with("brute.tool_calls.count", 2)
@@ -120,12 +110,10 @@ if __FILE__ == $0
       end
 
       it "serializes arguments as JSON" do
-        ctx = build_env[:context]
         args = { "path" => "/tmp/test.rb", "content" => "puts 'hi'" }
         fn = double("function", name: "fs_write", id: "tc_003", arguments: args)
-        allow(ctx).to receive(:functions).and_return([fn])
 
-        env = build_env(context: ctx, span: span)
+        env = build_env(pending_functions: [fn], span: span)
         middleware.call(env)
 
         expect(span).to have_received(:add_event).with(
@@ -135,11 +123,9 @@ if __FILE__ == $0
       end
 
       it "handles nil arguments" do
-        ctx = build_env[:context]
         fn = double("function", name: "todo_read", id: "tc_004", arguments: nil)
-        allow(ctx).to receive(:functions).and_return([fn])
 
-        env = build_env(context: ctx, span: span)
+        env = build_env(pending_functions: [fn], span: span)
         middleware.call(env)
 
         expect(span).to have_received(:add_event).with(

@@ -20,7 +20,7 @@ module Brute
     #      corresponding tool parts to "completed" (or "error").
     #
     # The middleware also stores itself in env[:message_tracking] so the
-    # orchestrator can access the current assistant message ID for callbacks.
+    # agent loop can access the current assistant message ID for callbacks.
     #
     class MessageTracking < Base
       attr_reader :store
@@ -116,8 +116,7 @@ module Brute
       end
 
       def record_tool_calls(env)
-        ctx = env[:context]
-        functions = ctx.functions
+        functions = env[:pending_functions]
         return if functions.nil? || functions.empty?
 
         functions.each do |fn|
@@ -170,14 +169,11 @@ module Brute
       # ── Helpers ────────────────────────────────────────────────────
 
       # Resolve the actual model used for the request.
-      # Prefers the model set on the LLM::Context (which respects user overrides)
-      # and falls back to the provider's default_model.
+      # Prefers env[:model] (set by AgentTurn) and falls back to the
+      # provider's default_model.
       def resolve_model_name(env)
-        ctx = env[:context]
-        if ctx && ctx.instance_variable_defined?(:@params)
-          ctx_model = ctx.instance_variable_get(:@params)&.dig(:model)
-          return ctx_model.to_s if ctx_model
-        end
+        model = env[:model]
+        return model.to_s if model
 
         # Fall back to provider default
         env[:provider]&.respond_to?(:default_model) ? env[:provider].default_model.to_s : nil
@@ -218,7 +214,7 @@ if __FILE__ == $0
 
   RSpec.describe Brute::Middleware::MessageTracking do
     let(:tmpdir) { Dir.mktmpdir("brute_test_") }
-    let(:store) { Brute::MessageStore.new(session_id: "test-session", dir: tmpdir) }
+    let(:store) { Brute::Store::MessageStore.new(session_id: "test-session", dir: tmpdir) }
     let(:response) { MockResponse.new(content: "Hello from the LLM") }
     let(:inner_app) { ->(_env) { response } }
     let(:middleware) { described_class.new(inner_app, store: store) }
@@ -282,12 +278,8 @@ if __FILE__ == $0
     describe "tool call recording" do
       it "records tool calls as tool parts in running state" do
         fn = double("function", id: "call_001", name: "read", arguments: { file_path: "/test" })
-        provider = MockProvider.new
-        ctx = LLM::Context.new(provider, tools: [])
-        allow(ctx).to receive(:functions).and_return([fn])
-        allow(provider).to receive(:complete).and_return(response)
 
-        env = build_env(input: "Read the file", tool_results: nil, context: ctx)
+        env = build_env(input: "Read the file", tool_results: nil, pending_functions: [fn])
         middleware.call(env)
 
         asst_msg = store.messages.find { |m| m[:info][:role] == "assistant" }
@@ -302,15 +294,11 @@ if __FILE__ == $0
     describe "tool result completion" do
       it "updates tool parts when results arrive" do
         fn = double("function", id: "call_001", name: "read", arguments: { file_path: "/test" })
-        provider = MockProvider.new
-        ctx = LLM::Context.new(provider, tools: [])
-        allow(ctx).to receive(:functions).and_return([fn])
-        allow(provider).to receive(:complete).and_return(response)
 
-        env = build_env(input: "Read the file", tool_results: nil, context: ctx)
+        env = build_env(input: "Read the file", tool_results: nil, pending_functions: [fn])
         middleware.call(env)
 
-        allow(ctx).to receive(:functions).and_return([])
+        env[:pending_functions] = []
         env[:tool_results] = [["read", "file contents here"]]
         middleware.call(env)
 
@@ -331,11 +319,8 @@ if __FILE__ == $0
         expect(asst_msg[:info][:modelID]).to eq("mock-model")
       end
 
-      it "records the overridden model when context was created with model:" do
-        provider = MockProvider.new
-        ctx = LLM::Context.new(provider, tools: [], model: "custom-haiku-model")
-
-        env = build_env(input: "Hello", tool_results: nil, context: ctx, provider: provider)
+      it "records the overridden model when env[:model] is set" do
+        env = build_env(input: "Hello", tool_results: nil, model: "custom-haiku-model")
         middleware.call(env)
 
         asst_msg = store.messages.find { |m| m[:info][:role] == "assistant" }
@@ -344,9 +329,7 @@ if __FILE__ == $0
 
       it "does not fall back to default_model when an override is present" do
         provider = MockProvider.new
-        ctx = LLM::Context.new(provider, tools: [], model: "claude-3-haiku-20240307")
-
-        env = build_env(input: "Hello", tool_results: nil, context: ctx, provider: provider)
+        env = build_env(input: "Hello", tool_results: nil, model: "claude-3-haiku-20240307", provider: provider)
         middleware.call(env)
 
         asst_msg = store.messages.find { |m| m[:info][:role] == "assistant" }

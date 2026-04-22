@@ -8,27 +8,34 @@ end
 module Brute
   module Middleware
     # Detects when the agent is stuck repeating tool call patterns and injects
-    # a corrective warning into the context before the next LLM call.
+    # a corrective warning into the message history before the next LLM call.
     #
     # Runs PRE-call: inspects the conversation history for repeating tool call
-    # patterns. If detected, talks a warning message into the context so the
-    # LLM sees it as input alongside the normal tool results.
+    # patterns. If detected, appends a warning message so the LLM sees it as
+    # input alongside the normal tool results.
     #
     class DoomLoopDetection < Base
       def initialize(app, threshold: 3)
         super(app)
-        @detector = Brute::DoomLoopDetector.new(threshold: threshold)
+        @detector = Brute::Loop::DoomLoopDetector.new(threshold: threshold)
       end
 
       def call(env)
-        ctx = env[:context]
-        messages = ctx.messages.to_a
+        messages = env[:messages]
 
         if (reps = @detector.detect(messages))
           warning = @detector.warning_message(reps)
           # Inject the warning as a user message so the LLM sees it
-          ctx.talk(warning)
+          env[:messages] << LLM::Message.new(:user, warning)
           env[:metadata][:doom_loop_detected] = reps
+
+          # Signal the agent loop to exit after this LLM call completes.
+          # First-writer-wins: don't overwrite if another middleware already set it.
+          env[:should_exit] ||= {
+            reason:  "doom_loop_detected",
+            message: "Agent is stuck repeating the same tool calls (#{reps} repetitions).",
+            source:  "DoomLoopDetection",
+          }
         end
 
         @app.call(env)
@@ -66,17 +73,11 @@ if __FILE__ == $0
     end
 
     it "detects consecutive identical tool calls" do
-      provider = MockProvider.new
-      ctx = LLM::Context.new(provider, tools: [])
-
       fn = fake_function(name: "fs_read", arguments: '{"path":"x.rb"}')
       messages = 4.times.map { assistant_msg_with_functions([fn]) }
 
-      allow(ctx).to receive(:messages).and_return(double("buffer", to_a: messages))
-      allow(ctx).to receive(:talk)
-
       middleware = described_class.new(inner_app, threshold: 3)
-      env = build_env(context: ctx, provider: provider)
+      env = build_env(messages: messages)
 
       middleware.call(env)
 
@@ -84,20 +85,14 @@ if __FILE__ == $0
     end
 
     it "detects repeating sequences [A,B,A,B,A,B]" do
-      provider = MockProvider.new
-      ctx = LLM::Context.new(provider, tools: [])
-
       fn_a = fake_function(name: "fs_read", arguments: '{"path":"a.rb"}')
       fn_b = fake_function(name: "shell", arguments: '{"cmd":"ls"}')
       messages = 3.times.flat_map do
         [assistant_msg_with_functions([fn_a]), assistant_msg_with_functions([fn_b])]
       end
 
-      allow(ctx).to receive(:messages).and_return(double("buffer", to_a: messages))
-      allow(ctx).to receive(:talk)
-
       middleware = described_class.new(inner_app, threshold: 3)
-      env = build_env(context: ctx, provider: provider)
+      env = build_env(messages: messages)
 
       middleware.call(env)
 
@@ -105,23 +100,73 @@ if __FILE__ == $0
     end
 
     it "does not trigger below the threshold" do
-      provider = MockProvider.new
-      ctx = LLM::Context.new(provider, tools: [])
-
       fn = fake_function(name: "fs_read", arguments: '{"path":"x.rb"}')
       messages = 2.times.map { assistant_msg_with_functions([fn]) }
 
-      allow(ctx).to receive(:messages).and_return(double("buffer", to_a: messages))
-
       middleware = described_class.new(inner_app, threshold: 3)
-      env = build_env(context: ctx, provider: provider)
+      env = build_env(messages: messages)
 
       middleware.call(env)
 
       expect(env[:metadata][:doom_loop_detected]).to be_nil
     end
 
-    describe Brute::DoomLoopDetector do
+    # -- should_exit signal --
+
+    it "sets env[:should_exit] when a doom loop is detected" do
+      fn = fake_function(name: "fs_read", arguments: '{"path":"x.rb"}')
+      messages = 4.times.map { assistant_msg_with_functions([fn]) }
+
+      middleware = described_class.new(inner_app, threshold: 3)
+      env = build_env(messages: messages)
+
+      middleware.call(env)
+
+      expect(env[:should_exit]).to be_a(Hash)
+      expect(env[:should_exit][:reason]).to eq("doom_loop_detected")
+      expect(env[:should_exit][:source]).to eq("DoomLoopDetection")
+      expect(env[:should_exit][:message]).to include("repetitions")
+    end
+
+    it "does not set env[:should_exit] when no loop is detected" do
+      middleware = described_class.new(inner_app, threshold: 3)
+      env = build_env
+
+      middleware.call(env)
+
+      expect(env[:should_exit]).to be_nil
+    end
+
+    it "does not overwrite env[:should_exit] if already set (first-writer-wins)" do
+      fn = fake_function(name: "fs_read", arguments: '{"path":"x.rb"}')
+      messages = 4.times.map { assistant_msg_with_functions([fn]) }
+
+      middleware = described_class.new(inner_app, threshold: 3)
+      existing_exit = { reason: "other", message: "earlier middleware", source: "Other" }
+      env = build_env(messages: messages, should_exit: existing_exit)
+
+      middleware.call(env)
+
+      # should_exit still has the original value
+      expect(env[:should_exit][:reason]).to eq("other")
+      expect(env[:should_exit][:source]).to eq("Other")
+    end
+
+    it "appends a warning message to env[:messages] when loop is detected" do
+      fn = fake_function(name: "fs_read", arguments: '{"path":"x.rb"}')
+      messages = 4.times.map { assistant_msg_with_functions([fn]) }
+
+      middleware = described_class.new(inner_app, threshold: 3)
+      env = build_env(messages: messages)
+      original_count = env[:messages].size
+
+      middleware.call(env)
+
+      expect(env[:messages].size).to eq(original_count + 1)
+      expect(env[:messages].last.role.to_s).to eq("user")
+    end
+
+    describe Brute::Loop::DoomLoopDetector do
       it "generates a warning message with repetition count" do
         detector = described_class.new(threshold: 3)
         msg = detector.warning_message(5)

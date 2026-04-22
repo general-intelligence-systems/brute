@@ -28,13 +28,13 @@ module Brute
           return @app.call(env) unless defined?(::OpenTelemetry::SDK)
 
           provider_name = provider_type(env[:provider])
-          model = begin; env[:context].model; rescue; nil; end
+          model = env[:model] || (env[:provider].default_model rescue nil)
           span_name = model ? "llm.call #{model}" : "llm.call"
 
           attributes = {
             "brute.provider" => provider_name,
             "brute.streaming" => !!env[:streaming],
-            "brute.context_messages" => env[:context].messages.to_a.size,
+            "brute.context_messages" => env[:messages].size,
           }
           attributes["brute.model"] = model.to_s if model
           attributes["brute.session_id"] = env[:metadata][:session_id].to_s if env.dig(:metadata, :session_id)

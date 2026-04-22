@@ -16,8 +16,8 @@ module Brute
 
       def call(path:)
         target = File.expand_path(path)
-        Brute::FileMutationQueue.serialize(target) do
-          snapshot = Brute::SnapshotStore.pop(target)
+        Brute::Queue::FileMutationQueue.serialize(target) do
+          snapshot = Brute::Store::SnapshotStore.pop(target)
           raise "No undo history available for: #{target}" unless snapshot
 
           if snapshot == :did_not_exist

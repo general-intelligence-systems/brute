@@ -13,7 +13,7 @@ module Brute
       param :_placeholder, String, "Unused, pass any value"
 
       def call(_placeholder: nil)
-        {todos: Brute::TodoStore.all}
+        {todos: Brute::Store::TodoStore.all}
       end
     end
   end

@@ -16,13 +16,19 @@ module Brute
   # ## The env hash
   #
   #   {
-  #     context:   LLM::Context,     # conversation state
-  #     provider:  LLM::Provider,    # the LLM provider
-  #     input:     <prompt/results>,  # what to pass to context.talk()
-  #     tools:     [Tool, ...],       # tool classes
-  #     params:    {},                # extra LLM call params (reasoning config, etc.)
-  #     metadata:  {},                # shared scratchpad for middleware state
-  #     callbacks: {},                # :on_content, :on_tool_call_start, :on_tool_result
+  #     provider:          LLM::Provider,    # the LLM provider
+  #     model:             String|nil,       # model override
+  #     input:             <prompt/results>, # what to pass to LLM
+  #     tools:             [Tool, ...],      # tool classes
+  #     messages:          [LLM::Message],   # conversation history (Brute-owned)
+  #     stream:            AgentStream|nil,  # streaming bridge
+  #     params:            {},               # extra LLM call params
+  #     metadata:          {},               # shared scratchpad for middleware state
+  #     callbacks:         {},               # :on_content, :on_tool_call_start, :on_tool_result
+  #     tool_results:      Array|nil,        # tool results from previous iteration
+  #     streaming:         Boolean,          # whether streaming is active
+  #     should_exit:       Hash|nil,         # exit signal from middleware
+  #     pending_functions: [LLM::Function],  # tool calls from last LLM response
   #   }
   #
   # ## The response
@@ -87,46 +93,53 @@ if __FILE__ == $0
     let(:provider) { MockProvider.new }
     let(:log_output) { StringIO.new }
     let(:logger) { Logger.new(log_output) }
-    let(:session) { double("session", save: nil) }
+    let(:session) { double("session", save_messages: nil) }
     let(:compactor) { double("compactor", should_compact?: false) }
 
-    describe "full orchestrator pipeline" do
+    def make_env(provider:, input:)
+      {
+        provider: provider,
+        model: nil,
+        input: input,
+        tools: [],
+        messages: [],
+        stream: nil,
+        params: {},
+        metadata: {},
+        callbacks: {},
+        tool_results: nil,
+        streaming: false,
+        should_exit: nil,
+        pending_functions: [],
+      }
+    end
+
+    describe "full middleware pipeline" do
       it "passes env through all middleware and returns the response" do
         response = MockResponse.new(content: "integrated response")
         allow(provider).to receive(:complete).and_return(response)
 
-        ctx = LLM::Context.new(provider, tools: [])
-        prompt = ctx.prompt { |p| p.system("sys"); p.user("hello") }
+        prompt = LLM::Prompt.new(provider) { |p| p.system("sys"); p.user("hello") }
 
         pipeline = Brute::Pipeline.new
         pipeline.use(Brute::Middleware::Tracing, logger: logger)
         pipeline.use(Brute::Middleware::Retry, max_attempts: 3, base_delay: 2)
         pipeline.use(Brute::Middleware::SessionPersistence, session: session)
         pipeline.use(Brute::Middleware::TokenTracking)
-        pipeline.use(Brute::Middleware::CompactionCheck, compactor: compactor, system_prompt: "sys", tools: [])
+        pipeline.use(Brute::Middleware::CompactionCheck, compactor: compactor, system_prompt: "sys")
         pipeline.use(Brute::Middleware::ToolErrorTracking)
         pipeline.use(Brute::Middleware::DoomLoopDetection, threshold: 3)
         pipeline.use(Brute::Middleware::ToolUseGuard)
         pipeline.run(Brute::Middleware::LLMCall.new)
 
-        env = {
-          context: ctx,
-          provider: provider,
-          input: prompt,
-          tools: [],
-          params: {},
-          metadata: {},
-          callbacks: {},
-          tool_results: nil,
-          streaming: false,
-        }
+        env = make_env(provider: provider, input: prompt)
 
         result = pipeline.call(env)
 
         expect(result).not_to be_nil
         expect(env[:metadata][:timing]).to include(:llm_call_count, :total_llm_elapsed)
         expect(env[:metadata][:tokens]).to include(:total_input, :total_output, :call_count)
-        expect(session).to have_received(:save)
+        expect(session).to have_received(:save_messages)
         expect(log_output.string).to include("LLM call #1")
       end
     end
@@ -142,25 +155,14 @@ if __FILE__ == $0
           response
         end
 
-        ctx = LLM::Context.new(provider, tools: [])
-        prompt = ctx.prompt { |p| p.system("sys"); p.user("hi") }
+        prompt = LLM::Prompt.new(provider) { |p| p.system("sys"); p.user("hi") }
 
         pipeline = Brute::Pipeline.new
         pipeline.use(Brute::Middleware::Tracing, logger: logger)
         pipeline.use(Brute::Middleware::Retry, max_attempts: 3, base_delay: 0)
         pipeline.run(Brute::Middleware::LLMCall.new)
 
-        env = {
-          context: ctx,
-          provider: provider,
-          input: prompt,
-          tools: [],
-          params: {},
-          metadata: {},
-          callbacks: {},
-          tool_results: nil,
-          streaming: false,
-        }
+        env = make_env(provider: provider, input: prompt)
 
         result = pipeline.call(env)
 
@@ -174,28 +176,17 @@ if __FILE__ == $0
         response = MockResponse.new(content: "tracked and saved")
         allow(provider).to receive(:complete).and_return(response)
 
-        ctx = LLM::Context.new(provider, tools: [])
-        prompt = ctx.prompt { |p| p.system("sys"); p.user("hi") }
+        prompt = LLM::Prompt.new(provider) { |p| p.system("sys"); p.user("hi") }
 
         save_args = []
-        allow(session).to receive(:save) { |ctx_arg| save_args << ctx_arg }
+        allow(session).to receive(:save_messages) { |msgs| save_args << msgs }
 
         pipeline = Brute::Pipeline.new
         pipeline.use(Brute::Middleware::SessionPersistence, session: session)
         pipeline.use(Brute::Middleware::TokenTracking)
         pipeline.run(Brute::Middleware::LLMCall.new)
 
-        env = {
-          context: ctx,
-          provider: provider,
-          input: prompt,
-          tools: [],
-          params: {},
-          metadata: {},
-          callbacks: {},
-          tool_results: nil,
-          streaming: false,
-        }
+        env = make_env(provider: provider, input: prompt)
 
         pipeline.call(env)
 

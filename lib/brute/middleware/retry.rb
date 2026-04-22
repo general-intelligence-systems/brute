@@ -14,7 +14,7 @@ module Brute
     # propagate immediately.
     #
     # Unlike forgecode's separate retry.rs, this middleware wraps the LLM call
-    # directly — it sees the error and retries without the orchestrator knowing.
+    # directly — it sees the error and retries without the agent loop knowing.
     #
     class Retry < Base
       DEFAULT_MAX_ATTEMPTS = 3

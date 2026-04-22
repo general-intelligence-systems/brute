@@ -4,13 +4,28 @@ module Brute
   module Middleware
     # The terminal "app" in the pipeline — performs the actual LLM call.
     #
+    # Builds a fresh LLM::Context per call from env[:messages], makes the
+    # call, extracts new messages back into env[:messages], and stashes
+    # pending functions in env[:pending_functions].
+    #
     # When streaming, on_content fires incrementally via AgentStream.
     # When not streaming, fires on_content post-hoc with the full text.
     #
     class LLMCall
       def call(env)
-        ctx = env[:context]
+        ctx = build_context(env)
+
+        # Load existing conversation history into the ephemeral context
+        ctx.messages.concat(env[:messages])
+
         response = ctx.talk(env[:input])
+
+        # Extract new messages appended by talk() and store them
+        new_messages = ctx.messages.to_a.drop(env[:messages].size)
+        env[:messages].concat(new_messages)
+
+        # Stash pending functions for the agent loop
+        env[:pending_functions] = ctx.functions.to_a
 
         # Only fire on_content post-hoc when NOT streaming
         # (streaming delivers chunks incrementally via AgentStream)
@@ -25,6 +40,14 @@ module Brute
       end
 
       private
+
+      def build_context(env)
+        params = {}
+        params[:tools]  = env[:tools]   if env[:tools]&.any?
+        params[:stream] = env[:stream]  if env[:stream]
+        params[:model]  = env[:model]   if env[:model]
+        LLM::Context.new(env[:provider], **params)
+      end
 
       # Safely extract text content from an LLM response.
       # Returns nil when the response contains only tool calls (no assistant text),
@@ -47,15 +70,30 @@ if __FILE__ == $0
     let(:provider) { MockProvider.new }
     let(:middleware) { described_class.new }
 
-    it "calls ctx.talk with env[:input] and returns the response" do
-      ctx = LLM::Context.new(provider, tools: [])
-      prompt = ctx.prompt { |p| p.system("sys"); p.user("hello") }
-      env = build_env(context: ctx, provider: provider, input: prompt, streaming: false)
+    it "calls the provider and returns the response" do
+      env = build_env(provider: provider, input: "hello", streaming: false)
 
       response = middleware.call(env)
 
       expect(response).not_to be_nil
       expect(provider.calls.size).to eq(1)
+    end
+
+    it "appends new messages to env[:messages]" do
+      env = build_env(provider: provider, input: "hello", streaming: false)
+      expect(env[:messages]).to be_empty
+
+      middleware.call(env)
+
+      expect(env[:messages]).not_to be_empty
+    end
+
+    it "populates env[:pending_functions]" do
+      env = build_env(provider: provider, input: "hello", streaming: false)
+
+      middleware.call(env)
+
+      expect(env[:pending_functions]).to be_an(Array)
     end
 
     context "when not streaming" do
@@ -66,12 +104,9 @@ if __FILE__ == $0
         response = MockResponse.new(content: "Hello world")
         allow(provider).to receive(:complete).and_return(response)
 
-        ctx = LLM::Context.new(provider, tools: [])
-        prompt = ctx.prompt { |p| p.system("sys"); p.user("hi") }
         env = build_env(
-          context: ctx,
           provider: provider,
-          input: prompt,
+          input: "hi",
           streaming: false,
           callbacks: { on_content: callback }
         )
@@ -87,12 +122,9 @@ if __FILE__ == $0
         callback_called = false
         callback = ->(_text) { callback_called = true }
 
-        ctx = LLM::Context.new(provider, tools: [])
-        prompt = ctx.prompt { |p| p.system("sys"); p.user("hi") }
         env = build_env(
-          context: ctx,
           provider: provider,
-          input: prompt,
+          input: "hi",
           streaming: true,
           callbacks: { on_content: callback }
         )
@@ -112,12 +144,9 @@ if __FILE__ == $0
         allow(bad_response).to receive(:content).and_raise(NoMethodError)
         allow(provider).to receive(:complete).and_return(bad_response)
 
-        ctx = LLM::Context.new(provider, tools: [])
-        prompt = ctx.prompt { |p| p.system("sys"); p.user("hi") }
         env = build_env(
-          context: ctx,
           provider: provider,
-          input: prompt,
+          input: "hi",
           streaming: false,
           callbacks: { on_content: callback }
         )
@@ -125,6 +154,16 @@ if __FILE__ == $0
         expect { middleware.call(env) }.not_to raise_error
         expect(received_content).to eq(:not_called)
       end
+    end
+
+    it "preserves existing messages across calls" do
+      existing_msg = LLM::Message.new(:user, "previous message")
+      env = build_env(provider: provider, input: "hello", streaming: false, messages: [existing_msg])
+
+      middleware.call(env)
+
+      expect(env[:messages].first).to eq(existing_msg)
+      expect(env[:messages].size).to be > 1
     end
   end
 end

@@ -9,18 +9,21 @@ module MiddlewareHelpers
   # Override any key by passing keyword arguments.
   def build_env(**overrides)
     provider = overrides.delete(:provider) || MockProvider.new
-    context  = overrides.delete(:context)  || LLM::Context.new(provider, tools: [])
 
     {
-      context:      context,
       provider:     provider,
+      model:        overrides.delete(:model),
       input:        overrides.delete(:input) || "test prompt",
       tools:        overrides.delete(:tools) || [],
+      messages:     overrides.delete(:messages) || [],
+      stream:       overrides.delete(:stream),
       params:       overrides.delete(:params) || {},
       metadata:     overrides.delete(:metadata) || {},
       callbacks:    overrides.delete(:callbacks) || {},
       tool_results: overrides.delete(:tool_results),
       streaming:    overrides.delete(:streaming) || false,
+      should_exit:  overrides.delete(:should_exit),
+      pending_functions: overrides.delete(:pending_functions) || [],
     }.merge(overrides)
   end
 

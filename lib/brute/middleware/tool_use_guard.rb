@@ -6,19 +6,19 @@ module Brute
     # is dropped from the context buffer.
     #
     # When the LLM responds with only tool_use blocks (no text), llm.rb's
-    # response adapter produces empty choices. Context#talk appends nil,
-    # BufferNilGuard strips it, and the assistant message carrying tool_use
-    # blocks is lost. This causes "unexpected tool_use_id" on the next call
-    # because tool_result references a tool_use that's missing from the buffer.
+    # response adapter produces empty choices. The assistant message carrying
+    # tool_use blocks may be lost. This causes "unexpected tool_use_id" on
+    # the next call because tool_result references a tool_use that's missing
+    # from the message history.
     #
     # This middleware runs post-call and ensures every pending tool_use ID
-    # is covered by an assistant message in the buffer. It handles three
+    # is covered by an assistant message in env[:messages]. It handles three
     # cases:
     #
-    #   1. ctx.functions is non-empty and the assistant message exists → no-op
-    #   2. ctx.functions is non-empty but the assistant message is missing
+    #   1. pending_functions is non-empty and the assistant message exists → no-op
+    #   2. pending_functions is non-empty but the assistant message is missing
     #      (or has different IDs) → inject synthetic message
-    #   3. ctx.functions is empty (nil-choice bug) but the stream recorded
+    #   3. pending_functions is empty (nil-choice bug) but the stream recorded
     #      tool calls → inject synthetic message using stream metadata
     #
     class ToolUseGuard
@@ -29,32 +29,30 @@ module Brute
       def call(env)
         response = @app.call(env)
 
-        ctx = env[:context]
-
-        # Collect pending tool data from ctx.functions (primary) or the
-        # stream's recorded metadata (fallback for nil-choice bug).
-        tool_data = collect_tool_data(ctx, env)
+        # Collect pending tool data from env[:pending_functions] (primary)
+        # or the stream's recorded metadata (fallback for nil-choice bug).
+        tool_data = collect_tool_data(env)
         return response if tool_data.empty?
 
         # Find all tool_use IDs already covered by assistant messages.
-        covered_ids = covered_tool_ids(ctx)
+        covered_ids = covered_tool_ids(env[:messages])
 
         # Inject a synthetic assistant message for any uncovered tool calls.
         uncovered = tool_data.reject { |td| covered_ids.include?(td[:id]) }
-        inject_synthetic!(ctx, uncovered) unless uncovered.empty?
+        inject_synthetic!(env[:messages], uncovered) unless uncovered.empty?
 
         response
       end
 
       private
 
-      def collect_tool_data(ctx, env)
-        functions = ctx.functions
+      def collect_tool_data(env)
+        functions = env[:pending_functions]
         if functions && !functions.empty?
           functions.map { |fn| { id: fn.id, name: fn.name, arguments: fn.arguments } }
         elsif env[:streaming]
-          stream = resolve_stream(ctx)
-          if stream
+          stream = env[:stream]
+          if stream&.respond_to?(:pending_tool_calls)
             data = stream.pending_tool_calls.dup
             stream.clear_pending_tool_calls!
             data
@@ -66,19 +64,14 @@ module Brute
         end
       end
 
-      def resolve_stream(ctx)
-        stream = ctx.instance_variable_get(:@params)&.dig(:stream)
-        stream if stream.respond_to?(:pending_tool_calls)
-      end
-
-      def covered_tool_ids(ctx)
-        ctx.messages.to_a
+      def covered_tool_ids(messages)
+        messages
           .select { |m| m.role.to_s == "assistant" && m.tool_call? }
           .flat_map { |m| (m.extra.original_tool_calls || []).map { |tc| tc["id"] } }
           .to_set
       end
 
-      def inject_synthetic!(ctx, uncovered)
+      def inject_synthetic!(messages, uncovered)
         tool_calls = uncovered.map do |td|
           LLM::Object.from(id: td[:id], name: td[:name], arguments: td[:arguments])
         end
@@ -90,7 +83,7 @@ module Brute
           tool_calls: tool_calls,
           original_tool_calls: original_tool_calls,
         })
-        ctx.messages.concat([synthetic])
+        messages << synthetic
       end
     end
   end
@@ -109,14 +102,9 @@ if __FILE__ == $0
 
     it "passes the response through when there are no pending functions" do
       response = MockResponse.new(content: "no tools")
-      allow(provider).to receive(:complete).and_return(response)
-
-      ctx = LLM::Context.new(provider, tools: [])
-      prompt = ctx.prompt { |p| p.system("sys"); p.user("hi") }
-
-      inner_app = ->(_env) { ctx.talk(prompt); response }
+      inner_app = ->(_env) { response }
       middleware = described_class.new(inner_app)
-      env = build_env(context: ctx, provider: provider)
+      env = build_env(pending_functions: [])
 
       result = middleware.call(env)
       expect(result).to eq(response)
@@ -127,40 +115,38 @@ if __FILE__ == $0
       response = make_tool_response(tool_calls: tool_calls)
       allow(provider).to receive(:complete).and_return(response)
 
+      # Simulate: LLMCall built a context, talked, and extracted messages + functions
       ctx = LLM::Context.new(provider, tools: [])
       prompt = ctx.prompt { |p| p.system("sys"); p.user("read it") }
+      ctx.talk(prompt)
+      messages = ctx.messages.to_a.dup
+      functions = ctx.functions.to_a
 
-      inner_app = ->(_env) { ctx.talk(prompt); response }
+      inner_app = ->(_env) { response }
       middleware = described_class.new(inner_app)
-      env = build_env(context: ctx, provider: provider)
+      env = build_env(messages: messages, pending_functions: functions)
 
       middleware.call(env)
 
-      messages = ctx.messages.to_a
-      assistant_msgs = messages.select { |m| m.role.to_s == "assistant" }
+      assistant_msgs = env[:messages].select { |m| m.role.to_s == "assistant" }
       # Should only have the original assistant message, no synthetic
       expect(assistant_msgs.size).to eq(1)
     end
 
     it "injects a synthetic assistant message when tool calls exist but assistant is missing" do
       tool_calls = [{ id: "toolu_1", name: "fs_read", arguments: { "path" => "test.rb" } }]
+
+      fn = double("function", id: "toolu_1", name: "fs_read", arguments: { "path" => "test.rb" })
       response = MockResponse.new(content: "")
-      # Simulate the bug: choices[-1] is nil, so no assistant message stored
-      allow(response).to receive(:choices).and_return([nil])
-      allow(provider).to receive(:complete).and_return(response)
 
-      ctx = LLM::Context.new(provider, tools: [])
-      prompt = ctx.prompt { |p| p.system("sys"); p.user("read it") }
-
-      inner_app = ->(_env) do
-        ctx.talk(prompt)
-        response
-      end
-
+      inner_app = ->(_env) { response }
       middleware = described_class.new(inner_app)
-      env = build_env(context: ctx, provider: provider)
+      # Messages don't include an assistant with this tool call
+      env = build_env(messages: [], pending_functions: [fn])
 
       expect { middleware.call(env) }.not_to raise_error
+      assistant_msgs = env[:messages].select { |m| m.role.to_s == "assistant" }
+      expect(assistant_msgs.size).to eq(1)
     end
   end
 end

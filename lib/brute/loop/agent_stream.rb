@@ -6,14 +6,15 @@ if __FILE__ == $0
 end
 
 module Brute
+  module Loop
   # Bridges llm.rb's streaming callbacks to the host application.
   #
   # Text and reasoning chunks fire immediately as the LLM generates them.
   # Tool calls are collected but NOT executed — execution is deferred to the
-  # orchestrator after the stream completes. This ensures text is never
+  # agent loop after the stream completes. This ensures text is never
   # concurrent with tool execution.
   #
-  # After the stream finishes, the orchestrator reads +pending_tools+ to
+  # After the stream finishes, the agent loop reads +pending_tools+ to
   # dispatch all tool calls concurrently, then fires +on_tool_call_start+
   # once with the full batch.
   #
@@ -23,7 +24,7 @@ module Brute
     attr_reader :pending_tool_calls
 
     # Deferred tool/error pairs: [(LLM::Function, error_or_nil), ...]
-    # The orchestrator reads these after the stream completes.
+    # The agent loop reads these after the stream completes.
     attr_reader :pending_tools
 
     def initialize(on_content: nil, on_reasoning: nil, on_question: nil)
@@ -34,7 +35,7 @@ module Brute
       @pending_tools = []
     end
 
-    # The on_question callback, needed by the orchestrator to set
+    # The on_question callback, needed by the agent loop to set
     # thread/fiber-locals before tool execution.
     attr_reader :on_question
 
@@ -59,18 +60,19 @@ module Brute
       @pending_tool_calls.clear
     end
 
-    # Clear the deferred execution queue after the orchestrator has
+    # Clear the deferred execution queue after the agent loop has
     # consumed and dispatched all tool calls.
     def clear_pending_tools!
       @pending_tools.clear
     end
   end
+  end
 end
 
 if __FILE__ == $0
-  require_relative "../../spec/spec_helper"
+  require_relative "../../../spec/spec_helper"
 
-  RSpec.describe Brute::AgentStream do
+  RSpec.describe Brute::Loop::AgentStream do
     # Build a mock tool that quacks like LLM::Function.
     def mock_tool(id:, name:, arguments: {})
       instance_double(LLM::Function,

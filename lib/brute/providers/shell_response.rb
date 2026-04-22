@@ -12,12 +12,12 @@ module Brute
     # Synthetic completion response returned by Brute::Providers::Shell.
     #
     # When +command+ is present, the response contains a single assistant
-    # message with a "shell" tool call. The orchestrator picks it up and
+    # message with a "shell" tool call. The agent loop picks it up and
     # executes Brute::Tools::Shell through the normal pipeline.
     #
     # When +command+ is nil (tool results round-trip), the response
     # contains an empty assistant message with no tool calls, causing
-    # the orchestrator loop to exit.
+    # the agent loop to exit.
     #
     class ShellResponse
       def initialize(command: nil, model: "bash", tools: [])

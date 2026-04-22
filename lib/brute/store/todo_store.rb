@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Brute
+  module Store
   # In-memory todo list storage. The agent uses this to track multi-step tasks.
   # The list is replaced wholesale on each todo_write call.
   module TodoStore
@@ -23,5 +24,6 @@ module Brute
         @mutex.synchronize { @items.clear }
       end
     end
+  end
   end
 end

@@ -1,27 +1,41 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Session persistence — run the agent, then resume the same conversation.
-#
-# Uses a local Ollama instance. Start Ollama first:
-#   ollama serve
-#   ollama pull qwen2.5:14b
+# Session persistence — two turns share the same session.
 
-require_relative "../lib/brute"
-require "json"
+require_relative "helper"
 
-ollama = Brute::Providers::Ollama.new
+provider_for_example :ollama
 
-session = Brute::Session.new
-session_id = session.id
+@session = Brute::Store::Session.new
+@model   = "tinyllama"
 
-agent = Brute.agent(provider: ollama, model: "qwen2.5:14b", cwd: Dir.pwd, session: session)
-agent.run("Remember this: the secret project codename is FALCON. Just acknowledge.")
+agent = Brute::Agent.new(
+  provider: @provider,
+  model: @model,
+  tools: [],
+  system_prompt: system_prompt,
+)
 
-resumed_session = Brute::Session.new(id: session_id)
-resumed_agent = Brute.agent(provider: ollama, model: "qwen2.5:14b", cwd: Dir.pwd, session: resumed_session)
-resumed_agent.run("What is the secret project codename I told you?")
+pipeline = full_pipeline
 
-resumed_agent.message_store.messages.each { |msg| puts JSON.generate(msg) }
+# First turn — tell it something
+step1 = Brute::Loop::AgentTurn.perform(
+  agent: agent,
+  session: @session,
+  pipeline: pipeline,
+  input: "Remember this: the secret project codename is FALCON. Just acknowledge.",
+)
+puts "Turn 1: #{step1.state}"
 
-session.delete
+# Second turn — same session, ask it back
+step2 = Brute::Loop::AgentTurn.perform(
+  agent: agent,
+  session: @session,
+  pipeline: pipeline,
+  input: "What is the secret project codename I told you?",
+)
+puts "Turn 2: #{step2.state}"
+puts step2.result.content if step2.state == :completed
+
+@session.delete

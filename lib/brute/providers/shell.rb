@@ -15,7 +15,7 @@ module Brute
     #   nix    - nix eval --expr '...'
     #
     # The provider's #complete method returns a synthetic response
-    # containing a single "shell" tool call. The orchestrator executes
+    # containing a single "shell" tool call. The agent loop executes
     # it through the normal pipeline — all middleware (message tracking,
     # session persistence, token tracking, etc.) fires as usual.
     #
@@ -45,7 +45,7 @@ module Brute
         tools = params[:tools] || []
 
         # nil text means we received tool results (second call) —
-        # return an empty assistant response so the orchestrator exits.
+        # return an empty assistant response so the agent loop exits.
         return ShellResponse.new(model: model, tools: tools) if text.nil?
 
         wrap    = INTERPRETERS.fetch(model, INTERPRETERS["bash"])

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Brute
+  module Store
   # Copy-on-write snapshot storage for file undo support.
   # Saves the previous content of a file before mutation so it can be restored.
   # Each file maintains a stack of snapshots, supporting multiple undo levels.
@@ -45,5 +46,6 @@ module Brute
         @mutex.synchronize { @store.clear }
       end
     end
+  end
   end
 end

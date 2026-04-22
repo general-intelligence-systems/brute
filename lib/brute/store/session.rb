@@ -5,6 +5,7 @@ require "fileutils"
 require "securerandom"
 
 module Brute
+  module Store
   # Manages session persistence. Each session is a conversation that can be
   # saved to disk and resumed later.
   #
@@ -12,7 +13,7 @@ module Brute
   #
   #   ~/.brute/sessions/{session-id}/
   #     session.meta.json          # session metadata
-  #     context.json               # llm.rb context blob (for resumption)
+  #     context.json               # serialized conversation history
   #     msg_0001.json              # structured messages (OpenCode format)
   #     msg_0002.json
   #     ...
@@ -34,23 +35,19 @@ module Brute
       @message_store ||= MessageStore.new(session_id: @id, dir: @session_dir)
     end
 
-    def save(context, title: nil, metadata: {})
+    # Serialize an array of LLM::Message objects to disk as JSON.
+    def save_messages(messages, title: nil, metadata: {})
       @title = title if title
       @metadata.merge!(metadata)
 
-      context.save(path: @path)
+      data = {
+        schema_version: 1,
+        messages: messages.map { |m| { role: m.role.to_s, content: m.content.to_s } },
+      }
+      FileUtils.mkdir_p(File.dirname(@path))
+      File.write(@path, JSON.pretty_generate(data))
 
       save_meta
-    end
-
-    def restore(context)
-      if File.exist?(@path)
-        context.restore(path: @path)
-        load_meta
-        true
-      else
-        false
-      end
     end
 
     # List all saved sessions, newest first.
@@ -104,5 +101,6 @@ module Brute
         @title = data[:title]
         @metadata = data[:metadata] || {}
       end
+  end
   end
 end

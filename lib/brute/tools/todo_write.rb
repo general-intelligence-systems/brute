@@ -29,7 +29,7 @@ module Brute
           t = t.transform_keys(&:to_sym) if t.is_a?(Hash)
           {id: t[:id], content: t[:content], status: t[:status]}
         end
-        Brute::TodoStore.replace(items)
+        Brute::Store::TodoStore.replace(items)
         {success: true, count: items.size}
       end
     end

@@ -19,13 +19,13 @@ module Brute
 
       def call(file_path:, old_string:, new_string:, replace_all: false)
         path = File.expand_path(file_path)
-        Brute::FileMutationQueue.serialize(path) do
+        Brute::Queue::FileMutationQueue.serialize(path) do
           raise "File not found: #{path}" unless File.exist?(path)
 
           original = File.read(path)
           raise "old_string not found in #{path}" unless original.include?(old_string)
 
-          Brute::SnapshotStore.save(path)
+          Brute::Store::SnapshotStore.save(path)
 
           updated = if replace_all
                       original.gsub(old_string, new_string)

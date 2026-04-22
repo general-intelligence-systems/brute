@@ -9,8 +9,9 @@ module Brute
   module Middleware
     # Saves the conversation to disk after each LLM call.
     #
-    # Runs POST-call: delegates to Session#save. Failures are non-fatal —
-    # a broken session save should never crash the agent loop.
+    # Runs POST-call: serializes env[:messages] via Session#save_messages.
+    # Failures are non-fatal — a broken session save should never crash
+    # the agent loop.
     #
     class SessionPersistence < Base
       def initialize(app, session:)
@@ -22,7 +23,7 @@ module Brute
         response = @app.call(env)
 
         begin
-          @session.save(env[:context])
+          @session.save_messages(env[:messages])
         rescue => e
           warn "[brute] Session save failed: #{e.message}"
         end
@@ -39,7 +40,7 @@ if __FILE__ == $0
   RSpec.describe Brute::Middleware::SessionPersistence do
     let(:response) { MockResponse.new(content: "saved response") }
     let(:inner_app) { ->(_env) { response } }
-    let(:session) { double("session", save: nil) }
+    let(:session) { double("session", save_messages: nil) }
     let(:middleware) { described_class.new(inner_app, session: session) }
 
     it "passes the response through unchanged" do
@@ -48,21 +49,22 @@ if __FILE__ == $0
       expect(result).to eq(response)
     end
 
-    it "calls session.save with the context after a successful LLM call" do
-      env = build_env
+    it "calls session.save_messages with env[:messages] after a successful LLM call" do
+      messages = [LLM::Message.new(:user, "hello")]
+      env = build_env(messages: messages)
       middleware.call(env)
-      expect(session).to have_received(:save).with(env[:context])
+      expect(session).to have_received(:save_messages).with(messages)
     end
 
     it "does not propagate session save failures" do
-      allow(session).to receive(:save).and_raise(RuntimeError, "disk full")
+      allow(session).to receive(:save_messages).and_raise(RuntimeError, "disk full")
       env = build_env
 
       expect { middleware.call(env) }.not_to raise_error
     end
 
     it "prints a warning to stderr on save failure" do
-      allow(session).to receive(:save).and_raise(RuntimeError, "disk full")
+      allow(session).to receive(:save_messages).and_raise(RuntimeError, "disk full")
       env = build_env
 
       expect { middleware.call(env) }.to output(/Session save failed: disk full/).to_stderr

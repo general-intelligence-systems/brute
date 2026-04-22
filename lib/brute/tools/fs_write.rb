@@ -19,9 +19,9 @@ module Brute
 
       def call(file_path:, content:)
         path = File.expand_path(file_path)
-        Brute::FileMutationQueue.serialize(path) do
+        Brute::Queue::FileMutationQueue.serialize(path) do
           old_content = File.exist?(path) ? File.read(path) : ''
-          Brute::SnapshotStore.save(path)
+          Brute::Store::SnapshotStore.save(path)
           FileUtils.mkdir_p(File.dirname(path))
           File.write(path, content)
           diff = Brute::Diff.unified(old_content, content)

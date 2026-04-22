@@ -17,10 +17,10 @@ module Brute
 
       def call(path:)
         target = File.expand_path(path)
-        Brute::FileMutationQueue.serialize(target) do
+        Brute::Queue::FileMutationQueue.serialize(target) do
           raise "Path not found: #{target}" unless File.exist?(target)
 
-          Brute::SnapshotStore.save(target) if File.file?(target)
+          Brute::Store::SnapshotStore.save(target) if File.file?(target)
 
           if File.directory?(target)
             Dir.rmdir(target)

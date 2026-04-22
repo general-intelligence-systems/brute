@@ -15,7 +15,7 @@ module Brute
     # and counts failures and totals.
     #
     # When any tool exceeds max_failures, it sets env[:metadata][:tool_error_limit_reached]
-    # so the orchestrator can decide to stop.
+    # so the agent loop can decide to stop.
     #
     # Also stores env[:metadata][:tool_calls] with the cumulative number of
     # tool invocations in the current session.
@@ -43,6 +43,15 @@ module Brute
         env[:metadata][:tool_calls] = @total_tool_calls
         env[:metadata][:tool_errors] = @errors.dup
         env[:metadata][:tool_error_limit_reached] = @errors.any? { |_, c| c >= @max_failures }
+
+        if env[:metadata][:tool_error_limit_reached]
+          failed_tool, fail_count = @errors.max_by { |_, c| c }
+          env[:should_exit] ||= {
+            reason:  "tool_error_limit_reached",
+            message: "Tool '#{failed_tool}' has failed #{fail_count} times (limit: #{@max_failures}). Stopping.",
+            source:  "ToolErrorTracking",
+          }
+        end
 
         @app.call(env)
       end
@@ -148,6 +157,49 @@ if __FILE__ == $0
 
       expect(env2[:metadata][:tool_calls]).to eq(0)
       expect(env2[:metadata][:tool_errors]).to eq({})
+    end
+
+    # -- should_exit signal --
+
+    it "sets env[:should_exit] when the error limit is reached" do
+      results = [
+        ["fs_read", { error: "fail 1" }],
+        ["fs_read", { error: "fail 2" }],
+        ["fs_read", { error: "fail 3" }],
+      ]
+      env = build_env(tool_results: results)
+      middleware.call(env)
+
+      expect(env[:should_exit]).to be_a(Hash)
+      expect(env[:should_exit][:reason]).to eq("tool_error_limit_reached")
+      expect(env[:should_exit][:source]).to eq("ToolErrorTracking")
+      expect(env[:should_exit][:message]).to include("fs_read")
+      expect(env[:should_exit][:message]).to include("3 times")
+    end
+
+    it "does not set env[:should_exit] below the threshold" do
+      results = [
+        ["fs_read", { error: "fail 1" }],
+        ["fs_read", { error: "fail 2" }],
+      ]
+      env = build_env(tool_results: results)
+      middleware.call(env)
+
+      expect(env[:should_exit]).to be_nil
+    end
+
+    it "does not overwrite env[:should_exit] if already set (first-writer-wins)" do
+      results = [
+        ["fs_read", { error: "fail 1" }],
+        ["fs_read", { error: "fail 2" }],
+        ["fs_read", { error: "fail 3" }],
+      ]
+      existing_exit = { reason: "doom_loop_detected", message: "loop", source: "DoomLoopDetection" }
+      env = build_env(tool_results: results, should_exit: existing_exit)
+      middleware.call(env)
+
+      expect(env[:should_exit][:reason]).to eq("doom_loop_detected")
+      expect(env[:should_exit][:source]).to eq("DoomLoopDetection")
     end
   end
 end

@@ -14,7 +14,7 @@ module Brute
     # call. It also tracks total wall-clock time across all calls in a turn
     # (including tool execution gaps between LLM calls).
     #
-    # A new turn is detected when env[:tool_results] is nil (the orchestrator
+    # A new turn is detected when env[:tool_results] is nil (the agent loop
     # sets this on the first call of each run()).
     #
     # Stores in env[:metadata][:timing]:
@@ -41,7 +41,7 @@ module Brute
           @total_llm_elapsed = 0.0
         end
 
-        messages = env[:context].messages.to_a
+        messages = env[:messages]
         @logger.debug("[brute] LLM call ##{@call_count} (#{messages.size} messages in context)")
 
         start = Process.clock_gettime(Process::CLOCK_MONOTONIC)

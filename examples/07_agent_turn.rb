@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Basic agent — ask a question, get a response.
+# Single AgentTurn — one prompt, tool loop, done.
 
 require_relative "helper"
 
@@ -13,7 +13,7 @@ provider_for_example :ollama
 agent = Brute::Agent.new(
   provider: @provider,
   model: @model,
-  tools: Brute::Tools::ALL,
+  tools: [],
   system_prompt: system_prompt,
 )
 
@@ -21,12 +21,12 @@ step = Brute::Loop::AgentTurn.perform(
   agent: agent,
   session: @session,
   pipeline: full_pipeline,
-  input: "What files are in the current directory? List them.",
+  input: "What is 2 + 2?",
 )
 
 puts "State: #{step.state}"
 if step.state == :completed
-  puts step.result.content
+  puts "Response: #{step.result.content}"
 else
   puts "Error: #{step.error}"
 end

@@ -5,6 +5,7 @@ require "fileutils"
 require "securerandom"
 
 module Brute
+  module Store
   # Stores session messages as individual JSON files in the OpenCode
   # {info, parts} format. Each session gets a directory; each message
   # is a numbered JSON file inside it.
@@ -242,14 +243,15 @@ module Brute
         end
       end
   end
+  end
 end
 
 if __FILE__ == $0
-  require_relative "../../spec/spec_helper"
+  require_relative "../../../spec/spec_helper"
 
   require "tmpdir"
 
-  RSpec.describe Brute::MessageStore do
+  RSpec.describe Brute::Store::MessageStore do
     let(:tmpdir) { Dir.mktmpdir("brute_test_") }
     let(:session_id) { "test-session-123" }
     let(:store) { described_class.new(session_id: session_id, dir: tmpdir) }

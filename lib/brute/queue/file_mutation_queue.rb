@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Brute
+  module Queue
   # Per-file serialization queue for concurrent tool execution.
   #
   # When tools run in parallel (via threads or async fibers), multiple tools
@@ -62,38 +63,39 @@ module Brute
 
       private
 
-      # Resolve a file path to a canonical key.
-      # Uses File.realpath to follow symlinks so that aliases to the
-      # same underlying file share one mutex. Falls back to
-      # File.expand_path for files that don't exist yet (e.g., new writes).
-      def canonical_path(path)
-        resolved = File.expand_path(path)
-        begin
-          File.realpath(resolved)
-        rescue Errno::ENOENT
-          resolved
-        end
-      end
-
-      # Get (or create) a mutex for a file path and increment the waiter count.
-      def acquire_mutex(key)
-        @guard.synchronize do
-          @mutexes[key] ||= Mutex.new
-          @waiters[key] += 1
-          @mutexes[key]
-        end
-      end
-
-      # Decrement the waiter count and clean up the mutex if no one else needs it.
-      def release_mutex(key)
-        @guard.synchronize do
-          @waiters[key] -= 1
-          if @waiters[key] <= 0
-            @mutexes.delete(key)
-            @waiters.delete(key)
+        # Resolve a file path to a canonical key.
+        # Uses File.realpath to follow symlinks so that aliases to the
+        # same underlying file share one mutex. Falls back to
+        # File.expand_path for files that don't exist yet (e.g., new writes).
+        def canonical_path(path)
+          resolved = File.expand_path(path)
+          begin
+            File.realpath(resolved)
+          rescue Errno::ENOENT
+            resolved
           end
         end
-      end
+
+        # Get (or create) a mutex for a file path and increment the waiter count.
+        def acquire_mutex(key)
+          @guard.synchronize do
+            @mutexes[key] ||= Mutex.new
+            @waiters[key] += 1
+            @mutexes[key]
+          end
+        end
+
+        # Decrement the waiter count and clean up the mutex if no one else needs it.
+        def release_mutex(key)
+          @guard.synchronize do
+            @waiters[key] -= 1
+            if @waiters[key] <= 0
+              @mutexes.delete(key)
+              @waiters.delete(key)
+            end
+          end
+        end
     end
+  end
   end
 end
