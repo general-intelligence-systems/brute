@@ -33,30 +33,27 @@ This is a complete, runnable script. It creates an agent, queues three turns aga
 ```ruby
 require "brute"
 
-AGENT = Brute::Agent.new(
-  provider:      Brute::Providers.guess_from_env,
-  model:         provider.default_model,
-  tools:         Brute::Tools::ALL,
-  system_prompt: Brute::SystemPrompt.default.prepare(
-    provider_name: provider.name.to_s,
-    model_name:    provider.default_model.to_s,
-    cwd:           Dir.pwd,
-  ).to_s
-)
-
-STEPS = [
-  "Create a file called config.yml with settings for a web app: port, host, database_url, log_level.",
-  "Change the port to 8080 and add a redis_url setting.",
-  "Read config.yml and summarize all the settings.",
-]
-
 Sync do
   Brute::Store::Session.new.then do |session|
     Brute::Queue::SequentialQueue.new.then do |queue|
-      STEPS.each do |input|
+      [
+        "Create a file called config.yml with settings for a web app: port, host, database_url, log_level.",
+        "Change the port to 8080 and add a redis_url setting.",
+        "Read config.yml and summarize all the settings.",
+
+      ].each do |input|
         queue << Brute::Loop::AgentTurn.new(
           input:   input,
-          agent:   AGENT,
+          agent:   Brute::Agent.new(
+            provider:      Brute::Providers.guess_from_env,
+            model:         provider.default_model,
+            tools:         Brute::Tools::ALL,
+            system_prompt: Brute::SystemPrompt.default.prepare(
+              provider_name: provider.name.to_s,
+              model_name:    provider.default_model.to_s,
+              cwd:           Dir.pwd,
+            ).to_s
+          ),
           session: SESSION,
           pipeline: Brute::Pipeline.new do
             use Brute::Middleware::Tracing,
