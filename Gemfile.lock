@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    brute (1.0.0)
+    brute (1.0.1)
       async (~> 2.0)
       diff-lcs (>= 1.5)
       llm.rb (~> 4.11)
