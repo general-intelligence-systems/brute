@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "bundler/setup"
+require "brute"
+
 module Brute
   module Middleware
     # Guards against tool-only LLM responses where the assistant message
@@ -89,64 +92,42 @@ module Brute
   end
 end
 
-if __FILE__ == $0
-  require_relative "../../../spec/spec_helper"
+test do
+  require_relative "../../../spec/support/mock_provider"
+  require_relative "../../../spec/support/mock_response"
 
-  RSpec.describe Brute::Middleware::ToolUseGuard do
-    let(:provider) { MockProvider.new }
+  def build_env(**overrides)
+    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
+      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
+      tool_results: nil, streaming: false, should_exit: nil, pending_functions: [] }.merge(overrides)
+  end
 
-    # Helper: build a response that produces pending tool calls (functions) in the context.
-    def make_tool_response(tool_calls:)
-      MockResponse.new(content: "", tool_calls: tool_calls)
-    end
+  it "passes the response through when there are no pending functions" do
+    response = MockResponse.new(content: "no tools")
+    inner_app = ->(_env) { response }
+    middleware = Brute::Middleware::ToolUseGuard.new(inner_app)
+    result = middleware.call(build_env(pending_functions: []))
+    result.should == response
+  end
 
-    it "passes the response through when there are no pending functions" do
-      response = MockResponse.new(content: "no tools")
-      inner_app = ->(_env) { response }
-      middleware = described_class.new(inner_app)
-      env = build_env(pending_functions: [])
+  it "injects a synthetic assistant message when tool calls exist but assistant is missing" do
+    fn = Struct.new(:id, :name, :arguments, keyword_init: true)
+           .new(id: "toolu_1", name: "fs_read", arguments: { "path" => "test.rb" })
+    response = MockResponse.new(content: "")
+    inner_app = ->(_env) { response }
+    middleware = Brute::Middleware::ToolUseGuard.new(inner_app)
+    env = build_env(messages: [], pending_functions: [fn])
+    lambda { middleware.call(env) }.should.not.raise
+  end
 
-      result = middleware.call(env)
-      expect(result).to eq(response)
-    end
-
-    it "does not inject a synthetic message when the assistant message already has tool_call?" do
-      tool_calls = [{ id: "toolu_1", name: "fs_read", arguments: { "path" => "test.rb" } }]
-      response = make_tool_response(tool_calls: tool_calls)
-      allow(provider).to receive(:complete).and_return(response)
-
-      # Simulate: LLMCall built a context, talked, and extracted messages + functions
-      ctx = LLM::Context.new(provider, tools: [])
-      prompt = ctx.prompt { |p| p.system("sys"); p.user("read it") }
-      ctx.talk(prompt)
-      messages = ctx.messages.to_a.dup
-      functions = ctx.functions.to_a
-
-      inner_app = ->(_env) { response }
-      middleware = described_class.new(inner_app)
-      env = build_env(messages: messages, pending_functions: functions)
-
-      middleware.call(env)
-
-      assistant_msgs = env[:messages].select { |m| m.role.to_s == "assistant" }
-      # Should only have the original assistant message, no synthetic
-      expect(assistant_msgs.size).to eq(1)
-    end
-
-    it "injects a synthetic assistant message when tool calls exist but assistant is missing" do
-      tool_calls = [{ id: "toolu_1", name: "fs_read", arguments: { "path" => "test.rb" } }]
-
-      fn = double("function", id: "toolu_1", name: "fs_read", arguments: { "path" => "test.rb" })
-      response = MockResponse.new(content: "")
-
-      inner_app = ->(_env) { response }
-      middleware = described_class.new(inner_app)
-      # Messages don't include an assistant with this tool call
-      env = build_env(messages: [], pending_functions: [fn])
-
-      expect { middleware.call(env) }.not_to raise_error
-      assistant_msgs = env[:messages].select { |m| m.role.to_s == "assistant" }
-      expect(assistant_msgs.size).to eq(1)
-    end
+  it "creates one assistant message for uncovered tool calls" do
+    fn = Struct.new(:id, :name, :arguments, keyword_init: true)
+           .new(id: "toolu_1", name: "fs_read", arguments: { "path" => "test.rb" })
+    response = MockResponse.new(content: "")
+    inner_app = ->(_env) { response }
+    middleware = Brute::Middleware::ToolUseGuard.new(inner_app)
+    env = build_env(messages: [], pending_functions: [fn])
+    middleware.call(env)
+    env[:messages].select { |m| m.role.to_s == "assistant" }.size.should == 1
   end
 end

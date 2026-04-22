@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "bundler/setup"
+require "brute"
+
 module Brute
   module Prompts
     module Instructions
@@ -17,26 +20,20 @@ module Brute
   end
 end
 
-if __FILE__ == $0
-  require_relative "../../../spec/spec_helper"
+test do
+  it "returns nil when custom_rules is nil" do
+    Brute::Prompts::Instructions.call(custom_rules: nil).should.be.nil
+  end
 
-  RSpec.describe Brute::Prompts::Instructions do
-    it "returns nil when custom_rules is nil" do
-      expect(described_class.call(custom_rules: nil)).to be_nil
-    end
+  it "returns nil when custom_rules is empty" do
+    Brute::Prompts::Instructions.call(custom_rules: "").should.be.nil
+  end
 
-    it "returns nil when custom_rules is empty" do
-      expect(described_class.call(custom_rules: "")).to be_nil
-    end
+  it "returns nil when custom_rules is whitespace-only" do
+    Brute::Prompts::Instructions.call(custom_rules: "   \n  ").should.be.nil
+  end
 
-    it "returns nil when custom_rules is whitespace-only" do
-      expect(described_class.call(custom_rules: "   \n  ")).to be_nil
-    end
-
-    it "wraps custom_rules in a Project-Specific Rules header" do
-      text = described_class.call(custom_rules: "Always use tabs.")
-      expect(text).to include("Project-Specific Rules")
-      expect(text).to include("Always use tabs.")
-    end
+  it "wraps custom_rules in a Project-Specific Rules header" do
+    Brute::Prompts::Instructions.call(custom_rules: "Always use tabs.").should =~ /Project-Specific Rules/
   end
 end

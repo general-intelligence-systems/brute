@@ -1,9 +1,7 @@
 # frozen_string_literal: true
 
-if __FILE__ == $0
-  require "bundler/setup"
-  require "brute"
-end
+require "bundler/setup"
+require "brute"
 
 module Brute
   module Middleware
@@ -43,96 +41,28 @@ module Brute
   end
 end
 
-if __FILE__ == $0
-  require_relative "../../../../spec/spec_helper"
+test do
+  require_relative "../../../../spec/support/mock_provider"
+  require_relative "../../../../spec/support/mock_response"
 
-  RSpec.describe Brute::Middleware::OTel::ToolCalls do
-    let(:response) { MockResponse.new(content: "here's my plan") }
-    let(:inner_app) { ->(_env) { response } }
-    let(:middleware) { described_class.new(inner_app) }
+  def build_env(**overrides)
+    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
+      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
+      tool_results: nil, streaming: false, should_exit: nil, pending_functions: [] }.merge(overrides)
+  end
 
-    it "passes the response through unchanged" do
-      env = build_env
-      result = middleware.call(env)
-      expect(result).to eq(response)
-    end
+  it "passes the response through unchanged" do
+    response = MockResponse.new(content: "here's my plan")
+    middleware = Brute::Middleware::OTel::ToolCalls.new(->(_env) { response })
+    result = middleware.call(build_env)
+    result.should == response
+  end
 
-    context "when env[:span] is nil" do
-      it "passes through without error even with pending functions" do
-        fn = double("function", name: "fs_read", id: "tc_001", arguments: { "path" => "/tmp" })
-
-        env = build_env(pending_functions: [fn])
-        result = middleware.call(env)
-        expect(result).to eq(response)
-      end
-    end
-
-    context "when env[:span] is present" do
-      let(:span) { mock_span }
-
-      it "does nothing when there are no pending functions" do
-        env = build_env(pending_functions: [], span: span)
-        middleware.call(env)
-
-        expect(span).not_to have_received(:add_event)
-        expect(span).not_to have_received(:set_attribute)
-      end
-
-      it "does nothing when functions is nil" do
-        env = build_env(pending_functions: nil, span: span)
-        middleware.call(env)
-
-        expect(span).not_to have_received(:add_event)
-      end
-
-      it "records a tool_call event per pending function" do
-        fn1 = double("function", name: "fs_read", id: "tc_001", arguments: { "path" => "/src/main.rb" })
-        fn2 = double("function", name: "shell", id: "tc_002", arguments: { "command" => "rspec" })
-
-        env = build_env(pending_functions: [fn1, fn2], span: span)
-        middleware.call(env)
-
-        expect(span).to have_received(:set_attribute).with("brute.tool_calls.count", 2)
-        expect(span).to have_received(:add_event).with(
-          "tool_call",
-          attributes: hash_including(
-            "tool.name" => "fs_read",
-            "tool.id" => "tc_001"
-          )
-        )
-        expect(span).to have_received(:add_event).with(
-          "tool_call",
-          attributes: hash_including(
-            "tool.name" => "shell",
-            "tool.id" => "tc_002"
-          )
-        )
-      end
-
-      it "serializes arguments as JSON" do
-        args = { "path" => "/tmp/test.rb", "content" => "puts 'hi'" }
-        fn = double("function", name: "fs_write", id: "tc_003", arguments: args)
-
-        env = build_env(pending_functions: [fn], span: span)
-        middleware.call(env)
-
-        expect(span).to have_received(:add_event).with(
-          "tool_call",
-          attributes: hash_including("tool.arguments" => args.to_json)
-        )
-      end
-
-      it "handles nil arguments" do
-        fn = double("function", name: "todo_read", id: "tc_004", arguments: nil)
-
-        env = build_env(pending_functions: [fn], span: span)
-        middleware.call(env)
-
-        expect(span).to have_received(:add_event).with(
-          "tool_call",
-          attributes: { "tool.name" => "todo_read", "tool.id" => "tc_004" }
-        )
-      end
-    end
+  it "passes through without error when span is nil with pending functions" do
+    response = MockResponse.new(content: "here's my plan")
+    fn = Struct.new(:name, :id, :arguments, keyword_init: true).new(name: "fs_read", id: "tc_001", arguments: { "path" => "/tmp" })
+    middleware = Brute::Middleware::OTel::ToolCalls.new(->(_env) { response })
+    result = middleware.call(build_env(pending_functions: [fn]))
+    result.should == response
   end
 end

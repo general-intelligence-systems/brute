@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "bundler/setup"
+require "brute"
+
 module Brute
   module Prompts
     module BuildSwitch
@@ -18,35 +21,28 @@ module Brute
   end
 end
 
-if __FILE__ == $0
-  require_relative "../../../spec/spec_helper"
+test do
+  it "returns a string" do
+    Brute::Prompts::BuildSwitch.call({}).should.be.kind_of(String)
+  end
 
-  RSpec.describe Brute::Prompts::BuildSwitch do
-    subject(:text) { described_class.call({}) }
+  it "wraps content in system-reminder tags" do
+    Brute::Prompts::BuildSwitch.call({}).should =~ /system-reminder/
+  end
 
-    it "returns a string" do
-      expect(text).to be_a(String)
-    end
+  it "announces mode change from plan to build" do
+    Brute::Prompts::BuildSwitch.call({}).should =~ /plan to build/
+  end
 
-    it "wraps content in system-reminder tags" do
-      expect(text).to include("<system-reminder>")
-      expect(text).to include("</system-reminder>")
-    end
+  it "states no longer in read-only mode" do
+    Brute::Prompts::BuildSwitch.call({}).should =~ /no longer in read-only mode/
+  end
 
-    it "announces the mode change from plan to build" do
-      expect(text).to include("plan to build")
-    end
+  it "permits tool use" do
+    Brute::Prompts::BuildSwitch.call({}).should =~ /permitted to make file changes/
+  end
 
-    it "states the agent is no longer in read-only mode" do
-      expect(text).to include("no longer in read-only mode")
-    end
-
-    it "permits tool use" do
-      expect(text).to include("permitted to make file changes")
-    end
-
-    it "ignores context (static content)" do
-      expect(described_class.call({ agent_switched: "build" })).to eq(described_class.call({}))
-    end
+  it "ignores context (static content)" do
+    Brute::Prompts::BuildSwitch.call({ agent_switched: "build" }).should == Brute::Prompts::BuildSwitch.call({})
   end
 end

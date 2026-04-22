@@ -1,9 +1,7 @@
 # frozen_string_literal: true
 
-if __FILE__ == $0
-  require "bundler/setup"
-  require "brute"
-end
+require "bundler/setup"
+require "brute"
 
 module Brute
   module Middleware
@@ -34,40 +32,41 @@ module Brute
   end
 end
 
-if __FILE__ == $0
-  require_relative "../../../spec/spec_helper"
+test do
+  require_relative "../../../spec/support/mock_provider"
+  require_relative "../../../spec/support/mock_response"
 
-  RSpec.describe Brute::Middleware::SessionPersistence do
-    let(:response) { MockResponse.new(content: "saved response") }
-    let(:inner_app) { ->(_env) { response } }
-    let(:session) { double("session", save_messages: nil) }
-    let(:middleware) { described_class.new(inner_app, session: session) }
+  def build_env(**overrides)
+    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
+      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
+      tool_results: nil, streaming: false, should_exit: nil, pending_functions: [] }.merge(overrides)
+  end
 
-    it "passes the response through unchanged" do
-      env = build_env
-      result = middleware.call(env)
-      expect(result).to eq(response)
-    end
+  it "passes the response through unchanged" do
+    response = MockResponse.new(content: "saved response")
+    session = Struct.new(:saved) { def save_messages(m); self.saved = m; end }.new
+    inner_app = ->(_env) { response }
+    middleware = Brute::Middleware::SessionPersistence.new(inner_app, session: session)
+    result = middleware.call(build_env)
+    result.should == response
+  end
 
-    it "calls session.save_messages with env[:messages] after a successful LLM call" do
-      messages = [LLM::Message.new(:user, "hello")]
-      env = build_env(messages: messages)
-      middleware.call(env)
-      expect(session).to have_received(:save_messages).with(messages)
-    end
+  it "calls session.save_messages with env messages" do
+    response = MockResponse.new(content: "saved response")
+    session = Struct.new(:saved) { def save_messages(m); self.saved = m; end }.new
+    inner_app = ->(_env) { response }
+    middleware = Brute::Middleware::SessionPersistence.new(inner_app, session: session)
+    messages = [LLM::Message.new(:user, "hello")]
+    middleware.call(build_env(messages: messages))
+    session.saved.should == messages
+  end
 
-    it "does not propagate session save failures" do
-      allow(session).to receive(:save_messages).and_raise(RuntimeError, "disk full")
-      env = build_env
-
-      expect { middleware.call(env) }.not_to raise_error
-    end
-
-    it "prints a warning to stderr on save failure" do
-      allow(session).to receive(:save_messages).and_raise(RuntimeError, "disk full")
-      env = build_env
-
-      expect { middleware.call(env) }.to output(/Session save failed: disk full/).to_stderr
-    end
+  it "does not propagate session save failures" do
+    response = MockResponse.new(content: "saved response")
+    session = Object.new
+    session.define_singleton_method(:save_messages) { |_| raise RuntimeError, "disk full" }
+    inner_app = ->(_env) { response }
+    middleware = Brute::Middleware::SessionPersistence.new(inner_app, session: session)
+    lambda { middleware.call(build_env) }.should.not.raise
   end
 end

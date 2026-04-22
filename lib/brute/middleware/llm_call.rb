@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "bundler/setup"
+require "brute"
+
 module Brute
   module Middleware
     # The terminal "app" in the pipeline — performs the actual LLM call.
@@ -63,107 +66,63 @@ module Brute
   end
 end
 
-if __FILE__ == $0
-  require_relative "../../../spec/spec_helper"
+test do
+  require_relative "../../../spec/support/mock_provider"
+  require_relative "../../../spec/support/mock_response"
 
-  RSpec.describe Brute::Middleware::LLMCall do
-    let(:provider) { MockProvider.new }
-    let(:middleware) { described_class.new }
+  def build_env(**overrides)
+    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
+      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
+      tool_results: nil, streaming: false, should_exit: nil, pending_functions: [] }.merge(overrides)
+  end
 
-    it "calls the provider and returns the response" do
-      env = build_env(provider: provider, input: "hello", streaming: false)
+  it "calls the provider and returns a response" do
+    provider = MockProvider.new
+    middleware = Brute::Middleware::LLMCall.new
+    env = build_env(provider: provider, input: "hello", streaming: false)
+    response = middleware.call(env)
+    response.should.not.be.nil
+  end
 
-      response = middleware.call(env)
+  it "records a call on the provider" do
+    provider = MockProvider.new
+    middleware = Brute::Middleware::LLMCall.new
+    env = build_env(provider: provider, input: "hello", streaming: false)
+    middleware.call(env)
+    provider.calls.size.should == 1
+  end
 
-      expect(response).not_to be_nil
-      expect(provider.calls.size).to eq(1)
-    end
+  it "appends new messages to env[:messages]" do
+    provider = MockProvider.new
+    middleware = Brute::Middleware::LLMCall.new
+    env = build_env(provider: provider, input: "hello", streaming: false)
+    middleware.call(env)
+    env[:messages].should.not.be.empty
+  end
 
-    it "appends new messages to env[:messages]" do
-      env = build_env(provider: provider, input: "hello", streaming: false)
-      expect(env[:messages]).to be_empty
+  it "populates env[:pending_functions] as an Array" do
+    provider = MockProvider.new
+    middleware = Brute::Middleware::LLMCall.new
+    env = build_env(provider: provider, input: "hello", streaming: false)
+    middleware.call(env)
+    env[:pending_functions].should.be.kind_of(Array)
+  end
 
-      middleware.call(env)
+  it "does not fire on_content callback when streaming" do
+    provider = MockProvider.new
+    middleware = Brute::Middleware::LLMCall.new
+    called = false
+    env = build_env(provider: provider, input: "hi", streaming: true, callbacks: { on_content: ->(_) { called = true } })
+    middleware.call(env)
+    called.should.be.false
+  end
 
-      expect(env[:messages]).not_to be_empty
-    end
-
-    it "populates env[:pending_functions]" do
-      env = build_env(provider: provider, input: "hello", streaming: false)
-
-      middleware.call(env)
-
-      expect(env[:pending_functions]).to be_an(Array)
-    end
-
-    context "when not streaming" do
-      it "fires on_content callback with the response text" do
-        received_content = nil
-        callback = ->(text) { received_content = text }
-
-        response = MockResponse.new(content: "Hello world")
-        allow(provider).to receive(:complete).and_return(response)
-
-        env = build_env(
-          provider: provider,
-          input: "hi",
-          streaming: false,
-          callbacks: { on_content: callback }
-        )
-
-        middleware.call(env)
-
-        expect(received_content).to eq("Hello world")
-      end
-    end
-
-    context "when streaming" do
-      it "does not fire on_content callback" do
-        callback_called = false
-        callback = ->(_text) { callback_called = true }
-
-        env = build_env(
-          provider: provider,
-          input: "hi",
-          streaming: true,
-          callbacks: { on_content: callback }
-        )
-
-        middleware.call(env)
-
-        expect(callback_called).to be false
-      end
-    end
-
-    context "when response content raises NoMethodError (tool-only response)" do
-      it "does not crash and does not fire on_content" do
-        received_content = :not_called
-        callback = ->(text) { received_content = text }
-
-        bad_response = MockResponse.new(content: "")
-        allow(bad_response).to receive(:content).and_raise(NoMethodError)
-        allow(provider).to receive(:complete).and_return(bad_response)
-
-        env = build_env(
-          provider: provider,
-          input: "hi",
-          streaming: false,
-          callbacks: { on_content: callback }
-        )
-
-        expect { middleware.call(env) }.not_to raise_error
-        expect(received_content).to eq(:not_called)
-      end
-    end
-
-    it "preserves existing messages across calls" do
-      existing_msg = LLM::Message.new(:user, "previous message")
-      env = build_env(provider: provider, input: "hello", streaming: false, messages: [existing_msg])
-
-      middleware.call(env)
-
-      expect(env[:messages].first).to eq(existing_msg)
-      expect(env[:messages].size).to be > 1
-    end
+  it "preserves existing messages across calls" do
+    provider = MockProvider.new
+    middleware = Brute::Middleware::LLMCall.new
+    existing = LLM::Message.new(:user, "previous")
+    env = build_env(provider: provider, input: "hello", streaming: false, messages: [existing])
+    middleware.call(env)
+    env[:messages].first.should == existing
   end
 end

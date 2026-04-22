@@ -1,9 +1,7 @@
 # frozen_string_literal: true
 
-if __FILE__ == $0
-  require "bundler/setup"
-  require "brute"
-end
+require "bundler/setup"
+require "brute"
 
 module Brute
   module Middleware
@@ -49,90 +47,111 @@ module Brute
   end
 end
 
-if __FILE__ == $0
-  require_relative "../../../spec/spec_helper"
+test do
+  require_relative "../../../spec/support/mock_provider"
+  require_relative "../../../spec/support/mock_response"
 
-  RSpec.describe Brute::Middleware::Retry do
-    let(:response) { MockResponse.new(content: "success") }
+  def build_env(**overrides)
+    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
+      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
+      tool_results: nil, streaming: false, should_exit: nil, pending_functions: [] }.merge(overrides)
+  end
 
-    it "returns the response on first successful call" do
-      app, calls = mock_inner_app(response: response)
-      middleware = described_class.new(app)
-      env = build_env
+  def mock_inner_app(response:)
+    calls = []
+    app = ->(env) { calls << env; response }
+    [app, calls]
+  end
 
-      result = middleware.call(env)
+  def flaky_inner_app(error_class, fail_count:, response:)
+    attempt = 0
+    ->(env) { attempt += 1; raise error_class, "transient" if attempt <= fail_count; response }
+  end
 
-      expect(result).to eq(response)
-      expect(calls.size).to eq(1)
-    end
+  def no_sleep_retry(*args, **kwargs)
+    mw = Brute::Middleware::Retry.new(*args, **kwargs)
+    mw.define_singleton_method(:sleep) { |_| }
+    mw
+  end
 
-    it "retries on LLM::RateLimitError and succeeds" do
-      app = flaky_inner_app(LLM::RateLimitError, fail_count: 2, response: response)
-      middleware = described_class.new(app, max_attempts: 3, base_delay: 2)
-      allow(middleware).to receive(:sleep)
-      env = build_env
+  it "returns the response on first successful call" do
+    response = MockResponse.new(content: "success")
+    app, calls = mock_inner_app(response: response)
+    middleware = Brute::Middleware::Retry.new(app)
+    result = middleware.call(build_env)
+    result.should == response
+  end
 
-      result = middleware.call(env)
+  it "calls inner app exactly once on success" do
+    response = MockResponse.new(content: "success")
+    app, calls = mock_inner_app(response: response)
+    Brute::Middleware::Retry.new(app).call(build_env)
+    calls.size.should == 1
+  end
 
-      expect(result).to eq(response)
-      expect(env[:metadata][:retry_attempt]).to eq(2)
-    end
+  it "retries on LLM::RateLimitError and succeeds" do
+    response = MockResponse.new(content: "success")
+    app = flaky_inner_app(LLM::RateLimitError, fail_count: 2, response: response)
+    middleware = no_sleep_retry(app, max_attempts: 3, base_delay: 2)
+    env = build_env
+    result = middleware.call(env)
+    result.should == response
+  end
 
-    it "retries on LLM::ServerError and succeeds" do
-      app = flaky_inner_app(LLM::ServerError, fail_count: 1, response: response)
-      middleware = described_class.new(app, max_attempts: 3, base_delay: 2)
-      allow(middleware).to receive(:sleep)
-      env = build_env
+  it "records retry_attempt in metadata after retries" do
+    response = MockResponse.new(content: "success")
+    app = flaky_inner_app(LLM::RateLimitError, fail_count: 2, response: response)
+    middleware = no_sleep_retry(app, max_attempts: 3, base_delay: 2)
+    env = build_env
+    middleware.call(env)
+    env[:metadata][:retry_attempt].should == 2
+  end
 
-      result = middleware.call(env)
+  it "retries on LLM::ServerError and succeeds" do
+    response = MockResponse.new(content: "success")
+    app = flaky_inner_app(LLM::ServerError, fail_count: 1, response: response)
+    middleware = no_sleep_retry(app, max_attempts: 3, base_delay: 2)
+    result = middleware.call(build_env)
+    result.should == response
+  end
 
-      expect(result).to eq(response)
-      expect(env[:metadata][:retry_attempt]).to eq(1)
-    end
+  it "re-raises after exhausting all attempts" do
+    app = ->(_env) { raise LLM::RateLimitError, "rate limited" }
+    middleware = no_sleep_retry(app, max_attempts: 3, base_delay: 2)
+    lambda { middleware.call(build_env) }.should.raise(LLM::RateLimitError)
+  end
 
-    it "re-raises after exhausting all attempts" do
-      app = failing_inner_app(LLM::RateLimitError, message: "rate limited")
-      middleware = described_class.new(app, max_attempts: 3, base_delay: 2)
-      allow(middleware).to receive(:sleep)
-      env = build_env
+  it "does not retry non-retryable errors" do
+    call_count = 0
+    app = ->(_env) { call_count += 1; raise ArgumentError, "bad input" }
+    middleware = Brute::Middleware::Retry.new(app)
+    lambda { middleware.call(build_env) }.should.raise(ArgumentError)
+  end
 
-      expect { middleware.call(env) }.to raise_error(LLM::RateLimitError, "rate limited")
-      expect(env[:metadata][:last_error]).to eq("rate limited")
-    end
+  it "only calls inner app once for non-retryable errors" do
+    call_count = 0
+    app = ->(_env) { call_count += 1; raise ArgumentError, "bad input" }
+    middleware = Brute::Middleware::Retry.new(app)
+    begin; middleware.call(build_env); rescue ArgumentError; end
+    call_count.should == 1
+  end
 
-    it "does not retry non-retryable errors" do
-      call_count = 0
-      app = ->(_env) { call_count += 1; raise ArgumentError, "bad input" }
-      middleware = described_class.new(app)
-      env = build_env
+  it "records retry_delay in metadata" do
+    response = MockResponse.new(content: "success")
+    app = flaky_inner_app(LLM::RateLimitError, fail_count: 1, response: response)
+    middleware = no_sleep_retry(app, max_attempts: 3, base_delay: 3)
+    env = build_env
+    middleware.call(env)
+    env[:metadata][:retry_delay].should == 3
+  end
 
-      expect { middleware.call(env) }.to raise_error(ArgumentError)
-      expect(call_count).to eq(1)
-    end
-
-    it "sleeps with exponential backoff delays" do
-      app = flaky_inner_app(LLM::RateLimitError, fail_count: 2, response: response)
-      middleware = described_class.new(app, max_attempts: 3, base_delay: 2)
-      allow(middleware).to receive(:sleep)
-      env = build_env
-
-      middleware.call(env)
-
-      # base_delay ** attempts: 2**1 = 2, 2**2 = 4
-      expect(middleware).to have_received(:sleep).with(2).ordered
-      expect(middleware).to have_received(:sleep).with(4).ordered
-    end
-
-    it "records retry_delay in metadata" do
-      app = flaky_inner_app(LLM::RateLimitError, fail_count: 1, response: response)
-      middleware = described_class.new(app, max_attempts: 3, base_delay: 3)
-      allow(middleware).to receive(:sleep)
-      env = build_env
-
-      middleware.call(env)
-
-      # base_delay ** attempts: 3**1 = 3
-      expect(env[:metadata][:retry_delay]).to eq(3)
-    end
+  it "tracks sleep delays for exponential backoff" do
+    response = MockResponse.new(content: "success")
+    app = flaky_inner_app(LLM::RateLimitError, fail_count: 2, response: response)
+    delays = []
+    mw = Brute::Middleware::Retry.new(app, max_attempts: 3, base_delay: 2)
+    mw.define_singleton_method(:sleep) { |d| delays << d }
+    mw.call(build_env)
+    delays.should == [2, 4]
   end
 end

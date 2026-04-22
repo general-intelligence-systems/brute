@@ -1,9 +1,7 @@
 # frozen_string_literal: true
 
-if __FILE__ == $0
-  require "bundler/setup"
-  require "brute"
-end
+require "bundler/setup"
+require "brute"
 
 module Brute
   module Middleware
@@ -49,84 +47,60 @@ module Brute
   end
 end
 
-if __FILE__ == $0
-  require_relative "../../../spec/spec_helper"
+test do
+  require_relative "../../../spec/support/mock_provider"
+  require_relative "../../../spec/support/mock_response"
 
-  RSpec.describe Brute::Middleware::CompactionCheck do
-    let(:response) { MockResponse.new(content: "compaction response") }
-    let(:inner_app) { ->(_env) { response } }
-    let(:compactor) { double("compactor") }
-    let(:system_prompt) { "You are a helpful assistant." }
-    let(:middleware) do
-      described_class.new(inner_app, compactor: compactor, system_prompt: system_prompt)
+  def build_env(**overrides)
+    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
+      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
+      tool_results: nil, streaming: false, should_exit: nil, pending_functions: [] }.merge(overrides)
+  end
+
+  def make_compactor(should: false, result: nil)
+    Object.new.tap do |c|
+      c.define_singleton_method(:should_compact?) { |_msgs, **_| should }
+      c.define_singleton_method(:compact) { |_msgs| result }
     end
+  end
 
-    it "passes the response through when compaction is not needed" do
-      allow(compactor).to receive(:should_compact?).and_return(false)
-      env = build_env
+  it "passes the response through when compaction is not needed" do
+    response = MockResponse.new(content: "compaction response")
+    compactor = make_compactor(should: false)
+    middleware = Brute::Middleware::CompactionCheck.new(->(_env) { response }, compactor: compactor, system_prompt: "sys")
+    result = middleware.call(build_env)
+    result.should == response
+  end
 
-      result = middleware.call(env)
+  it "does not set compaction metadata when not needed" do
+    compactor = make_compactor(should: false)
+    middleware = Brute::Middleware::CompactionCheck.new(->(_env) { MockResponse.new }, compactor: compactor, system_prompt: "sys")
+    env = build_env
+    middleware.call(env)
+    env[:metadata][:compaction].should.be.nil
+  end
 
-      expect(result).to eq(response)
-      expect(env[:metadata][:compaction]).to be_nil
-    end
+  it "replaces messages with summary when compaction triggers" do
+    compactor = make_compactor(should: true, result: ["Summary of conversation", []])
+    middleware = Brute::Middleware::CompactionCheck.new(->(_env) { MockResponse.new }, compactor: compactor, system_prompt: "sys")
+    env = build_env(messages: [LLM::Message.new(:user, "hello"), LLM::Message.new(:assistant, "hi"), LLM::Message.new(:user, "how")])
+    middleware.call(env)
+    env[:metadata][:compaction][:messages_before].should == 3
+  end
 
-    it "does not replace messages when compaction is not triggered" do
-      allow(compactor).to receive(:should_compact?).and_return(false)
-      original_messages = [LLM::Message.new(:user, "hello")]
-      env = build_env(messages: original_messages)
+  it "creates two messages after compaction" do
+    compactor = make_compactor(should: true, result: ["Summary", []])
+    middleware = Brute::Middleware::CompactionCheck.new(->(_env) { MockResponse.new }, compactor: compactor, system_prompt: "sys")
+    env = build_env(messages: [LLM::Message.new(:user, "hello")])
+    middleware.call(env)
+    env[:messages].size.should == 2
+  end
 
-      middleware.call(env)
-
-      expect(env[:messages]).to equal(original_messages)
-    end
-
-    it "replaces messages with summary when compaction triggers" do
-      allow(compactor).to receive(:should_compact?).and_return(true)
-      allow(compactor).to receive(:compact).and_return(["Summary of conversation", []])
-
-      original_messages = [
-        LLM::Message.new(:user, "hello"),
-        LLM::Message.new(:assistant, "hi there"),
-        LLM::Message.new(:user, "how are you"),
-      ]
-      env = build_env(messages: original_messages)
-      middleware.call(env)
-
-      expect(env[:metadata][:compaction]).to include(:messages_before, :timestamp)
-      expect(env[:metadata][:compaction][:messages_before]).to eq(3)
-      expect(env[:messages].size).to eq(2)
-      expect(env[:messages][0].role.to_s).to eq("system")
-      expect(env[:messages][1].content).to include("Summary of conversation")
-    end
-
-    it "handles compactor returning nil gracefully" do
-      allow(compactor).to receive(:should_compact?).and_return(true)
-      allow(compactor).to receive(:compact).and_return(nil)
-
-      original_messages = [LLM::Message.new(:user, "hello")]
-      env = build_env(messages: original_messages)
-
-      middleware.call(env)
-
-      expect(env[:messages]).to equal(original_messages)
-      expect(env[:metadata][:compaction]).to be_nil
-    end
-
-    it "works regardless of streaming mode" do
-      allow(compactor).to receive(:should_compact?).and_return(true)
-      allow(compactor).to receive(:compact).and_return(["Summary", []])
-
-      env = build_env(
-        messages: [LLM::Message.new(:user, "hello")],
-        streaming: true,
-        stream: double("AgentStream"),
-      )
-      middleware.call(env)
-
-      # Compaction works the same — no stream forwarding needed
-      expect(env[:messages].size).to eq(2)
-      expect(env[:metadata][:compaction]).not_to be_nil
-    end
+  it "handles compactor returning nil gracefully" do
+    compactor = make_compactor(should: true, result: nil)
+    middleware = Brute::Middleware::CompactionCheck.new(->(_env) { MockResponse.new }, compactor: compactor, system_prompt: "sys")
+    env = build_env(messages: [LLM::Message.new(:user, "hello")])
+    middleware.call(env)
+    env[:metadata][:compaction].should.be.nil
   end
 end

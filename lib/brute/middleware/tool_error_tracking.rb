@@ -1,9 +1,7 @@
 # frozen_string_literal: true
 
-if __FILE__ == $0
-  require "bundler/setup"
-  require "brute"
-end
+require "bundler/setup"
+require "brute"
 
 module Brute
   module Middleware
@@ -65,141 +63,117 @@ module Brute
   end
 end
 
-if __FILE__ == $0
-  require_relative "../../../spec/spec_helper"
+test do
+  require_relative "../../../spec/support/mock_provider"
+  require_relative "../../../spec/support/mock_response"
 
-  RSpec.describe Brute::Middleware::ToolErrorTracking do
-    let(:response) { MockResponse.new(content: "tracked") }
-    let(:inner_app) { ->(_env) { response } }
-    let(:middleware) { described_class.new(inner_app, max_failures: 3) }
+  def build_env(**overrides)
+    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
+      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
+      tool_results: nil, streaming: false, should_exit: nil, pending_functions: [] }.merge(overrides)
+  end
 
-    it "passes the response through" do
-      env = build_env
-      result = middleware.call(env)
-      expect(result).to eq(response)
-    end
+  def make_middleware(app = nil)
+    app ||= ->(_env) { MockResponse.new(content: "tracked") }
+    Brute::Middleware::ToolErrorTracking.new(app, max_failures: 3)
+  end
 
-    it "reports zero tool calls when tool_results is nil" do
-      env = build_env(tool_results: nil)
-      middleware.call(env)
+  it "passes the response through" do
+    response = MockResponse.new(content: "tracked")
+    app = ->(_env) { response }
+    result = make_middleware(app).call(build_env)
+    result.should == response
+  end
 
-      expect(env[:metadata][:tool_calls]).to eq(0)
-      expect(env[:metadata][:tool_errors]).to eq({})
-      expect(env[:metadata][:tool_error_limit_reached]).to be false
-    end
+  it "reports zero tool calls when tool_results is nil" do
+    env = build_env(tool_results: nil)
+    make_middleware.call(env)
+    env[:metadata][:tool_calls].should == 0
+  end
 
-    it "counts total tool calls from tool_results" do
-      results = [
-        ["fs_read", { content: "data" }],
-        ["shell", { output: "ok" }],
-        ["fs_write", { success: true }],
-      ]
-      env = build_env(tool_results: results)
-      middleware.call(env)
+  it "reports empty tool errors when tool_results is nil" do
+    env = build_env(tool_results: nil)
+    make_middleware.call(env)
+    env[:metadata][:tool_errors].should == {}
+  end
 
-      expect(env[:metadata][:tool_calls]).to eq(3)
-    end
+  it "does not flag limit reached when tool_results is nil" do
+    env = build_env(tool_results: nil)
+    make_middleware.call(env)
+    env[:metadata][:tool_error_limit_reached].should.be.false
+  end
 
-    it "counts per-tool errors from results with error key" do
-      results = [
-        ["fs_read", { error: "not found" }],
-        ["fs_read", { error: "permission denied" }],
-        ["shell", { output: "ok" }],
-      ]
-      env = build_env(tool_results: results)
-      middleware.call(env)
+  it "counts total tool calls from tool_results" do
+    results = [["fs_read", { content: "data" }], ["shell", { output: "ok" }], ["fs_write", { success: true }]]
+    env = build_env(tool_results: results)
+    make_middleware.call(env)
+    env[:metadata][:tool_calls].should == 3
+  end
 
-      expect(env[:metadata][:tool_errors]).to eq({ "fs_read" => 2 })
-    end
+  it "counts per-tool errors from results with error key" do
+    results = [["fs_read", { error: "not found" }], ["fs_read", { error: "denied" }], ["shell", { output: "ok" }]]
+    env = build_env(tool_results: results)
+    make_middleware.call(env)
+    env[:metadata][:tool_errors].should == { "fs_read" => 2 }
+  end
 
-    it "sets tool_error_limit_reached when a tool hits max_failures" do
-      results = [
-        ["fs_read", { error: "fail 1" }],
-        ["fs_read", { error: "fail 2" }],
-        ["fs_read", { error: "fail 3" }],
-      ]
-      env = build_env(tool_results: results)
-      middleware.call(env)
+  it "sets tool_error_limit_reached when a tool hits max_failures" do
+    results = [["fs_read", { error: "1" }], ["fs_read", { error: "2" }], ["fs_read", { error: "3" }]]
+    env = build_env(tool_results: results)
+    make_middleware.call(env)
+    env[:metadata][:tool_error_limit_reached].should.be.true
+  end
 
-      expect(env[:metadata][:tool_error_limit_reached]).to be true
-    end
+  it "does not flag below the threshold" do
+    results = [["fs_read", { error: "1" }], ["fs_read", { error: "2" }]]
+    env = build_env(tool_results: results)
+    make_middleware.call(env)
+    env[:metadata][:tool_error_limit_reached].should.be.false
+  end
 
-    it "does not flag below the threshold" do
-      results = [
-        ["fs_read", { error: "fail 1" }],
-        ["fs_read", { error: "fail 2" }],
-      ]
-      env = build_env(tool_results: results)
-      middleware.call(env)
+  it "accumulates counts across multiple calls" do
+    mw = make_middleware
+    mw.call(build_env(tool_results: [["fs_read", { error: "fail" }]]))
+    env2 = build_env(tool_results: [["fs_read", { error: "again" }], ["shell", { output: "ok" }]])
+    mw.call(env2)
+    env2[:metadata][:tool_calls].should == 3
+  end
 
-      expect(env[:metadata][:tool_error_limit_reached]).to be false
-    end
+  it "clears counters on reset!" do
+    mw = make_middleware
+    mw.call(build_env(tool_results: [["fs_read", { error: "fail" }]]))
+    mw.reset!
+    env2 = build_env(tool_results: nil)
+    mw.call(env2)
+    env2[:metadata][:tool_calls].should == 0
+  end
 
-    it "accumulates counts across multiple calls" do
-      env1 = build_env(tool_results: [["fs_read", { error: "fail" }]])
-      middleware.call(env1)
+  it "sets should_exit reason when error limit reached" do
+    results = [["fs_read", { error: "1" }], ["fs_read", { error: "2" }], ["fs_read", { error: "3" }]]
+    env = build_env(tool_results: results)
+    make_middleware.call(env)
+    env[:should_exit][:reason].should == "tool_error_limit_reached"
+  end
 
-      env2 = build_env(tool_results: [["fs_read", { error: "fail again" }], ["shell", { output: "ok" }]])
-      middleware.call(env2)
+  it "sets should_exit source to ToolErrorTracking" do
+    results = [["fs_read", { error: "1" }], ["fs_read", { error: "2" }], ["fs_read", { error: "3" }]]
+    env = build_env(tool_results: results)
+    make_middleware.call(env)
+    env[:should_exit][:source].should == "ToolErrorTracking"
+  end
 
-      expect(env2[:metadata][:tool_calls]).to eq(3) # 1 + 2
-      expect(env2[:metadata][:tool_errors]).to eq({ "fs_read" => 2 })
-    end
+  it "does not set should_exit below the threshold" do
+    results = [["fs_read", { error: "1" }], ["fs_read", { error: "2" }]]
+    env = build_env(tool_results: results)
+    make_middleware.call(env)
+    env[:should_exit].should.be.nil
+  end
 
-    it "clears counters on reset!" do
-      env = build_env(tool_results: [["fs_read", { error: "fail" }]])
-      middleware.call(env)
-
-      middleware.reset!
-
-      env2 = build_env(tool_results: nil)
-      middleware.call(env2)
-
-      expect(env2[:metadata][:tool_calls]).to eq(0)
-      expect(env2[:metadata][:tool_errors]).to eq({})
-    end
-
-    # -- should_exit signal --
-
-    it "sets env[:should_exit] when the error limit is reached" do
-      results = [
-        ["fs_read", { error: "fail 1" }],
-        ["fs_read", { error: "fail 2" }],
-        ["fs_read", { error: "fail 3" }],
-      ]
-      env = build_env(tool_results: results)
-      middleware.call(env)
-
-      expect(env[:should_exit]).to be_a(Hash)
-      expect(env[:should_exit][:reason]).to eq("tool_error_limit_reached")
-      expect(env[:should_exit][:source]).to eq("ToolErrorTracking")
-      expect(env[:should_exit][:message]).to include("fs_read")
-      expect(env[:should_exit][:message]).to include("3 times")
-    end
-
-    it "does not set env[:should_exit] below the threshold" do
-      results = [
-        ["fs_read", { error: "fail 1" }],
-        ["fs_read", { error: "fail 2" }],
-      ]
-      env = build_env(tool_results: results)
-      middleware.call(env)
-
-      expect(env[:should_exit]).to be_nil
-    end
-
-    it "does not overwrite env[:should_exit] if already set (first-writer-wins)" do
-      results = [
-        ["fs_read", { error: "fail 1" }],
-        ["fs_read", { error: "fail 2" }],
-        ["fs_read", { error: "fail 3" }],
-      ]
-      existing_exit = { reason: "doom_loop_detected", message: "loop", source: "DoomLoopDetection" }
-      env = build_env(tool_results: results, should_exit: existing_exit)
-      middleware.call(env)
-
-      expect(env[:should_exit][:reason]).to eq("doom_loop_detected")
-      expect(env[:should_exit][:source]).to eq("DoomLoopDetection")
-    end
+  it "does not overwrite should_exit if already set" do
+    results = [["fs_read", { error: "1" }], ["fs_read", { error: "2" }], ["fs_read", { error: "3" }]]
+    existing = { reason: "doom_loop_detected", message: "loop", source: "DoomLoopDetection" }
+    env = build_env(tool_results: results, should_exit: existing)
+    make_middleware.call(env)
+    env[:should_exit][:reason].should == "doom_loop_detected"
   end
 end

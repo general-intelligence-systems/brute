@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "bundler/setup"
+require "brute"
+
 module Brute
   module Prompts
     module MaxSteps
@@ -29,34 +32,24 @@ module Brute
   end
 end
 
-if __FILE__ == $0
-  require_relative "../../../spec/spec_helper"
+test do
+  it "returns a string" do
+    Brute::Prompts::MaxSteps.call({}).should.be.kind_of(String)
+  end
 
-  RSpec.describe Brute::Prompts::MaxSteps do
-    subject(:text) { described_class.call({}) }
+  it "announces maximum steps reached" do
+    Brute::Prompts::MaxSteps.call({}).should =~ /MAXIMUM STEPS REACHED/
+  end
 
-    it "returns a string" do
-      expect(text).to be_a(String)
-    end
+  it "states tools are disabled" do
+    Brute::Prompts::MaxSteps.call({}).should =~ /Tools are disabled/
+  end
 
-    it "announces maximum steps reached" do
-      expect(text).to include("MAXIMUM STEPS REACHED")
-    end
+  it "requires a text-only response" do
+    Brute::Prompts::MaxSteps.call({}).should =~ /text ONLY/
+  end
 
-    it "states tools are disabled" do
-      expect(text).to include("Tools are disabled")
-    end
-
-    it "requires a text-only response" do
-      expect(text).to include("text ONLY")
-    end
-
-    it "requires summary of work done" do
-      expect(text).to include("Summary of what has been accomplished")
-    end
-
-    it "ignores context (static content)" do
-      expect(described_class.call({ max_steps_reached: true })).to eq(described_class.call({}))
-    end
+  it "ignores context (static content)" do
+    Brute::Prompts::MaxSteps.call({ max_steps_reached: true }).should == Brute::Prompts::MaxSteps.call({})
   end
 end

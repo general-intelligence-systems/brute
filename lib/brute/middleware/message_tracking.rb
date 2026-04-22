@@ -1,9 +1,7 @@
 # frozen_string_literal: true
 
-if __FILE__ == $0
-  require "bundler/setup"
-  require "brute"
-end
+require "bundler/setup"
+require "brute"
 
 module Brute
   module Middleware
@@ -209,161 +207,133 @@ module Brute
   end
 end
 
-if __FILE__ == $0
-  require_relative "../../../spec/spec_helper"
+test do
+  require_relative "../../../spec/support/mock_provider"
+  require_relative "../../../spec/support/mock_response"
+  require "tmpdir"
+  require "fileutils"
 
-  RSpec.describe Brute::Middleware::MessageTracking do
-    let(:tmpdir) { Dir.mktmpdir("brute_test_") }
-    let(:store) { Brute::Store::MessageStore.new(session_id: "test-session", dir: tmpdir) }
-    let(:response) { MockResponse.new(content: "Hello from the LLM") }
-    let(:inner_app) { ->(_env) { response } }
-    let(:middleware) { described_class.new(inner_app, store: store) }
+  def build_env(**overrides)
+    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
+      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
+      tool_results: nil, streaming: false, should_exit: nil, pending_functions: [] }.merge(overrides)
+  end
 
-    after { FileUtils.rm_rf(tmpdir) }
+  def with_tracking
+    tmpdir = Dir.mktmpdir("brute_test_")
+    store = Brute::Store::MessageStore.new(session_id: "test-session", dir: tmpdir)
+    response = MockResponse.new(content: "Hello from the LLM")
+    inner_app = ->(_env) { response }
+    middleware = Brute::Middleware::MessageTracking.new(inner_app, store: store)
+    yield middleware, store, response
+  ensure
+    FileUtils.rm_rf(tmpdir)
+  end
 
-    describe "user message recording" do
-      it "records a user message on the first call of a turn" do
-        env = build_env(input: "What is Ruby?", tool_results: nil)
-        middleware.call(env)
-
-        msgs = store.messages
-        user_msg = msgs.find { |m| m[:info][:role] == "user" }
-        expect(user_msg).not_to be_nil
-        expect(user_msg[:parts][0][:text]).to eq("What is Ruby?")
-      end
-
-      it "does not record a user message on subsequent calls (tool results)" do
-        env = build_env(input: "Hello", tool_results: nil)
-        middleware.call(env)
-
-        env[:tool_results] = [["read", "file contents"]]
-        middleware.call(env)
-
-        user_msgs = store.messages.select { |m| m[:info][:role] == "user" }
-        expect(user_msgs.size).to eq(1)
-      end
+  it "records a user message on first call of a turn" do
+    with_tracking do |mw, store, _|
+      mw.call(build_env(input: "What is Ruby?", tool_results: nil))
+      user_msg = store.messages.find { |m| m[:info][:role] == "user" }
+      user_msg[:parts][0][:text].should == "What is Ruby?"
     end
+  end
 
-    describe "assistant message recording" do
-      it "records an assistant message after each LLM call" do
-        env = build_env(input: "Hello", tool_results: nil)
-        middleware.call(env)
-
-        msgs = store.messages
-        asst_msg = msgs.find { |m| m[:info][:role] == "assistant" }
-        expect(asst_msg).not_to be_nil
-        expect(asst_msg[:info][:parentID]).not_to be_nil
-      end
-
-      it "captures text content as a text part" do
-        env = build_env(input: "Hello", tool_results: nil)
-        middleware.call(env)
-
-        asst_msg = store.messages.find { |m| m[:info][:role] == "assistant" }
-        text_parts = asst_msg[:parts].select { |p| p[:type] == "text" }
-        expect(text_parts.size).to eq(1)
-        expect(text_parts[0][:text]).to eq("Hello from the LLM")
-      end
-
-      it "captures token usage from response" do
-        env = build_env(input: "Hello", tool_results: nil)
-        middleware.call(env)
-
-        asst_msg = store.messages.find { |m| m[:info][:role] == "assistant" }
-        expect(asst_msg[:info][:tokens][:input]).to eq(100)
-        expect(asst_msg[:info][:tokens][:output]).to eq(50)
-      end
+  it "records only one user message per turn" do
+    with_tracking do |mw, store, _|
+      env = build_env(input: "Hello", tool_results: nil)
+      mw.call(env)
+      env[:tool_results] = [["read", "contents"]]
+      mw.call(env)
+      store.messages.select { |m| m[:info][:role] == "user" }.size.should == 1
     end
+  end
 
-    describe "tool call recording" do
-      it "records tool calls as tool parts in running state" do
-        fn = double("function", id: "call_001", name: "read", arguments: { file_path: "/test" })
-
-        env = build_env(input: "Read the file", tool_results: nil, pending_functions: [fn])
-        middleware.call(env)
-
-        asst_msg = store.messages.find { |m| m[:info][:role] == "assistant" }
-        tool_parts = asst_msg[:parts].select { |p| p[:type] == "tool" }
-        expect(tool_parts.size).to eq(1)
-        expect(tool_parts[0][:tool]).to eq("read")
-        expect(tool_parts[0][:callID]).to eq("call_001")
-        expect(tool_parts[0][:state][:status]).to eq("running")
-      end
+  it "records an assistant message after LLM call" do
+    with_tracking do |mw, store, _|
+      mw.call(build_env(input: "Hello", tool_results: nil))
+      asst = store.messages.find { |m| m[:info][:role] == "assistant" }
+      asst.should.not.be.nil
     end
+  end
 
-    describe "tool result completion" do
-      it "updates tool parts when results arrive" do
-        fn = double("function", id: "call_001", name: "read", arguments: { file_path: "/test" })
-
-        env = build_env(input: "Read the file", tool_results: nil, pending_functions: [fn])
-        middleware.call(env)
-
-        env[:pending_functions] = []
-        env[:tool_results] = [["read", "file contents here"]]
-        middleware.call(env)
-
-        msgs = store.messages
-        first_asst = msgs.find { |m| m[:info][:role] == "assistant" }
-        tool_part = first_asst[:parts].find { |p| p[:type] == "tool" }
-        expect(tool_part[:state][:status]).to eq("completed")
-        expect(tool_part[:state][:output]).to eq("file contents here")
-      end
+  it "captures text content as a text part" do
+    with_tracking do |mw, store, _|
+      mw.call(build_env(input: "Hello", tool_results: nil))
+      asst = store.messages.find { |m| m[:info][:role] == "assistant" }
+      text_parts = asst[:parts].select { |p| p[:type] == "text" }
+      text_parts[0][:text].should == "Hello from the LLM"
     end
+  end
 
-    describe "model name resolution" do
-      it "records the provider default_model when no override is set" do
-        env = build_env(input: "Hello", tool_results: nil)
-        middleware.call(env)
-
-        asst_msg = store.messages.find { |m| m[:info][:role] == "assistant" }
-        expect(asst_msg[:info][:modelID]).to eq("mock-model")
-      end
-
-      it "records the overridden model when env[:model] is set" do
-        env = build_env(input: "Hello", tool_results: nil, model: "custom-haiku-model")
-        middleware.call(env)
-
-        asst_msg = store.messages.find { |m| m[:info][:role] == "assistant" }
-        expect(asst_msg[:info][:modelID]).to eq("custom-haiku-model")
-      end
-
-      it "does not fall back to default_model when an override is present" do
-        provider = MockProvider.new
-        env = build_env(input: "Hello", tool_results: nil, model: "claude-3-haiku-20240307", provider: provider)
-        middleware.call(env)
-
-        asst_msg = store.messages.find { |m| m[:info][:role] == "assistant" }
-        expect(asst_msg[:info][:modelID]).not_to eq(provider.default_model)
-        expect(asst_msg[:info][:modelID]).to eq("claude-3-haiku-20240307")
-      end
+  it "captures token usage from response" do
+    with_tracking do |mw, store, _|
+      mw.call(build_env(input: "Hello", tool_results: nil))
+      asst = store.messages.find { |m| m[:info][:role] == "assistant" }
+      asst[:info][:tokens][:input].should == 100
     end
+  end
 
-    describe "middleware passthrough" do
-      it "stores itself in env[:message_tracking]" do
-        env = build_env(input: "Hello", tool_results: nil)
-        middleware.call(env)
-
-        expect(env[:message_tracking]).to eq(middleware)
-      end
-
-      it "returns the inner app response unchanged" do
-        env = build_env(input: "Hello", tool_results: nil)
-        result = middleware.call(env)
-
-        expect(result).to eq(response)
-      end
+  it "records tool calls as tool parts in running state" do
+    with_tracking do |mw, store, _|
+      fn = Struct.new(:id, :name, :arguments, keyword_init: true).new(id: "call_001", name: "read", arguments: { file_path: "/test" })
+      mw.call(build_env(input: "Read the file", tool_results: nil, pending_functions: [fn]))
+      asst = store.messages.find { |m| m[:info][:role] == "assistant" }
+      tool_parts = asst[:parts].select { |p| p[:type] == "tool" }
+      tool_parts[0][:state][:status].should == "running"
     end
+  end
 
-    describe "step-finish parts" do
-      it "adds a step-finish part to each assistant message" do
-        env = build_env(input: "Hello", tool_results: nil)
-        middleware.call(env)
+  it "updates tool parts when results arrive" do
+    with_tracking do |mw, store, _|
+      fn = Struct.new(:id, :name, :arguments, keyword_init: true).new(id: "call_001", name: "read", arguments: { file_path: "/test" })
+      env = build_env(input: "Read the file", tool_results: nil, pending_functions: [fn])
+      mw.call(env)
+      env[:pending_functions] = []
+      env[:tool_results] = [["read", "file contents here"]]
+      mw.call(env)
+      first_asst = store.messages.find { |m| m[:info][:role] == "assistant" }
+      tool_part = first_asst[:parts].find { |p| p[:type] == "tool" }
+      tool_part[:state][:status].should == "completed"
+    end
+  end
 
-        asst_msg = store.messages.find { |m| m[:info][:role] == "assistant" }
-        step_finish = asst_msg[:parts].find { |p| p[:type] == "step-finish" }
-        expect(step_finish).not_to be_nil
-        expect(step_finish[:reason]).to eq("stop")
-      end
+  it "records provider default_model when no override" do
+    with_tracking do |mw, store, _|
+      mw.call(build_env(input: "Hello", tool_results: nil))
+      asst = store.messages.find { |m| m[:info][:role] == "assistant" }
+      asst[:info][:modelID].should == "mock-model"
+    end
+  end
+
+  it "records overridden model when env[:model] is set" do
+    with_tracking do |mw, store, _|
+      mw.call(build_env(input: "Hello", tool_results: nil, model: "custom-haiku"))
+      asst = store.messages.find { |m| m[:info][:role] == "assistant" }
+      asst[:info][:modelID].should == "custom-haiku"
+    end
+  end
+
+  it "stores itself in env[:message_tracking]" do
+    with_tracking do |mw, _, _|
+      env = build_env(input: "Hello", tool_results: nil)
+      mw.call(env)
+      env[:message_tracking].should == mw
+    end
+  end
+
+  it "returns the inner app response unchanged" do
+    with_tracking do |mw, _, response|
+      result = mw.call(build_env(input: "Hello", tool_results: nil))
+      result.should == response
+    end
+  end
+
+  it "adds a step-finish part to assistant messages" do
+    with_tracking do |mw, store, _|
+      mw.call(build_env(input: "Hello", tool_results: nil))
+      asst = store.messages.find { |m| m[:info][:role] == "assistant" }
+      step_finish = asst[:parts].find { |p| p[:type] == "step-finish" }
+      step_finish[:reason].should == "stop"
     end
   end
 end

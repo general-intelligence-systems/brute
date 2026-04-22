@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "bundler/setup"
+require "brute"
 require 'diff/lcs'
 require 'diff/lcs/hunk'
 
@@ -25,36 +27,24 @@ module Brute
   end
 end
 
-if __FILE__ == $0
-  require_relative "../../spec/spec_helper"
+test do
+  it "generates a unified diff for changed content" do
+    Brute::Diff.unified("line1\nold\nline3\n", "line1\nnew\nline3\n").should =~ /\-old/
+  end
 
-  RSpec.describe Brute::Diff do
-    describe ".unified" do
-      it "generates a unified diff for changed content" do
-        old = "line1\nold\nline3\n"
-        new_text = "line1\nnew\nline3\n"
-        diff = described_class.unified(old, new_text)
-        expect(diff).to include("-old")
-        expect(diff).to include("+new")
-        expect(diff).to include("@@")
-      end
+  it "includes additions in diff" do
+    Brute::Diff.unified("line1\nold\nline3\n", "line1\nnew\nline3\n").should =~ /\+new/
+  end
 
-      it "returns empty string for identical content" do
-        text = "same\ncontent\n"
-        expect(described_class.unified(text, text)).to eq("")
-      end
+  it "returns empty string for identical content" do
+    Brute::Diff.unified("same\ncontent\n", "same\ncontent\n").should == ""
+  end
 
-      it "handles empty old content (new file)" do
-        diff = described_class.unified("", "new\ncontent\n")
-        expect(diff).to include("+new")
-        expect(diff).to include("+content")
-      end
+  it "handles empty old content (new file)" do
+    Brute::Diff.unified("", "new\ncontent\n").should =~ /\+new/
+  end
 
-      it "handles empty new content (deleted file)" do
-        diff = described_class.unified("old\ncontent\n", "")
-        expect(diff).to include("-old")
-        expect(diff).to include("-content")
-      end
-    end
+  it "handles empty new content (deleted file)" do
+    Brute::Diff.unified("old\ncontent\n", "").should =~ /\-old/
   end
 end

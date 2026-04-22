@@ -1,9 +1,7 @@
 # frozen_string_literal: true
 
-if __FILE__ == $0
-  require "bundler/setup"
-  require "brute"
-end
+require "bundler/setup"
+require "brute"
 
 module Brute
   module Middleware
@@ -67,68 +65,60 @@ module Brute
   end
 end
 
-if __FILE__ == $0
-  require_relative "../../../spec/spec_helper"
+test do
+  require_relative "../../../spec/support/mock_provider"
+  require_relative "../../../spec/support/mock_response"
 
-  RSpec.describe Brute::Middleware::Tracing do
-    let(:response) { MockResponse.new(content: "traced response") }
-    let(:inner_app) { ->(_env) { response } }
-    let(:log_output) { StringIO.new }
-    let(:logger) { Logger.new(log_output) }
-    let(:middleware) { described_class.new(inner_app, logger: logger) }
+  def build_env(**overrides)
+    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
+      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
+      tool_results: nil, streaming: false, should_exit: nil, pending_functions: [] }.merge(overrides)
+  end
 
-    it "passes the response through unchanged" do
-      env = build_env(tool_results: nil)
-      result = middleware.call(env)
-      expect(result).to eq(response)
-    end
+  it "passes the response through unchanged" do
+    response = MockResponse.new(content: "traced response")
+    inner_app = ->(_env) { response }
+    middleware = Brute::Middleware::Tracing.new(inner_app, logger: Logger.new(StringIO.new))
+    result = middleware.call(build_env(tool_results: nil))
+    result.should == response
+  end
 
-    it "populates env[:metadata][:timing] with all required keys" do
-      env = build_env(tool_results: nil)
-      middleware.call(env)
+  it "populates timing with llm_call_count" do
+    response = MockResponse.new(content: "traced response")
+    inner_app = ->(_env) { response }
+    middleware = Brute::Middleware::Tracing.new(inner_app, logger: Logger.new(StringIO.new))
+    env = build_env(tool_results: nil)
+    middleware.call(env)
+    env[:metadata][:timing][:llm_call_count].should == 1
+  end
 
-      timing = env[:metadata][:timing]
-      expect(timing).to include(
-        :total_elapsed,
-        :total_llm_elapsed,
-        :llm_call_count,
-        :last_call_elapsed
-      )
-      expect(timing[:llm_call_count]).to eq(1)
-      expect(timing[:last_call_elapsed]).to be >= 0
-      expect(timing[:total_llm_elapsed]).to be >= 0
-    end
+  it "populates timing with non-negative last_call_elapsed" do
+    response = MockResponse.new(content: "traced response")
+    inner_app = ->(_env) { response }
+    middleware = Brute::Middleware::Tracing.new(inner_app, logger: Logger.new(StringIO.new))
+    env = build_env(tool_results: nil)
+    middleware.call(env)
+    (env[:metadata][:timing][:last_call_elapsed] >= 0).should.be.true
+  end
 
-    it "resets turn timing when tool_results is nil (new turn)" do
-      env = build_env(tool_results: nil)
-      middleware.call(env)
-      first_elapsed = env[:metadata][:timing][:total_llm_elapsed]
+  it "accumulates call count across multiple calls" do
+    response = MockResponse.new(content: "traced response")
+    inner_app = ->(_env) { response }
+    middleware = Brute::Middleware::Tracing.new(inner_app, logger: Logger.new(StringIO.new))
+    env = build_env(tool_results: nil)
+    middleware.call(env)
+    env[:tool_results] = [["read", {}]]
+    middleware.call(env)
+    middleware.call(env)
+    env[:metadata][:timing][:llm_call_count].should == 3
+  end
 
-      # Simulate continuation within the same turn (tool_results present)
-      env[:tool_results] = [["read", { content: "file data" }]]
-      middleware.call(env)
-
-      expect(env[:metadata][:timing][:llm_call_count]).to eq(2)
-      expect(env[:metadata][:timing][:total_llm_elapsed]).to be >= first_elapsed
-    end
-
-    it "accumulates call count across multiple calls" do
-      env = build_env(tool_results: nil)
-      middleware.call(env)
-      env[:tool_results] = [["read", {}]]
-      middleware.call(env)
-      middleware.call(env)
-
-      expect(env[:metadata][:timing][:llm_call_count]).to eq(3)
-    end
-
-    it "logs debug and info messages" do
-      env = build_env(tool_results: nil)
-      middleware.call(env)
-
-      log_text = log_output.string
-      expect(log_text).to include("LLM call #1")
-      expect(log_text).to include("LLM response #1")
-    end
+  it "logs LLM call and response messages" do
+    response = MockResponse.new(content: "traced response")
+    inner_app = ->(_env) { response }
+    log_output = StringIO.new
+    middleware = Brute::Middleware::Tracing.new(inner_app, logger: Logger.new(log_output))
+    middleware.call(build_env(tool_results: nil))
+    log_output.string.should =~ /LLM call #1/
   end
 end

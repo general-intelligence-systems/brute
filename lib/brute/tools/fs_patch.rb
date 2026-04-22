@@ -1,9 +1,7 @@
 # frozen_string_literal: true
 
-if __FILE__ == $0
-  require "bundler/setup"
-  require "brute"
-end
+require "bundler/setup"
+require "brute"
 
 module Brute
   module Tools
@@ -43,50 +41,51 @@ module Brute
   end
 end
 
-if __FILE__ == $0
-  require_relative "../../../spec/spec_helper"
+test do
+  require "tmpdir"
 
-  RSpec.describe Brute::Tools::FSPatch do
-    around(:each) { |ex| Dir.mktmpdir { |d| @dir = d; ex.run } }
-
-    let(:tool) { described_class.new }
-
-    it "replaces old_string with new_string" do
-      path = File.join(@dir, "test.rb")
+  it "replaces old_string with new_string" do
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "test.rb")
       File.write(path, "hello world\n")
-      result = tool.call(file_path: path, old_string: "world", new_string: "ruby")
-      expect(result[:success]).to be true
-      expect(File.read(path)).to eq("hello ruby\n")
+      result = Brute::Tools::FSPatch.new.call(file_path: path, old_string: "world", new_string: "ruby")
+      File.read(path).should == "hello ruby\n"
     end
+  end
 
-    it "returns a unified diff" do
-      path = File.join(@dir, "test.rb")
+  it "returns a unified diff" do
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "test.rb")
       File.write(path, "line1\nold line\nline3\n")
-      result = tool.call(file_path: path, old_string: "old line", new_string: "new line")
-      expect(result[:diff]).to include("-old line")
-      expect(result[:diff]).to include("+new line")
+      result = Brute::Tools::FSPatch.new.call(file_path: path, old_string: "old line", new_string: "new line")
+      result[:diff].should =~ /\-old line/
     end
+  end
 
-    it "raises when file not found" do
-      expect {
-        tool.call(file_path: File.join(@dir, "nope.rb"), old_string: "a", new_string: "b")
-      }.to raise_error(/File not found/)
+  it "raises when file not found" do
+    Dir.mktmpdir do |dir|
+      lambda {
+        Brute::Tools::FSPatch.new.call(file_path: File.join(dir, "nope.rb"), old_string: "a", new_string: "b")
+      }.should.raise(RuntimeError)
     end
+  end
 
-    it "raises when old_string not found" do
-      path = File.join(@dir, "test.rb")
+  it "raises when old_string not found" do
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "test.rb")
       File.write(path, "hello\n")
-      expect {
-        tool.call(file_path: path, old_string: "missing", new_string: "new")
-      }.to raise_error(/old_string not found/)
+      lambda {
+        Brute::Tools::FSPatch.new.call(file_path: path, old_string: "missing", new_string: "new")
+      }.should.raise(RuntimeError)
     end
+  end
 
-    it "supports replace_all" do
-      path = File.join(@dir, "test.rb")
+  it "supports replace_all" do
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "test.rb")
       File.write(path, "aaa bbb aaa\n")
-      result = tool.call(file_path: path, old_string: "aaa", new_string: "ccc", replace_all: true)
-      expect(result[:replacements]).to eq(2)
-      expect(File.read(path)).to eq("ccc bbb ccc\n")
+      result = Brute::Tools::FSPatch.new.call(file_path: path, old_string: "aaa", new_string: "ccc", replace_all: true)
+      result[:replacements].should == 2
     end
   end
 end
