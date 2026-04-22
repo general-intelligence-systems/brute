@@ -2,6 +2,10 @@
 # frozen_string_literal: true
 
 # Multi-turn — multiple .run() calls on the same agent, full context retained.
+#
+# Uses a local Ollama instance. Start Ollama first:
+#   ollama serve
+#   ollama pull qwen2.5:14b
 
 require_relative "../lib/brute"
 require "json"
@@ -9,7 +13,7 @@ require "json"
 dir = File.expand_path("tmp/multi_turn", __dir__)
 FileUtils.mkdir_p(dir)
 
-agent = Brute.agent(cwd: dir)
+agent = Brute.agent(provider: Brute::Providers::Ollama.new, model: "qwen2.5:14b", cwd: dir)
 
 agent.run(
   "Create a file called config.yml with example settings for a web app: " \

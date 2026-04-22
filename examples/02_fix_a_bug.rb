@@ -2,6 +2,10 @@
 # frozen_string_literal: true
 
 # Fix a bug — agent reads a buggy file, patches it, and verifies.
+#
+# Uses a local Ollama instance. Start Ollama first:
+#   ollama serve
+#   ollama pull qwen2.5:14b
 
 require_relative "../lib/brute"
 require "json"
@@ -31,7 +35,7 @@ File.write("#{dir}/calculator_test.rb", <<~RUBY)
   puts "All tests pass!"
 RUBY
 
-agent = Brute.agent(cwd: dir)
+agent = Brute.agent(provider: Brute::Providers::Ollama.new, model: "qwen2.5:14b", cwd: dir)
 agent.run(
   "Read calculator.rb and calculator_test.rb. Fix the bugs so all tests pass, " \
   "then run `ruby calculator_test.rb` to verify."

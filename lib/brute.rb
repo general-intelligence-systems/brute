@@ -3,6 +3,7 @@
 require 'llm'
 require 'timeout'
 require 'logger'
+require 'scampi/kernel_ext'
 
 # Brute — a coding agent built on llm.rb
 #
@@ -96,6 +97,7 @@ require_relative 'brute/providers/shell'
 require_relative 'brute/providers/models_dev'
 require_relative 'brute/providers/opencode_zen'
 require_relative 'brute/providers/opencode_go'
+require_relative 'brute/providers/ollama'
 
 # Orchestrator (depends on tools, middleware, and infrastructure)
 require_relative 'brute/orchestrator'
@@ -119,7 +121,7 @@ module Brute
 
   # Default provider, resolved from environment.
   def self.provider
-    @provider ||= resolve_provider
+    @provider ||= Brute::Providers.guess_from_env
   end
 
   def self.provider=(p)
@@ -127,7 +129,7 @@ module Brute
   end
 
   # Create a new orchestrator with sensible defaults.
-  def self.agent(cwd: Dir.pwd, model: nil, tools: TOOLS, session: nil, reasoning: {}, agent_name: nil, **callbacks)
+  def self.agent(provider: self.provider, cwd: Dir.pwd, model: nil, tools: TOOLS, session: nil, reasoning: {}, agent_name: nil, **callbacks)
     Orchestrator.new(
       provider: provider,
       model: model,
@@ -139,92 +141,4 @@ module Brute
       **callbacks
     )
   end
-
-  PROVIDERS = {
-    'anthropic' => ->(key) { LLM.anthropic(key: key).tap { Patches::AnthropicToolRole.apply! } },
-    'openai' => ->(key) { LLM.openai(key: key) },
-    'google' => ->(key) { LLM.google(key: key) },
-    'deepseek' => ->(key) { LLM.deepseek(key: key) },
-    'ollama' => ->(key) { LLM.ollama(key: key) },
-    'xai' => ->(key) { LLM.xai(key: key) },
-    'opencode_zen' => ->(key) { LLM::OpencodeZen.new(key: key) },
-    'opencode_go' => ->(key) { LLM::OpencodeGo.new(key: key) },
-    'shell' => ->(_key) { Providers::Shell.new },
-  }.freeze
-
-  # List provider names that have API keys configured in the environment.
-  # The shell provider is always available (no key needed).
-  def self.configured_providers
-    PROVIDERS.keys.select { |name| api_key_for(name) }
-  end
-
-  # Build a provider instance for the given name using available API keys.
-  # Returns nil if no key is found.
-  def self.provider_for(name)
-    key = api_key_for(name)
-    return nil unless key
-
-    factory = PROVIDERS[name]
-    return nil unless factory
-
-    factory.call(key)
-  end
-
-  # Look up the API key for a given provider name.
-  def self.api_key_for(name)
-    # Shell provider needs no key.
-    return "none" if name == "shell"
-
-    # OpenCode providers: check OPENCODE_API_KEY, fall back to "public" for anonymous access.
-    if name == "opencode_zen" || name == "opencode_go"
-      return ENV["OPENCODE_API_KEY"] || "public"
-    end
-
-    # Explicit generic key always works
-    return ENV["LLM_API_KEY"] if ENV["LLM_API_KEY"]
-
-    case name
-    when "anthropic" then ENV["ANTHROPIC_API_KEY"]
-    when "openai"    then ENV["OPENAI_API_KEY"]
-    when "google"    then ENV["GOOGLE_API_KEY"]
-    end
-  end
-
-  # Resolve the LLM provider from environment variables.
-  #
-  # Checks in order:
-  #   1. LLM_API_KEY + LLM_PROVIDER (explicit)
-  #   2. OPENCODE_API_KEY (implicit: provider = opencode_zen)
-  #   3. ANTHROPIC_API_KEY (implicit: provider = anthropic)
-  #   4. OPENAI_API_KEY   (implicit: provider = openai)
-  #   5. GOOGLE_API_KEY   (implicit: provider = google)
-  #
-  # Returns nil if no key is found. Error is deferred to Orchestrator#run.
-  def self.resolve_provider
-    if ENV['LLM_API_KEY']
-      key = ENV['LLM_API_KEY']
-      name = ENV.fetch('LLM_PROVIDER', 'opencode_zen').downcase
-    elsif ENV['OPENCODE_API_KEY']
-      key = ENV['OPENCODE_API_KEY']
-      name = 'opencode_zen'
-    elsif ENV['ANTHROPIC_API_KEY']
-      key = ENV['ANTHROPIC_API_KEY']
-      name = 'anthropic'
-    elsif ENV['OPENAI_API_KEY']
-      key = ENV['OPENAI_API_KEY']
-      name = 'openai'
-    elsif ENV['GOOGLE_API_KEY']
-      key = ENV['GOOGLE_API_KEY']
-      name = 'google'
-    else
-      return nil
-    end
-
-    factory = PROVIDERS[name]
-    raise "Unknown LLM provider: #{name}. Available: #{PROVIDERS.keys.join(', ')}" unless factory
-
-    factory.call(key)
-  end
-
-  private_class_method :resolve_provider
 end

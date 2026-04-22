@@ -110,6 +110,18 @@ module Brute
         Prompts::Instructions,
       ],
 
+      # Ollama — lean stack for local models with smaller context windows
+      "ollama" => [
+        Prompts::Identity,
+        Prompts::ToneAndStyle,
+        Prompts::Conventions,
+        Prompts::DoingTasks,
+        Prompts::ToolUsage,
+        Prompts::GitSafety,
+        Prompts::Environment,
+        Prompts::Instructions,
+      ],
+
       # Fallback — conservative, concise, fewer than 4 lines
       "default" => [
         Prompts::Identity,

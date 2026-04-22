@@ -2,6 +2,10 @@
 # frozen_string_literal: true
 
 # Custom rules — constrain agent behavior via AGENTS.md.
+#
+# Uses a local Ollama instance. Start Ollama first:
+#   ollama serve
+#   ollama pull qwen2.5:14b
 
 require_relative "../lib/brute"
 require "json"
@@ -18,7 +22,7 @@ File.write("#{dir}/AGENTS.md", <<~MD)
   - Use `raise ArgumentError` for invalid inputs, never `puts` an error.
 MD
 
-agent = Brute.agent(cwd: dir)
+agent = Brute.agent(provider: Brute::Providers::Ollama.new, model: "qwen2.5:14b", cwd: dir)
 agent.run(
   "Create a file called user.rb with a User class that has a name attribute " \
   "and a #greet method that returns a greeting string. Follow the project rules."
