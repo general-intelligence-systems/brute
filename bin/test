@@ -1,10 +1,4 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-Dir.chdir(File.expand_path("..", __dir__))
-
-if ARGV.empty?
-  Dir["lib/**/*.rb"].each { |f| system("bundle", "exec", "ruby", f) || exit(1) }
-else
-  ARGV.each { |f| system("bundle", "exec", "ruby", f) || exit(1) }
-end
+`bundle exec scampi`
