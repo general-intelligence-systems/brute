@@ -1,3 +1,10 @@
+require_relative 'providers/shell_response'
+require_relative 'providers/shell'
+require_relative 'providers/models_dev'
+require_relative 'providers/opencode_zen'
+require_relative 'providers/opencode_go'
+require_relative 'providers/ollama'
+
 module Brute
   module Providers
     ALL = {

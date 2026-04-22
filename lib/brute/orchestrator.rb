@@ -30,7 +30,7 @@ module Brute
     def initialize(
       provider:,
       model: nil,
-      tools: Brute::TOOLS,
+      tools: Brute::Tools::ALL,
       cwd: Dir.pwd,
       session: nil,
       compactor_opts: {},
