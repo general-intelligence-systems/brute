@@ -1,0 +1,63 @@
+PATH
+  remote: .
+  specs:
+    brute (0.4.1)
+      async (~> 2.0)
+      diff-lcs (>= 1.5)
+      llm.rb (~> 4.11)
+      scampi
+
+GEM
+  remote: https://rubygems.org/
+  specs:
+    async (2.39.0)
+      console (~> 1.29)
+      fiber-annotation
+      io-event (~> 1.11)
+      metrics (~> 0.12)
+      traces (~> 0.18)
+    colorize (1.1.0)
+    colorize-extended (0.1.0)
+      colorize (~> 1.1)
+    console (1.34.3)
+      fiber-annotation
+      fiber-local (~> 1.1)
+      json
+    diff-lcs (1.6.2)
+    fiber-annotation (0.2.0)
+    fiber-local (1.1.0)
+      fiber-storage
+    fiber-storage (1.0.1)
+    io-event (1.15.1)
+    json (2.19.4)
+    llm.rb (4.21.0)
+    metrics (0.15.0)
+    rake (13.4.2)
+    rspec (3.13.2)
+      rspec-core (~> 3.13.0)
+      rspec-expectations (~> 3.13.0)
+      rspec-mocks (~> 3.13.0)
+    rspec-core (3.13.6)
+      rspec-support (~> 3.13.0)
+    rspec-expectations (3.13.5)
+      diff-lcs (>= 1.2.0, < 2.0)
+      rspec-support (~> 3.13.0)
+    rspec-mocks (3.13.8)
+      diff-lcs (>= 1.2.0, < 2.0)
+      rspec-support (~> 3.13.0)
+    rspec-support (3.13.7)
+    scampi (0.1.5)
+      colorize-extended
+    traces (0.18.2)
+
+PLATFORMS
+  ruby
+  x86_64-linux
+
+DEPENDENCIES
+  brute!
+  rake (~> 13.0)
+  rspec (~> 3.13)
+
+BUNDLED WITH
+   2.6.9

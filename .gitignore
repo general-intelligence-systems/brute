@@ -1,6 +1,5 @@
 .direnv/
 examples/tmp/
-Gemfile.lock
 *.gem
 /.bundle/
 /coverage/
