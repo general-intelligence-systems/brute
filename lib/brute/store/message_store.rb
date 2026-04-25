@@ -8,22 +8,24 @@ require "securerandom"
 
 module Brute
   module Store
-  # Stores session messages as individual JSON files in the OpenCode
-  # {info, parts} format. Each session gets a directory; each message
-  # is a numbered JSON file inside it.
+  # Append-only JSONL event store. Each event is a single JSON line in
+  # `events.jsonl` inside the session directory.
   #
   # Storage layout:
   #
   #   ~/.brute/sessions/{session-id}/
   #     session.meta.json
-  #     msg_0001.json
-  #     msg_0002.json
-  #     ...
+  #     events.jsonl
   #
-  # Message format matches OpenCode's MessageV2.WithParts:
+  # Every display-visible event (user input, agent text, tool calls,
+  # log messages, errors) gets its own line:
   #
-  #   { info: { id:, sessionID:, role:, time:, ... },
-  #     parts: [{ id:, type:, ... }, ...] }
+  #   {"seq":1,"type":"user","text":"Hello","time":1234567890,"sessionID":"..."}
+  #   {"seq":2,"type":"log","text":"LLM call #1 ...","time":1234567891,"sessionID":"..."}
+  #   {"seq":3,"type":"agent","text":"Hi there","time":1234567892,"sessionID":"...","modelID":"claude","providerID":"anthropic"}
+  #   ...
+  #
+  # Event types: user, agent, tool, log, error
   #
   class MessageStore
     attr_reader :session_id, :dir
@@ -31,243 +33,95 @@ module Brute
     def initialize(session_id:, dir: nil)
       @session_id = session_id
       @dir = dir || File.join(Dir.home, ".brute", "sessions", session_id)
-      @messages = {}   # id => { info:, parts: }
+      @events = []
       @seq = 0
-      @part_seq = 0
       @mutex = Mutex.new
       load_existing
     end
 
-    def append_user(text:, message_id: nil)
-      id = message_id || next_message_id
-      msg = {
-        info: {
-          id: id,
-          sessionID: @session_id,
-          role: "user",
-          time: { created: now_ms },
-        },
-        parts: [
-          { id: next_part_id, sessionID: @session_id, messageID: id,
-            type: "text", text: text },
-        ],
-      }
-      save_message(id, msg)
-      id
+    # ── Append methods ──────────────────────────────────────────
+
+    def append_turn_start(provider_id:, model_id:)
+      append_event(type: "turn-start", providerID: provider_id, modelID: model_id)
     end
 
-    def append_assistant(message_id: nil, parent_id: nil, model_id: nil, provider_id: nil)
-      id = message_id || next_message_id
-      msg = {
-        info: {
-          id: id,
-          sessionID: @session_id,
-          role: "assistant",
-          parentID: parent_id,
-          time: { created: now_ms },
-          modelID: model_id,
-          providerID: provider_id,
-          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-          cost: 0.0,
-        },
-        parts: [],
-      }
-      save_message(id, msg)
-      id
+    def append_user(text:)
+      append_event(type: "user", text: text)
     end
 
-    def add_text_part(message_id:, text:)
-      @mutex.synchronize do
-        msg = @messages[message_id]
-        return unless msg
-
-        part = { id: next_part_id, sessionID: @session_id, messageID: message_id,
-                 type: "text", text: text }
-        msg[:parts] << part
-        persist(message_id)
-        part[:id]
-      end
+    def append_agent(text:, model_id: nil, provider_id: nil)
+      append_event(type: "agent", text: text, modelID: model_id, providerID: provider_id)
     end
 
-    def add_tool_part(message_id:, tool:, call_id:, input:)
-      @mutex.synchronize do
-        msg = @messages[message_id]
-        return unless msg
-
-        part = {
-          id: next_part_id, sessionID: @session_id, messageID: message_id,
-          type: "tool", callID: call_id, tool: tool,
-          state: {
-            status: "running",
-            input: input,
-            time: { start: now_ms },
-          },
-        }
-        msg[:parts] << part
-        persist(message_id)
-        part[:id]
-      end
+    def append_log(text:, **fields)
+      append_event(type: "log", text: text, **fields)
     end
 
-    def complete_tool_part(message_id:, call_id:, output:)
-      @mutex.synchronize do
-        msg = @messages[message_id]
-        return unless msg
-
-        part = msg[:parts].find { |p| p[:type] == "tool" && p[:callID] == call_id }
-        return unless part
-
-        part[:state][:status] = "completed"
-        part[:state][:output] = output
-        part[:state][:time][:end] = now_ms
-        persist(message_id)
-      end
+    def append_error(text:)
+      append_event(type: "error", text: text)
     end
 
-    def error_tool_part(message_id:, call_id:, error:)
-      @mutex.synchronize do
-        msg = @messages[message_id]
-        return unless msg
-
-        part = msg[:parts].find { |p| p[:type] == "tool" && p[:callID] == call_id }
-        return unless part
-
-        part[:state][:status] = "error"
-        part[:state][:error] = error.to_s
-        part[:state][:time][:end] = now_ms
-        persist(message_id)
-      end
+    def append_tool_start(tool:, call_id:, input:)
+      append_event(type: "tool", tool: tool, callID: call_id, status: "running", input: input)
     end
 
-    def add_log_part(message_id:, text:)
-      @mutex.synchronize do
-        msg = @messages[message_id]
-        return unless msg
-
-        part = { id: next_part_id, sessionID: @session_id, messageID: message_id,
-                 type: "log", text: text, time: now_ms }
-        msg[:parts] << part
-        persist(message_id)
-        part[:id]
-      end
+    def append_tool_complete(tool:, call_id:, output:)
+      append_event(type: "tool", tool: tool, callID: call_id, status: "completed", output: output)
     end
 
-    def add_error_part(message_id:, text:)
-      @mutex.synchronize do
-        msg = @messages[message_id]
-        return unless msg
-
-        part = { id: next_part_id, sessionID: @session_id, messageID: message_id,
-                 type: "error", text: text, time: now_ms }
-        msg[:parts] << part
-        persist(message_id)
-        part[:id]
-      end
+    def append_tool_error(tool:, call_id:, error:)
+      append_event(type: "tool", tool: tool, callID: call_id, status: "error", error: error.to_s)
     end
 
-    def add_step_finish(message_id:, tokens: nil)
-      @mutex.synchronize do
-        msg = @messages[message_id]
-        return unless msg
+    # ── Readers ─────────────────────────────────────────────────
 
-        part = {
-          id: next_part_id, sessionID: @session_id, messageID: message_id,
-          type: "step-finish",
-          reason: "stop",
-          tokens: tokens || { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-        }
-        msg[:parts] << part
-        persist(message_id)
-      end
+    def events
+      @mutex.synchronize { @events.dup }
     end
 
-    # Finalize an assistant message with token counts and completion time.
-    def complete_assistant(message_id:, tokens: nil)
-      @mutex.synchronize do
-        msg = @messages[message_id]
-        return unless msg
-
-        msg[:info][:time][:completed] = now_ms
-        if tokens
-          msg[:info][:tokens] = {
-            input: tokens[:input] || tokens[:total_input] || 0,
-            output: tokens[:output] || tokens[:total_output] || 0,
-            reasoning: tokens[:reasoning] || tokens[:total_reasoning] || 0,
-            cache: tokens[:cache] || { read: 0, write: 0 },
-          }
-        end
-        persist(message_id)
-      end
-    end
-
-    def messages
-      @mutex.synchronize { @messages.values }
-    end
-
-    def message(id)
-      @mutex.synchronize { @messages[id] }
-    end
+    # Alias for backward compat with examples that call .messages
+    alias_method :messages, :events
 
     def count
-      @mutex.synchronize { @messages.size }
+      @mutex.synchronize { @events.size }
     end
 
     private
 
-      def next_message_id
-        @seq += 1
-        format("msg_%04d", @seq)
-      end
-
-      def next_part_id
-        @part_seq += 1
-        format("prt_%04d", @part_seq)
-      end
-
-      def now_ms
-        (Time.now.to_f * 1000).to_i
-      end
-
-      def save_message(id, msg)
+      def append_event(type:, **fields)
         @mutex.synchronize do
-          @messages[id] = msg
-          persist(id)
+          @seq += 1
+          event = { seq: @seq, type: type, time: now_ts, sessionID: @session_id }
+          event.merge!(fields.compact)
+          @events << event
+          persist_line(event)
+          @seq
         end
       end
 
-      def persist(id)
-        FileUtils.mkdir_p(@dir)
-        msg = @messages[id]
-        return unless msg
+      def now_ts
+        Time.now.strftime("%Y-%m-%dT%H:%M:%S.%L")
+      end
 
-        path = File.join(@dir, "#{id}.json")
-        File.write(path, JSON.pretty_generate(msg))
+      def persist_line(event)
+        FileUtils.mkdir_p(@dir)
+        path = File.join(@dir, "events.jsonl")
+        File.open(path, "a") { |f| f.puts(JSON.generate(event)) }
       end
 
       def load_existing
-        return unless File.directory?(@dir)
+        path = File.join(@dir, "events.jsonl")
+        return unless File.exist?(path)
 
-        Dir.glob(File.join(@dir, "msg_*.json")).sort.each do |path|
-          data = JSON.parse(File.read(path), symbolize_names: true)
-          id = data.dig(:info, :id)
-          next unless id
+        File.foreach(path) do |line|
+          line = line.strip
+          next if line.empty?
 
-          @messages[id] = data
+          event = JSON.parse(line, symbolize_names: true)
+          @events << event
 
-          # Track sequence numbers so new IDs don't collide
-          if (m = id.match(/\Amsg_(\d+)\z/))
-            n = m[1].to_i
-            @seq = n if n > @seq
-          end
-
-          # Track part sequences too
-          (data[:parts] || []).each do |part|
-            pid = part[:id]
-            if pid.is_a?(String) && (m = pid.match(/\Aprt_(\d+)\z/))
-              n = m[1].to_i
-              @part_seq = n if n > @part_seq
-            end
-          end
+          seq = event[:seq]
+          @seq = seq if seq.is_a?(Integer) && seq > @seq
         end
       end
   end
@@ -285,81 +139,66 @@ test do
     FileUtils.rm_rf(dir)
   end
 
-  it "creates a user message with text part" do
+  it "appends a user event" do
     with_store do |store, _|
-      id = store.append_user(text: "Hello")
-      store.message(id)[:info][:role].should == "user"
+      store.append_user(text: "Hello")
+      store.events.last[:type].should == "user"
+      store.events.last[:text].should == "Hello"
     end
   end
 
-  it "stores user message text" do
+  it "appends an agent event" do
     with_store do |store, _|
-      id = store.append_user(text: "Hello")
-      store.message(id)[:parts][0][:text].should == "Hello"
+      store.append_agent(text: "Hi there", model_id: "claude", provider_id: "anthropic")
+      e = store.events.last
+      e[:type].should == "agent"
+      e[:text].should == "Hi there"
+      e[:modelID].should == "claude"
     end
   end
 
-  it "generates sequential message IDs" do
+  it "appends a log event" do
     with_store do |store, _|
-      id1 = store.append_user(text: "First")
-      id2 = store.append_user(text: "Second")
-      id1.should == "msg_0001"
+      store.append_log(text: "LLM call #1")
+      store.events.last[:type].should == "log"
     end
   end
 
-  it "creates an assistant message" do
+  it "appends an error event" do
     with_store do |store, _|
-      uid = store.append_user(text: "Hi")
-      aid = store.append_assistant(parent_id: uid, model_id: "claude", provider_id: "anthropic")
-      store.message(aid)[:info][:role].should == "assistant"
+      store.append_error(text: "something broke")
+      store.events.last[:type].should == "error"
     end
   end
 
-  it "appends a text part to an existing message" do
+  it "appends tool start and complete events" do
     with_store do |store, _|
-      aid = store.append_assistant
-      store.add_text_part(message_id: aid, text: "Here is my response")
-      store.message(aid)[:parts][0][:text].should == "Here is my response"
+      store.append_tool_start(tool: "shell", call_id: "c1", input: { "command" => "ls" })
+      store.events.last[:status].should == "running"
+
+      store.append_tool_complete(tool: "shell", call_id: "c1", output: "file1.rb")
+      store.events.last[:status].should == "completed"
     end
   end
 
-  it "tracks tool lifecycle running to completed" do
+  it "appends tool error event" do
     with_store do |store, _|
-      aid = store.append_assistant
-      store.add_tool_part(message_id: aid, tool: "read", call_id: "call_001", input: {})
-      store.message(aid)[:parts].find { |p| p[:type] == "tool" }[:state][:status].should == "running"
-      store.complete_tool_part(message_id: aid, call_id: "call_001", output: "done")
-      store.message(aid)[:parts].find { |p| p[:type] == "tool" }[:state][:status].should == "completed"
+      store.append_tool_start(tool: "shell", call_id: "c2", input: {})
+      store.append_tool_error(tool: "shell", call_id: "c2", error: "denied")
+      store.events.last[:status].should == "error"
     end
   end
 
-  it "tracks tool lifecycle running to error" do
+  it "generates sequential seq numbers" do
     with_store do |store, _|
-      aid = store.append_assistant
-      store.add_tool_part(message_id: aid, tool: "shell", call_id: "call_002", input: {})
-      store.error_tool_part(message_id: aid, call_id: "call_002", error: "denied")
-      store.message(aid)[:parts].find { |p| p[:type] == "tool" }[:state][:status].should == "error"
+      store.append_user(text: "First")
+      store.append_log(text: "log")
+      store.append_agent(text: "response")
+      store.events.map { |e| e[:seq] }.should == [1, 2, 3]
     end
   end
 
-  it "sets token counts on complete_assistant" do
-    with_store do |store, _|
-      aid = store.append_assistant
-      store.complete_assistant(message_id: aid, tokens: { input: 100, output: 50, reasoning: 10, cache: { read: 0, write: 0 } })
-      store.message(aid)[:info][:tokens][:input].should == 100
-    end
-  end
-
-  it "returns all messages in order" do
-    with_store do |store, _|
-      store.append_user(text: "Q1")
-      store.append_assistant
-      store.append_user(text: "Q2")
-      store.messages.size.should == 3
-    end
-  end
-
-  it "returns count of stored messages" do
+  it "returns count of stored events" do
     with_store do |store, _|
       store.count.should == 0
       store.append_user(text: "Q1")
@@ -367,22 +206,24 @@ test do
     end
   end
 
-  it "restores messages from disk" do
+  it "restores events from disk" do
     with_store do |store, dir|
       store.append_user(text: "Persisted Q")
-      aid = store.append_assistant(model_id: "claude")
-      store.add_text_part(message_id: aid, text: "Persisted A")
+      store.append_agent(text: "Persisted A", model_id: "claude")
       store2 = Brute::Store::MessageStore.new(session_id: "test-session-123", dir: dir)
       store2.count.should == 2
+      store2.events[0][:text].should == "Persisted Q"
+      store2.events[1][:text].should == "Persisted A"
     end
   end
 
-  it "continues sequence numbering from loaded messages" do
+  it "continues sequence numbering from loaded events" do
     with_store do |store, dir|
       store.append_user(text: "Q1")
       store.append_user(text: "Q2")
       store2 = Brute::Store::MessageStore.new(session_id: "test-session-123", dir: dir)
-      store2.append_user(text: "Q3").should == "msg_0003"
+      store2.append_user(text: "Q3")
+      store2.events.last[:seq].should == 3
     end
   end
 end
