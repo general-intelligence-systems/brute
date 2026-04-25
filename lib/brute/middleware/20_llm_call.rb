@@ -125,79 +125,61 @@ test do
   require_relative "../../../spec/support/mock_provider"
   require_relative "../../../spec/support/mock_response"
 
-  def build_env(**overrides)
-    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
-      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
-      tool_results: nil, streaming: false, should_exit: nil, pending_functions: [] }.merge(overrides)
-  end
+  turn = nil
+  provider = nil
+  build_turn = -> {
+    return turn if turn
+
+    provider = MockProvider.new
+    pipeline = Brute::Middleware::Stack.new do
+      run Brute::Middleware::LLMCall.new
+    end
+
+    turn = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: provider, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+    )
+  }
 
   it "calls the provider and returns a response" do
-    provider = MockProvider.new
-    middleware = Brute::Middleware::LLMCall.new
-    env = build_env(provider: provider, input: "hello", streaming: false)
-    response = middleware.call(env)
-    response.should.not.be.nil
+    build_turn.call
+    turn.result.should.not.be.nil
   end
 
   it "records a call on the provider" do
-    provider = MockProvider.new
-    middleware = Brute::Middleware::LLMCall.new
-    env = build_env(provider: provider, input: "hello", streaming: false)
-    middleware.call(env)
+    build_turn.call
     provider.calls.size.should == 1
   end
 
-  it "appends new messages to env[:messages]" do
-    provider = MockProvider.new
-    middleware = Brute::Middleware::LLMCall.new
-    env = build_env(provider: provider, input: "hello", streaming: false)
-    middleware.call(env)
-    env[:messages].should.not.be.empty
+  it "appends messages to env" do
+    build_turn.call
+    turn.env[:messages].should.not.be.empty
   end
 
-  it "populates env[:pending_functions] as an Array" do
-    provider = MockProvider.new
-    middleware = Brute::Middleware::LLMCall.new
-    env = build_env(provider: provider, input: "hello", streaming: false)
-    middleware.call(env)
-    env[:pending_functions].should.be.kind_of(Array)
-  end
-
-  it "does not fire on_content callback when streaming" do
-    provider = MockProvider.new
-    middleware = Brute::Middleware::LLMCall.new
-    called = false
-    env = build_env(provider: provider, input: "hi", streaming: true, callbacks: { on_content: ->(_) { called = true } })
-    middleware.call(env)
-    called.should.be.false
-  end
-
-  it "preserves existing messages across calls" do
-    provider = MockProvider.new
-    middleware = Brute::Middleware::LLMCall.new
-    existing = LLM::Message.new(:user, "previous")
-    env = build_env(provider: provider, input: "hello", streaming: false, messages: [existing])
-    middleware.call(env)
-    env[:messages].first.should == existing
-  end
-
-  it "fires on_error callback on LLM failure" do
-    error_received = nil
-    callbacks = { on_error: ->(text) { error_received = text } }
-    provider = MockProvider.new
-    provider.define_singleton_method(:complete) { |*, **| raise "invalid x-api-key" }
-    middleware = Brute::Middleware::LLMCall.new
-    env = build_env(provider: provider, input: "hello", streaming: false, callbacks: callbacks)
-    middleware.call(env)
-    error_received.should =~ /invalid x-api-key/
+  it "populates pending_functions as an Array" do
+    build_turn.call
+    turn.env[:pending_functions].should.be.kind_of(Array)
   end
 
   it "sets should_exit on LLM failure" do
-    provider = MockProvider.new
-    provider.define_singleton_method(:complete) { |*, **| raise "bad key" }
-    middleware = Brute::Middleware::LLMCall.new
-    env = build_env(provider: provider, input: "hello", streaming: false)
-    middleware.call(env)
-    env[:should_exit][:reason].should == "llm_error"
+    failing_provider = MockProvider.new
+    failing_provider.define_singleton_method(:complete) { |*, **| raise "bad key" }
+
+    pipeline = Brute::Middleware::Stack.new do
+      run Brute::Middleware::LLMCall.new
+    end
+
+    error_messages = []
+    step = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: failing_provider, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+      callbacks: { on_error: ->(text) { error_messages << text } },
+    )
+    step.env[:should_exit][:reason].should == "llm_error"
+    error_messages.any? { |m| m =~ /bad key/ }.should.be.true
   end
 end

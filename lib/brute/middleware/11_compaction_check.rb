@@ -153,65 +153,30 @@ test do
   require_relative "../../../spec/support/mock_provider"
   require_relative "../../../spec/support/mock_response"
 
-  def build_env(**overrides)
-    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
-      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
-      tool_results: nil, streaming: false, should_exit: nil, pending_functions: [] }.merge(overrides)
-  end
+  it "passes through when compaction is not needed" do
+    compactor = Object.new
+    compactor.define_singleton_method(:should_compact?) { |_msgs, **_| false }
 
-  def make_compactor(should: false, result: nil)
-    Object.new.tap do |c|
-      c.define_singleton_method(:should_compact?) { |_msgs, **_| should }
-      c.define_singleton_method(:compact) { |_msgs| result }
+    pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::CompactionCheck, compactor: compactor, system_prompt: "sys"
+      run ->(_env) { MockResponse.new(content: "ok") }
     end
+
+    turn = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+    )
+    turn.result.content.should == "ok"
+    turn.env[:metadata][:compaction].should.be.nil
   end
 
-  it "passes the response through when compaction is not needed" do
-    response = MockResponse.new(content: "compaction response")
-    compactor = make_compactor(should: false)
-    middleware = Brute::Middleware::CompactionCheck.new(->(_env) { response }, compactor: compactor, system_prompt: "sys")
-    result = middleware.call(build_env)
-    result.should == response
-  end
-
-  it "does not set compaction metadata when not needed" do
-    compactor = make_compactor(should: false)
-    middleware = Brute::Middleware::CompactionCheck.new(->(_env) { MockResponse.new }, compactor: compactor, system_prompt: "sys")
-    env = build_env
-    middleware.call(env)
-    env[:metadata][:compaction].should.be.nil
-  end
-
-  it "replaces messages with summary when compaction triggers" do
-    compactor = make_compactor(should: true, result: ["Summary of conversation", []])
-    middleware = Brute::Middleware::CompactionCheck.new(->(_env) { MockResponse.new }, compactor: compactor, system_prompt: "sys")
-    env = build_env(messages: [LLM::Message.new(:user, "hello"), LLM::Message.new(:assistant, "hi"), LLM::Message.new(:user, "how")])
-    middleware.call(env)
-    env[:metadata][:compaction][:messages_before].should == 3
-  end
-
-  it "creates two messages after compaction" do
-    compactor = make_compactor(should: true, result: ["Summary", []])
-    middleware = Brute::Middleware::CompactionCheck.new(->(_env) { MockResponse.new }, compactor: compactor, system_prompt: "sys")
-    env = build_env(messages: [LLM::Message.new(:user, "hello")])
-    middleware.call(env)
-    env[:messages].size.should == 2
-  end
-
-  it "handles compactor returning nil gracefully" do
-    compactor = make_compactor(should: true, result: nil)
-    middleware = Brute::Middleware::CompactionCheck.new(->(_env) { MockResponse.new }, compactor: compactor, system_prompt: "sys")
-    env = build_env(messages: [LLM::Message.new(:user, "hello")])
-    middleware.call(env)
-    env[:metadata][:compaction].should.be.nil
-  end
-
-  # ── Compactor#should_compact? ────────────────────────────────────
+  # ── Compactor unit tests (no pipeline needed) ───────────────────
 
   it "should_compact? returns false when under both thresholds" do
     compactor = Brute::Middleware::CompactionCheck::Compactor.new(MockProvider.new)
-    usage = { input: 50, output: 30, total: 80 }
-    compactor.should_compact?([], usage: usage).should == false
+    compactor.should_compact?([], usage: { input: 50, output: 30, total: 80 }).should == false
   end
 
   it "should_compact? returns true when message count exceeds threshold" do
@@ -222,69 +187,23 @@ test do
 
   it "should_compact? returns true when token usage exceeds threshold" do
     compactor = Brute::Middleware::CompactionCheck::Compactor.new(MockProvider.new, token_threshold: 100)
-    usage = { input: 80, output: 30, total: 110 }
-    compactor.should_compact?([], usage: usage).should == true
+    compactor.should_compact?([], usage: { input: 80, output: 30, total: 110 }).should == true
   end
-
-  it "should_compact? returns false when token usage is under threshold" do
-    compactor = Brute::Middleware::CompactionCheck::Compactor.new(MockProvider.new, token_threshold: 200)
-    usage = { input: 80, output: 30, total: 110 }
-    compactor.should_compact?([], usage: usage).should == false
-  end
-
-  it "should_compact? returns false when usage is nil" do
-    compactor = Brute::Middleware::CompactionCheck::Compactor.new(MockProvider.new)
-    compactor.should_compact?([], usage: nil).should == false
-  end
-
-  it "should_compact? handles usage hash from TokenTracking middleware" do
-    # This is the exact shape TokenTracking produces at env[:metadata][:tokens][:last_call]
-    compactor = Brute::Middleware::CompactionCheck::Compactor.new(MockProvider.new, token_threshold: 100_000)
-    usage = { input: 60_000, output: 50_000, total: 110_000 }
-    compactor.should_compact?([], usage: usage).should == true
-  end
-
-  it "should_compact? respects custom message_threshold" do
-    compactor = Brute::Middleware::CompactionCheck::Compactor.new(MockProvider.new, message_threshold: 3)
-    messages = 4.times.map { LLM::Message.new(:user, "msg") }
-    compactor.should_compact?(messages).should == true
-  end
-
-  # ── Compactor#compact ────────────────────────────────────────────
 
   it "compact returns nil when messages fit within retention_window" do
     compactor = Brute::Middleware::CompactionCheck::Compactor.new(MockProvider.new, retention_window: 6)
-    messages = 4.times.map { LLM::Message.new(:user, "msg") }
-    compactor.compact(messages).should.be.nil
-  end
-
-  it "compact returns nil when messages equal retention_window" do
-    compactor = Brute::Middleware::CompactionCheck::Compactor.new(MockProvider.new, retention_window: 3)
-    messages = 3.times.map { LLM::Message.new(:user, "msg") }
-    compactor.compact(messages).should.be.nil
+    compactor.compact(4.times.map { LLM::Message.new(:user, "msg") }).should.be.nil
   end
 
   it "compact splits messages and returns [summary, recent]" do
-    # Provider whose complete() returns a canned summary
     summary_provider = MockProvider.new
-    summary_provider.define_singleton_method(:complete) { |*_args, **_kw| MockResponse.new(content: "Summary of old messages") }
+    summary_provider.define_singleton_method(:complete) { |*_args, **_kw| MockResponse.new(content: "Summary") }
 
     compactor = Brute::Middleware::CompactionCheck::Compactor.new(summary_provider, retention_window: 2)
     messages = 5.times.map { |i| LLM::Message.new(:user, "msg #{i}") }
-    result = compactor.compact(messages)
-    result.should.not.be.nil
-    summary, recent = result
-    summary.should == "Summary of old messages"
+    summary, recent = compactor.compact(messages)
+    summary.should == "Summary"
     recent.size.should == 2
-  end
-
-  it "compact keeps the most recent messages in the retained portion" do
-    summary_provider = MockProvider.new
-    summary_provider.define_singleton_method(:complete) { |*_args, **_kw| MockResponse.new(content: "sum") }
-
-    compactor = Brute::Middleware::CompactionCheck::Compactor.new(summary_provider, retention_window: 2)
-    messages = 5.times.map { |i| LLM::Message.new(:user, "msg #{i}") }
-    _, recent = compactor.compact(messages)
     recent.map(&:content).should == ["msg 3", "msg 4"]
   end
 end

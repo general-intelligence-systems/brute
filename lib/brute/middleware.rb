@@ -114,63 +114,47 @@ test do
   require_relative "../../spec/support/mock_provider"
   require_relative "../../spec/support/mock_response"
 
-  def make_env(provider:, input:)
-    { provider: provider, model: nil, input: input, tools: [], messages: [],
-      stream: nil, params: {}, metadata: {}, callbacks: {}, tool_results: nil,
-      streaming: false, should_exit: nil, pending_functions: [] }
-  end
+  turn = nil
+  build_full_stack_turn = -> {
+    return turn if turn
 
-  it "full stack passes env through all middleware" do
-    provider = MockProvider.new
-    session = Struct.new(:saved) { def save_messages(m); self.saved = m; end }.new
     compactor = Object.new
     compactor.define_singleton_method(:should_compact?) { |_msgs, **_| false }
-    log_output = StringIO.new
+    session = Brute::Store::Session.new
 
-    stack = Brute::Middleware::Stack.new
-    stack.use(Brute::Middleware::Tracing, logger: Logger.new(log_output))
-    stack.use(Brute::Middleware::Retry, max_attempts: 3, base_delay: 2)
-    stack.use(Brute::Middleware::SessionPersistence, session: session)
-    stack.use(Brute::Middleware::TokenTracking)
-    stack.use(Brute::Middleware::CompactionCheck, compactor: compactor, system_prompt: "sys")
-    stack.use(Brute::Middleware::ToolErrorTracking)
-    stack.use(Brute::Middleware::DoomLoopDetection, threshold: 3)
-    stack.use(Brute::Middleware::ToolUseGuard)
-    stack.run(Brute::Middleware::LLMCall.new)
+    stack = Brute::Middleware::Stack.new do
+      use Brute::Middleware::Tracing, logger: Logger.new(StringIO.new)
+      use Brute::Middleware::Retry, max_attempts: 3, base_delay: 0
+      use Brute::Middleware::SessionPersistence, session: session
+      use Brute::Middleware::TokenTracking
+      use Brute::Middleware::CompactionCheck, compactor: compactor, system_prompt: "sys"
+      use Brute::Middleware::ToolErrorTracking
+      use Brute::Middleware::DoomLoopDetection, threshold: 3
+      use Brute::Middleware::ToolUseGuard
+      run Brute::Middleware::LLMCall.new
+    end
 
-    env = make_env(provider: provider, input: "hello")
-    result = stack.call(env)
-    result.should.not.be.nil
+    turn = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: session,
+      pipeline: stack,
+      input: "hello",
+    )
+  }
+
+  it "full stack returns a response" do
+    build_full_stack_turn.call
+    turn.result.should.not.be.nil
   end
 
-  it "stack populates timing metadata" do
-    provider = MockProvider.new
-    session = Struct.new(:saved) { def save_messages(m); self.saved = m; end }.new
-
-    stack = Brute::Middleware::Stack.new
-    stack.use(Brute::Middleware::Tracing, logger: Logger.new(StringIO.new))
-    stack.use(Brute::Middleware::SessionPersistence, session: session)
-    stack.use(Brute::Middleware::TokenTracking)
-    stack.run(Brute::Middleware::LLMCall.new)
-
-    env = make_env(provider: provider, input: "hello")
-    stack.call(env)
-    env[:metadata][:timing][:llm_call_count].should == 1
+  it "full stack populates timing metadata" do
+    build_full_stack_turn.call
+    turn.env[:metadata][:timing][:llm_call_count].should == 1
   end
 
-  it "stack populates token metadata" do
-    provider = MockProvider.new
-    session = Struct.new(:saved) { def save_messages(m); self.saved = m; end }.new
-
-    stack = Brute::Middleware::Stack.new
-    stack.use(Brute::Middleware::Tracing, logger: Logger.new(StringIO.new))
-    stack.use(Brute::Middleware::SessionPersistence, session: session)
-    stack.use(Brute::Middleware::TokenTracking)
-    stack.run(Brute::Middleware::LLMCall.new)
-
-    env = make_env(provider: provider, input: "hello")
-    stack.call(env)
-    env[:metadata][:tokens][:total_input].should.be > 0
+  it "full stack populates token metadata" do
+    build_full_stack_turn.call
+    turn.env[:metadata][:tokens][:total_input].should.be > 0
   end
 
   it "raises when no terminal app is set" do

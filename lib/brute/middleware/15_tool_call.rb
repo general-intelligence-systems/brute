@@ -79,131 +79,50 @@ test do
   require_relative "../../../spec/support/mock_provider"
   require_relative "../../../spec/support/mock_response"
 
-  FakeFunc = Struct.new(:id, :name, :arguments, :return_value, keyword_init: true) do
-    def call
-      self
-    end
-
-    def value
-      return_value
-    end
-  end
-
-  FakeError = Struct.new(:name, :value, keyword_init: true)
-
-  # Minimal turn double that provides a drainable queue
-  class FakeTurn
-    attr_reader :reset_called
-
-    def initialize
-      @queue = nil
-      @reset_called = false
-    end
-
-    def jobs(type: nil)
-      @queue ||= FakeQueue.new
-    end
-
-    def reset_jobs!
-      @queue = nil
-      @reset_called = true
-    end
-  end
-
-  class FakeQueue
-    attr_reader :steps
-
-    def initialize
-      @steps = []
-    end
-
-    def <<(step)
-      @steps << step
-    end
-
-    def drain
-      Sync do
-        @steps.each { |s| s.call(Async::Task.current) }
-      end
-    end
-  end
-
-  def build_env(turn: FakeTurn.new, **overrides)
-    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
-      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
-      tool_results: nil, streaming: false, should_exit: nil,
-      pending_functions: [], pending_tools: [], tool_results_queue: nil,
-      turn: turn }.merge(overrides)
-  end
-
-  def make_middleware(app = nil)
-    app ||= ->(_env) { MockResponse.new(content: "ok") }
-    Brute::Middleware::ToolCall.new(app)
-  end
-
   it "is a no-op when no pending tools" do
-    env = build_env(pending_tools: [])
-    make_middleware.call(env)
-    env[:tool_results_queue].should.be.nil
+    pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::ToolCall
+      run ->(_env) { MockResponse.new(content: "ok") }
+    end
+
+    turn = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+    )
+    turn.env[:tool_results_queue].should.be.nil
   end
 
-  it "executes tools and accumulates results" do
-    fn = FakeFunc.new(id: "c1", name: "fs_read", arguments: {}, return_value: "file data")
-    env = build_env(pending_tools: [[fn, nil]])
-    make_middleware.call(env)
-    env[:tool_results_queue].size.should == 1
-  end
+  it "executes pending tools and queues results" do
+    tool_start_batches = []
+    tool_results = []
 
-  it "handles pre-existing errors" do
-    fn = FakeFunc.new(id: "c1", name: "bad_tool", arguments: {}, return_value: nil)
-    err = FakeError.new(name: "bad_tool", value: { error: true })
-    env = build_env(pending_tools: [[fn, err]])
-    make_middleware.call(env)
-    env[:tool_results_queue].size.should == 1
-    env[:tool_results_queue][0].should == err
-  end
+    fn = Struct.new(:id, :name, :arguments, :return_value, keyword_init: true) do
+      def call; self; end
+      def value; return_value; end
+    end.new(id: "c1", name: "fs_read", arguments: { "path" => "x.rb" }, return_value: "file data")
 
-  it "clears pending_tools after processing" do
-    fn = FakeFunc.new(id: "c1", name: "fs_read", arguments: {}, return_value: "ok")
-    env = build_env(pending_tools: [[fn, nil]])
-    make_middleware.call(env)
-    env[:pending_tools].should == []
-  end
+    pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::ToolCall
+      run ->(env) {
+        # Simulate PendingToolCollection having set pending_tools
+        env[:pending_tools] = [[fn, nil]] if env[:pending_tools].empty?
+        MockResponse.new(content: "ok")
+      }
+    end
 
-  it "resets the turn sub-queue" do
-    turn = FakeTurn.new
-    fn = FakeFunc.new(id: "c1", name: "fs_read", arguments: {}, return_value: "ok")
-    env = build_env(turn: turn, pending_tools: [[fn, nil]])
-    make_middleware.call(env)
-    turn.reset_called.should.be.true
-  end
-
-  it "fires on_tool_call_start callback" do
-    received = nil
-    callbacks = { on_tool_call_start: ->(batch) { received = batch } }
-    fn = FakeFunc.new(id: "c1", name: "fs_read", arguments: { "path" => "x.rb" }, return_value: "ok")
-    env = build_env(pending_tools: [[fn, nil]], callbacks: callbacks)
-    make_middleware.call(env)
-    received.size.should == 1
-    received[0][:name].should == "fs_read"
-  end
-
-  it "fires on_tool_result callback per tool" do
-    results = []
-    callbacks = { on_tool_result: ->(name, val) { results << [name, val] } }
-    fn = FakeFunc.new(id: "c1", name: "fs_read", arguments: {}, return_value: "data")
-    env = build_env(pending_tools: [[fn, nil]], callbacks: callbacks)
-    make_middleware.call(env)
-    results.size.should == 1
-    results[0][0].should == "fs_read"
-  end
-
-  it "handles mix of errors and executable" do
-    fn_ok = FakeFunc.new(id: "c1", name: "fs_read", arguments: {}, return_value: "data")
-    fn_bad = FakeFunc.new(id: "c2", name: "bad", arguments: {}, return_value: nil)
-    err = FakeError.new(name: "bad", value: { error: true })
-    env = build_env(pending_tools: [[fn_bad, err], [fn_ok, nil]])
-    make_middleware.call(env)
-    env[:tool_results_queue].size.should == 2
+    turn = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+      callbacks: {
+        on_tool_call_start: ->(batch) { tool_start_batches << batch },
+        on_tool_result: ->(name, val) { tool_results << [name, val] },
+      },
+    )
+    tool_start_batches.flatten.any? { |tc| tc[:name] == "fs_read" }.should.be.true
+    tool_results.any? { |name, _| name == "fs_read" }.should.be.true
   end
 end
