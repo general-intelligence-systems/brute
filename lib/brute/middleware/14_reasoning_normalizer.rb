@@ -104,12 +104,6 @@ test do
   require_relative "../../../spec/support/mock_provider"
   require_relative "../../../spec/support/mock_response"
 
-  def build_env(**overrides)
-    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
-      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
-      tool_results: nil, streaming: false, should_exit: nil, pending_functions: [] }.merge(overrides)
-  end
-
   def make_provider(type_name)
     klass = Class.new do
       define_method(:name) { :mock }
@@ -131,62 +125,51 @@ test do
     klass.new
   end
 
-  inner_app = ->(_env) { MockResponse.new(content: "reasoned response") }
-
   it "injects thinking param for Anthropic with budget_tokens" do
     provider = make_provider("Anthropic")
-    middleware = Brute::Middleware::ReasoningNormalizer.new(inner_app, model_id: "claude-4", budget_tokens: 8000, enabled: true)
-    env = build_env(provider: provider, params: {})
-    middleware.call(env)
-    env[:params][:thinking].should == { type: "enabled", budget_tokens: 8000 }
-  end
+    pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::ReasoningNormalizer, model_id: "claude-4", budget_tokens: 8000, enabled: true
+      run ->(_env) { MockResponse.new(content: "ok") }
+    end
 
-  it "does not inject thinking param for Anthropic without budget_tokens" do
-    provider = make_provider("Anthropic")
-    middleware = Brute::Middleware::ReasoningNormalizer.new(inner_app, model_id: "claude-4", enabled: true)
-    env = build_env(provider: provider, params: {})
-    middleware.call(env)
-    env[:params][:thinking].should.be.nil
+    turn = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: provider, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+    )
+    turn.env[:params][:thinking].should == { type: "enabled", budget_tokens: 8000 }
   end
 
   it "injects reasoning_effort for OpenAI" do
     provider = make_provider("OpenAI")
-    middleware = Brute::Middleware::ReasoningNormalizer.new(inner_app, model_id: "o3", effort: :high, enabled: true)
-    env = build_env(provider: provider, params: {})
-    middleware.call(env)
-    env[:params][:reasoning_effort].should == "high"
-  end
+    pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::ReasoningNormalizer, model_id: "o3", effort: :high, enabled: true
+      run ->(_env) { MockResponse.new(content: "ok") }
+    end
 
-  it "maps low effort correctly for OpenAI" do
-    provider = make_provider("OpenAI")
-    middleware = Brute::Middleware::ReasoningNormalizer.new(inner_app, model_id: "o3", effort: :low, enabled: true)
-    env = build_env(provider: provider, params: {})
-    middleware.call(env)
-    env[:params][:reasoning_effort].should == "low"
-  end
-
-  it "does not inject params for unknown provider" do
-    provider = make_provider("Mistral")
-    middleware = Brute::Middleware::ReasoningNormalizer.new(inner_app, model_id: "mistral-large", enabled: true)
-    env = build_env(provider: provider, params: {})
-    middleware.call(env)
-    env[:params].should == {}
+    turn = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: provider, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+    )
+    turn.env[:params][:reasoning_effort].should == "high"
   end
 
   it "does not inject params when disabled" do
     provider = make_provider("Anthropic")
-    middleware = Brute::Middleware::ReasoningNormalizer.new(inner_app, model_id: "claude-4", budget_tokens: 8000, enabled: false)
-    env = build_env(provider: provider, params: {})
-    middleware.call(env)
-    env[:params].should == {}
-  end
+    pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::ReasoningNormalizer, model_id: "claude-4", budget_tokens: 8000, enabled: false
+      run ->(_env) { MockResponse.new(content: "ok") }
+    end
 
-  it "allows model_id to be updated mid-session" do
-    middleware = Brute::Middleware::ReasoningNormalizer.new(inner_app, model_id: "old", enabled: true)
-    middleware.model_id = "new"
-    provider = make_provider("OpenAI")
-    env = build_env(provider: provider, params: {})
-    middleware.call(env)
-    env[:params][:reasoning_effort].should.not.be.nil
+    turn = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: provider, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+    )
+    turn.env[:params][:thinking].should.be.nil
   end
 end

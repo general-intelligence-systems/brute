@@ -32,23 +32,23 @@ module Brute
         env[:pending_tools] = others
         return response unless questions.any?
 
-        callbacks = env[:callbacks] || {}
+        callbacks = env[:callbacks]
 
         # Fire on_tool_call_start with the question batch
-        callbacks[:on_tool_call_start]&.call(
-          questions.map { |fn, _| { name: fn.name, arguments: fn.arguments } }
+        callbacks.on_tool_call_start(
+          questions.map { |fn, _| { name: fn.name, call_id: fn.id, arguments: fn.arguments } }
         )
 
         env[:tool_results_queue] ||= []
 
         questions.each do |fn, err|
           if err
-            callbacks[:on_tool_result]&.call(err.name, result_value(err))
+            callbacks.on_tool_result(err.name, result_value(err))
             env[:tool_results_queue] << err
           else
-            Thread.current[:on_question] = callbacks[:on_question]
+            Thread.current[:on_question] = callbacks.on_question
             result = fn.call
-            callbacks[:on_tool_result]&.call(fn.name, result_value(result))
+            callbacks.on_tool_result(fn.name, result_value(result))
             env[:tool_results_queue] << result
           end
         end

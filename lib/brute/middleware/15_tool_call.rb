@@ -29,12 +29,12 @@ module Brute
         pending = env[:pending_tools]
         return response unless pending&.any?
 
-        callbacks = env[:callbacks] || {}
+        callbacks = env[:callbacks]
         turn = env[:turn]
 
         # Fire on_tool_call_start with the remaining (non-question) batch
-        callbacks[:on_tool_call_start]&.call(
-          pending.map { |fn, _| { name: fn.name, arguments: fn.arguments } }
+        callbacks.on_tool_call_start(
+          pending.map { |fn, _| { name: fn.name, call_id: fn.id, arguments: fn.arguments } }
         )
 
         env[:tool_results_queue] ||= []
@@ -43,7 +43,7 @@ module Brute
 
         # Record pre-existing errors (from stream's on_tool_call)
         errors.each do |_, err|
-          callbacks[:on_tool_result]&.call(err.name, result_value(err))
+          callbacks.on_tool_result(err.name, result_value(err))
           env[:tool_results_queue] << err
         end
 
@@ -54,7 +54,7 @@ module Brute
 
           tool_steps.each do |s|
             val = s.state == :completed ? s.result : s.error
-            callbacks[:on_tool_result]&.call(s.function.name, result_value(val))
+            callbacks.on_tool_result(s.function.name, result_value(val))
             env[:tool_results_queue] << val
           end
         end

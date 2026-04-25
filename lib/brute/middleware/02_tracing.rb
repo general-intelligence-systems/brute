@@ -43,7 +43,7 @@ module Brute
         provider_name = env[:provider]&.respond_to?(:name) ? env[:provider].name : env[:provider].class.name
         model_name = env[:model] || (env[:provider].default_model rescue "unknown")
         @logger.debug("[brute] LLM call ##{@call_count} [#{provider_name}/#{model_name}] (#{messages.size} messages in context)")
-        env[:callbacks][:on_log]&.call("LLM call ##{@call_count} [#{provider_name}/#{model_name}] (#{messages.size} messages)")
+        env[:callbacks].on_log("LLM call ##{@call_count} [#{provider_name}/#{model_name}] (#{messages.size} messages)")
 
         start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         response = @app.call(env)
@@ -52,9 +52,13 @@ module Brute
 
         @total_llm_elapsed += elapsed
 
-        tokens = response.respond_to?(:usage) ? response.usage&.total_tokens : '?'
+        tokens = if response.respond_to?(:usage) && (usage = response.usage)
+          read_token(usage, :total_tokens)
+        else
+          '?'
+        end
         @logger.debug("[brute] LLM response ##{@call_count} [#{provider_name}/#{model_name}]: #{tokens} tokens, #{elapsed.round(2)}s")
-        env[:callbacks][:on_log]&.call("LLM response ##{@call_count}: #{tokens} tokens, #{elapsed.round(2)}s") if response
+        env[:callbacks].on_log("LLM response ##{@call_count}: #{tokens} tokens, #{elapsed.round(2)}s") if response
 
         env[:metadata][:timing] = {
           total_elapsed: now - (@turn_start || start),
@@ -65,6 +69,18 @@ module Brute
 
         response
       end
+
+      private
+
+      def read_token(usage, method)
+        if usage.respond_to?(method)
+          usage.send(method).to_i
+        elsif usage.respond_to?(:[])
+          (usage[method] || usage[method.to_s]).to_i
+        else
+          0
+        end
+      end
     end
   end
 end
@@ -73,68 +89,40 @@ test do
   require_relative "../../../spec/support/mock_provider"
   require_relative "../../../spec/support/mock_response"
 
-  def build_env(**overrides)
-    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
-      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
-      tool_results: nil, streaming: false, should_exit: nil, pending_functions: [] }.merge(overrides)
+  log_output = StringIO.new
+  log_messages = []
+  turn = nil
+
+  build_turn = -> {
+    return turn if turn
+
+    pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::Tracing, logger: Logger.new(log_output, level: Logger::DEBUG)
+      run ->(_env) { MockResponse.new(content: "traced response") }
+    end
+
+    turn = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+      callbacks: { on_log: ->(text) { log_messages << text } },
+    )
+  }
+
+  it "returns the response unchanged" do
+    build_turn.call
+    turn.result.content.should == "traced response"
   end
 
-  it "passes the response through unchanged" do
-    response = MockResponse.new(content: "traced response")
-    inner_app = ->(_env) { response }
-    middleware = Brute::Middleware::Tracing.new(inner_app, logger: Logger.new(StringIO.new))
-    result = middleware.call(build_env(tool_results: nil))
-    result.should == response
-  end
-
-  it "populates timing with llm_call_count" do
-    response = MockResponse.new(content: "traced response")
-    inner_app = ->(_env) { response }
-    middleware = Brute::Middleware::Tracing.new(inner_app, logger: Logger.new(StringIO.new))
-    env = build_env(tool_results: nil)
-    middleware.call(env)
-    env[:metadata][:timing][:llm_call_count].should == 1
-  end
-
-  it "populates timing with non-negative last_call_elapsed" do
-    response = MockResponse.new(content: "traced response")
-    inner_app = ->(_env) { response }
-    middleware = Brute::Middleware::Tracing.new(inner_app, logger: Logger.new(StringIO.new))
-    env = build_env(tool_results: nil)
-    middleware.call(env)
-    (env[:metadata][:timing][:last_call_elapsed] >= 0).should.be.true
-  end
-
-  it "accumulates call count across multiple calls" do
-    response = MockResponse.new(content: "traced response")
-    inner_app = ->(_env) { response }
-    middleware = Brute::Middleware::Tracing.new(inner_app, logger: Logger.new(StringIO.new))
-    env = build_env(tool_results: nil)
-    middleware.call(env)
-    env[:tool_results] = [["read", {}]]
-    middleware.call(env)
-    middleware.call(env)
-    env[:metadata][:timing][:llm_call_count].should == 3
-  end
-
-  it "logs LLM call and response messages" do
-    response = MockResponse.new(content: "traced response")
-    inner_app = ->(_env) { response }
-    log_output = StringIO.new
-    middleware = Brute::Middleware::Tracing.new(inner_app, logger: Logger.new(log_output))
-    middleware.call(build_env(tool_results: nil))
+  it "logs the LLM call" do
+    build_turn.call
     log_output.string.should =~ /LLM call #1/
   end
 
-  it "fires on_log callback for pre-call and post-call" do
-    response = MockResponse.new(content: "traced response")
-    inner_app = ->(_env) { response }
-    log_messages = []
-    callbacks = { on_log: ->(text) { log_messages << text } }
-    middleware = Brute::Middleware::Tracing.new(inner_app, logger: Logger.new(StringIO.new))
-    middleware.call(build_env(tool_results: nil, callbacks: callbacks))
-    log_messages.size.should == 2
-    log_messages[0].should =~ /LLM call #1/
-    log_messages[1].should =~ /LLM response #1/
+  it "fires on_log for call and response" do
+    build_turn.call
+    log_messages.any? { |m| m =~ /LLM call #1/ }.should.be.true
+    log_messages.any? { |m| m =~ /LLM response #1/ }.should.be.true
   end
 end

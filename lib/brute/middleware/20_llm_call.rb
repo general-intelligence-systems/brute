@@ -16,6 +16,18 @@ module Brute
     #
     class LLMCall
       def call(env)
+        stream = env[:callbacks]
+
+        # First call of a turn — record user message
+        if env[:tool_results].nil? && env[:user_text]
+          stream.start_user_message(text: env[:user_text])
+        end
+
+        # Open assistant message before the call
+        model = env[:model] || (env[:provider].default_model rescue nil)
+        provider_name = env[:provider]&.class&.name&.split("::")&.last&.downcase
+        stream.start_assistant_message(model_id: model&.to_s, provider_id: provider_name)
+
         ctx = build_context(env)
 
         # Load existing conversation history into the ephemeral context
@@ -26,9 +38,10 @@ module Brute
         rescue => e
           error_type = e.class.name.split('::').last.downcase rescue "unknown"
           error_text = e.message.to_s.gsub(/\s*\n\s*/, ' ').strip
-          env[:callbacks][:on_error]&.call("(#{error_type}) - #{error_text}")
+          stream.on_error("(#{error_type}) - #{error_text}")
           env[:messages] << LLM::Message.new(:system, error_text)
           env[:should_exit] = { reason: "llm_error", message: error_text, source: "LLMCall" }
+          stream.complete_assistant_message(tokens: nil)
           return nil
         end
 
@@ -42,11 +55,15 @@ module Brute
         # Only fire on_content post-hoc when NOT streaming
         # (streaming delivers chunks incrementally via AgentStream)
         unless env[:streaming]
-          if (cb = env.dig(:callbacks, :on_content)) && response
+          if response
             text = safe_content(response)
-            cb.call(text) if text
+            stream.on_content(text) if text
           end
         end
+
+        # Finalize assistant message with token usage
+        tokens = extract_tokens(env, response)
+        stream.complete_assistant_message(tokens: tokens)
 
         response
       end
@@ -70,6 +87,35 @@ module Brute
         response.content
       rescue NoMethodError
         nil
+      end
+
+      def extract_tokens(env, response)
+        meta_tokens = env.dig(:metadata, :tokens, :last_call)
+        if meta_tokens
+          {
+            input: meta_tokens[:input] || 0,
+            output: meta_tokens[:output] || 0,
+            reasoning: 0,
+            cache: { read: 0, write: 0 },
+          }
+        elsif response.respond_to?(:usage) && (usage = response.usage)
+          {
+            input: read_token(usage, :input_tokens),
+            output: read_token(usage, :output_tokens),
+            reasoning: read_token(usage, :reasoning_tokens),
+            cache: { read: 0, write: 0 },
+          }
+        end
+      end
+
+      def read_token(usage, method)
+        if usage.respond_to?(method)
+          usage.send(method).to_i
+        elsif usage.respond_to?(:[])
+          (usage[method] || usage[method.to_s]).to_i
+        else
+          0
+        end
       end
     end
   end

@@ -67,7 +67,6 @@ module ExampleHelper
     session       = @session  || raise("Set @session before calling full_pipeline")
     sys_prompt    = system_prompt
     tools         = @tools || Brute::Tools::ALL
-    message_store = session.message_store
     logger        = Logger.new($stderr, level: Logger::INFO)
 
     Brute::Middleware::Stack.new do
@@ -78,7 +77,6 @@ module ExampleHelper
       use Brute::Middleware::ToolResultPrep
       use Brute::Middleware::Retry
       use Brute::Middleware::SessionPersistence, session: session
-      use Brute::Middleware::MessageTracking, store: message_store
       use Brute::Middleware::TokenTracking
       use Brute::Middleware::OTel::TokenUsage
 

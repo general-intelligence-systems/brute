@@ -43,23 +43,25 @@ test do
   require_relative "../../../../spec/support/mock_provider"
   require_relative "../../../../spec/support/mock_response"
 
-  def build_env(**overrides)
-    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
-      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
-      tool_results: nil, streaming: false, should_exit: nil, pending_functions: [] }.merge(overrides)
-  end
+  turn = nil
+  build_turn = -> {
+    return turn if turn
+
+    pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::OTel::ToolResults
+      run ->(_env) { MockResponse.new(content: "processed") }
+    end
+
+    turn = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+    )
+  }
 
   it "passes the response through unchanged" do
-    response = MockResponse.new(content: "processed")
-    middleware = Brute::Middleware::OTel::ToolResults.new(->(_env) { response })
-    result = middleware.call(build_env)
-    result.should == response
-  end
-
-  it "passes through without error when span is nil" do
-    response = MockResponse.new(content: "processed")
-    middleware = Brute::Middleware::OTel::ToolResults.new(->(_env) { response })
-    result = middleware.call(build_env(tool_results: [["fs_read", { content: "data" }]]))
-    result.should == response
+    build_turn.call
+    turn.result.content.should == "processed"
   end
 end

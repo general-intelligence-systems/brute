@@ -139,6 +139,32 @@ module Brute
       end
     end
 
+    def add_log_part(message_id:, text:)
+      @mutex.synchronize do
+        msg = @messages[message_id]
+        return unless msg
+
+        part = { id: next_part_id, sessionID: @session_id, messageID: message_id,
+                 type: "log", text: text, time: now_ms }
+        msg[:parts] << part
+        persist(message_id)
+        part[:id]
+      end
+    end
+
+    def add_error_part(message_id:, text:)
+      @mutex.synchronize do
+        msg = @messages[message_id]
+        return unless msg
+
+        part = { id: next_part_id, sessionID: @session_id, messageID: message_id,
+                 type: "error", text: text, time: now_ms }
+        msg[:parts] << part
+        persist(message_id)
+        part[:id]
+      end
+    end
+
     def add_step_finish(message_id:, tokens: nil)
       @mutex.synchronize do
         msg = @messages[message_id]

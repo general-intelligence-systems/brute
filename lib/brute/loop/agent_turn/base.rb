@@ -33,7 +33,7 @@ module Brute
       #   on_question:        ->(questions, queue) {}  # interactive; push answers onto queue
       #
       class Base < Step
-        attr_reader :agent, :session
+        attr_reader :agent, :session, :env
 
         DEFAULT_CALLBACKS = begin
           streaming = false
@@ -87,22 +87,21 @@ module Brute
           @session   = session
           @pipeline  = pipeline
           @input     = input
-          @callbacks = DEFAULT_CALLBACKS.merge(callbacks)
 
-          # Create streaming bridge when content or reasoning callbacks are
-          # present. The stream is passed into env so LLMCall can wire it
-          # into each fresh LLM::Context.
-          if @callbacks[:on_content] || @callbacks[:on_reasoning]
-            @stream = AgentStream.new(
-              on_content:   @callbacks[:on_content],
-              on_reasoning: @callbacks[:on_reasoning],
-              on_question:  @callbacks[:on_question],
-            )
-          end
+          merged_callbacks = DEFAULT_CALLBACKS.merge(callbacks)
+          @stream = AgentStream.new(
+            message_store: session.message_store,
+            **merged_callbacks,
+          )
+
+          # Streaming is active when content or reasoning callbacks are present.
+          # When active, llm.rb delivers chunks incrementally via the stream.
+          @streaming = !!(merged_callbacks[:on_content] || merged_callbacks[:on_reasoning])
         end
 
         def perform(task)
-          env = build_env
+          @env = build_env
+          env = @env
           env[:user_text] = @input
           env[:input] = build_initial_input(@input)
           $stderr.puts "#{"[user]".cyan} #{@input}" if @input
@@ -114,7 +113,7 @@ module Brute
 
           response
         rescue => e
-          @callbacks[:on_error]&.call(e.message)
+          @stream.on_error(e.message)
           raise
         end
 
@@ -138,12 +137,12 @@ module Brute
             input:             nil,
             tools:             @agent.tools,
             messages:          [],
-            stream:            @stream,
+            stream:            @streaming ? @stream : nil,
             params:            {},
             metadata:          {},
             tool_results:      nil,
-            streaming:         !!@stream,
-            callbacks:         @callbacks,
+            streaming:         @streaming,
+            callbacks:         @stream,
             should_exit:       nil,
             pending_functions: [],
             pending_tools:     [],

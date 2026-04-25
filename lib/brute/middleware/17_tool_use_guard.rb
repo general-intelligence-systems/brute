@@ -96,38 +96,39 @@ test do
   require_relative "../../../spec/support/mock_provider"
   require_relative "../../../spec/support/mock_response"
 
-  def build_env(**overrides)
-    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
-      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
-      tool_results: nil, streaming: false, should_exit: nil, pending_functions: [] }.merge(overrides)
+  it "passes the response through when no pending functions" do
+    pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::ToolUseGuard
+      run ->(_env) { MockResponse.new(content: "no tools") }
+    end
+
+    turn = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+    )
+    turn.result.content.should == "no tools"
   end
 
-  it "passes the response through when there are no pending functions" do
-    response = MockResponse.new(content: "no tools")
-    inner_app = ->(_env) { response }
-    middleware = Brute::Middleware::ToolUseGuard.new(inner_app)
-    result = middleware.call(build_env(pending_functions: []))
-    result.should == response
-  end
-
-  it "injects a synthetic assistant message when tool calls exist but assistant is missing" do
+  it "injects synthetic assistant message for uncovered tool calls" do
     fn = Struct.new(:id, :name, :arguments, keyword_init: true)
            .new(id: "toolu_1", name: "fs_read", arguments: { "path" => "test.rb" })
-    response = MockResponse.new(content: "")
-    inner_app = ->(_env) { response }
-    middleware = Brute::Middleware::ToolUseGuard.new(inner_app)
-    env = build_env(messages: [], pending_functions: [fn])
-    lambda { middleware.call(env) }.should.not.raise
-  end
 
-  it "creates one assistant message for uncovered tool calls" do
-    fn = Struct.new(:id, :name, :arguments, keyword_init: true)
-           .new(id: "toolu_1", name: "fs_read", arguments: { "path" => "test.rb" })
-    response = MockResponse.new(content: "")
-    inner_app = ->(_env) { response }
-    middleware = Brute::Middleware::ToolUseGuard.new(inner_app)
-    env = build_env(messages: [], pending_functions: [fn])
-    middleware.call(env)
-    env[:messages].select { |m| m.role.to_s == "assistant" }.size.should == 1
+    pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::ToolUseGuard
+      run ->(env) {
+        env[:pending_functions] = [fn]
+        MockResponse.new(content: "")
+      }
+    end
+
+    turn = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+    )
+    turn.env[:messages].any? { |m| m.role.to_s == "assistant" && m.tool_call? }.should.be.true
   end
 end

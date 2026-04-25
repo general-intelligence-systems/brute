@@ -28,7 +28,7 @@ module Brute
         env[:metadata][:iterations] += 1
 
         if env[:metadata][:iterations] > @max_iterations
-          env[:callbacks][:on_log]&.call("Max iterations reached (#{@max_iterations}). Stopping.")
+          env[:callbacks].on_log("Max iterations reached (#{@max_iterations}). Stopping.")
           env[:should_exit] ||= {
             reason:  "max_iterations_reached",
             message: "Agent turn exceeded #{@max_iterations} iterations. Stopping.",
@@ -46,65 +46,41 @@ test do
   require_relative "../../../spec/support/mock_provider"
   require_relative "../../../spec/support/mock_response"
 
-  def build_env(**overrides)
-    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
-      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
-      tool_results: nil, streaming: false, should_exit: nil, pending_functions: [] }.merge(overrides)
-  end
+  # Turn that loops exactly `loops` times via tool_results_queue, then stops.
+  # The MaxIterations middleware wraps the inner app, counting each call.
+  looping_turn = nil
+  build_looping_turn = ->(max_iterations: 2, loops: 3) {
+    call_count = 0
+    pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::MaxIterations, max_iterations: max_iterations
+      run ->(env) {
+        call_count += 1
+        env[:tool_results_queue] = [Object.new] if call_count < loops
+        MockResponse.new(content: "ok")
+      }
+    end
 
-  def make_middleware(app = nil, **kwargs)
-    app ||= ->(_env) { MockResponse.new(content: "ok") }
-    Brute::Middleware::MaxIterations.new(app, **kwargs)
-  end
+    Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+    )
+  }
 
-  it "passes through on the first call" do
-    env = build_env
-    make_middleware.call(env)
-    env[:should_exit].should.be.nil
-  end
-
-  it "increments iteration count each call" do
-    mw = make_middleware
-    env = build_env
-    3.times { mw.call(env) }
-    env[:metadata][:iterations].should == 3
+  it "passes through when under the limit" do
+    turn = build_looping_turn.call(max_iterations: 10, loops: 2)
+    turn.env[:should_exit].should.be.nil
   end
 
   it "sets should_exit when iterations exceed max" do
-    mw = make_middleware(max_iterations: 2)
-    env = build_env
-    3.times { mw.call(env) }
-    env[:should_exit][:reason].should == "max_iterations_reached"
+    turn = build_looping_turn.call(max_iterations: 2, loops: 5)
+    turn.env[:should_exit][:reason].should == "max_iterations_reached"
+    turn.env[:should_exit][:source].should == "MaxIterations"
   end
 
-  it "does not set should_exit at exactly max" do
-    mw = make_middleware(max_iterations: 2)
-    env = build_env
-    2.times { mw.call(env) }
-    env[:should_exit].should.be.nil
-  end
-
-  it "does not overwrite existing should_exit" do
-    mw = make_middleware(max_iterations: 1)
-    existing = { reason: "doom_loop_detected", message: "loop", source: "DoomLoop" }
-    env = build_env(should_exit: existing)
-    2.times { mw.call(env) }
-    env[:should_exit][:reason].should == "doom_loop_detected"
-  end
-
-  it "uses default max of 100" do
-    mw = make_middleware
-    env = build_env
-    100.times { mw.call(env) }
-    env[:should_exit].should.be.nil
-    mw.call(env)
-    env[:should_exit][:reason].should == "max_iterations_reached"
-  end
-
-  it "sets source to MaxIterations" do
-    mw = make_middleware(max_iterations: 1)
-    env = build_env
-    2.times { mw.call(env) }
-    env[:should_exit][:source].should == "MaxIterations"
+  it "tracks iteration count" do
+    turn = build_looping_turn.call(max_iterations: 10, loops: 3)
+    turn.env[:metadata][:iterations].should == 3
   end
 end

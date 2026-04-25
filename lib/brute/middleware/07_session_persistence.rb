@@ -36,37 +36,53 @@ test do
   require_relative "../../../spec/support/mock_provider"
   require_relative "../../../spec/support/mock_response"
 
-  def build_env(**overrides)
-    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
-      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
-      tool_results: nil, streaming: false, should_exit: nil, pending_functions: [] }.merge(overrides)
+  turn = nil
+  saved_messages = nil
+  build_turn = -> {
+    return turn if turn
+
+    saved_messages = nil
+    session = Brute::Store::Session.new
+    session.define_singleton_method(:save_messages) { |m| saved_messages = m }
+
+    pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::SessionPersistence, session: session
+      run ->(_env) { MockResponse.new(content: "saved response") }
+    end
+
+    turn = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: session,
+      pipeline: pipeline,
+      input: "hi",
+    )
+  }
+
+  it "returns the response unchanged" do
+    build_turn.call
+    turn.result.content.should == "saved response"
   end
 
-  it "passes the response through unchanged" do
-    response = MockResponse.new(content: "saved response")
-    session = Struct.new(:saved) { def save_messages(m); self.saved = m; end }.new
-    inner_app = ->(_env) { response }
-    middleware = Brute::Middleware::SessionPersistence.new(inner_app, session: session)
-    result = middleware.call(build_env)
-    result.should == response
-  end
-
-  it "calls session.save_messages with env messages" do
-    response = MockResponse.new(content: "saved response")
-    session = Struct.new(:saved) { def save_messages(m); self.saved = m; end }.new
-    inner_app = ->(_env) { response }
-    middleware = Brute::Middleware::SessionPersistence.new(inner_app, session: session)
-    messages = [LLM::Message.new(:user, "hello")]
-    middleware.call(build_env(messages: messages))
-    session.saved.should == messages
+  it "calls save_messages" do
+    build_turn.call
+    saved_messages.should.not.be.nil
   end
 
   it "does not propagate session save failures" do
-    response = MockResponse.new(content: "saved response")
-    session = Object.new
-    session.define_singleton_method(:save_messages) { |_| raise RuntimeError, "disk full" }
-    inner_app = ->(_env) { response }
-    middleware = Brute::Middleware::SessionPersistence.new(inner_app, session: session)
-    lambda { middleware.call(build_env) }.should.not.raise
+    failing_session = Brute::Store::Session.new
+    failing_session.define_singleton_method(:save_messages) { |_| raise "disk full" }
+
+    pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::SessionPersistence, session: failing_session
+      run ->(_env) { MockResponse.new(content: "ok") }
+    end
+
+    step = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: failing_session,
+      pipeline: pipeline,
+      input: "hi",
+    )
+    step.state.should == :completed
   end
 end

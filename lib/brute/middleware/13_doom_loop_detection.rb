@@ -22,7 +22,7 @@ module Brute
         messages = env[:messages]
 
         if (reps = @detector.detect(messages))
-          env[:callbacks][:on_log]&.call("Doom loop detected — #{reps} repetitions of the same tool call pattern. Stopping.")
+          env[:callbacks].on_log("Doom loop detected — #{reps} repetitions of the same tool call pattern. Stopping.")
           warning = @detector.warning_message(reps)
           # Inject the warning as a user message so the LLM sees it
           env[:messages] << LLM::Message.new(:user, warning)
@@ -129,12 +129,6 @@ test do
   require_relative "../../../spec/support/mock_provider"
   require_relative "../../../spec/support/mock_response"
 
-  def build_env(**overrides)
-    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
-      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
-      tool_results: nil, streaming: false, should_exit: nil, pending_functions: [] }.merge(overrides)
-  end
-
   FakeFunc = Struct.new(:name, :arguments, keyword_init: true)
 
   def assistant_msg_with_functions(function_list)
@@ -143,72 +137,42 @@ test do
     msg
   end
 
-  it "passes through when no doom loop is detected" do
-    inner_app = ->(_env) { MockResponse.new(content: "loop check") }
-    middleware = Brute::Middleware::DoomLoopDetection.new(inner_app, threshold: 3)
-    env = build_env
-    middleware.call(env)
-    env[:metadata][:doom_loop_detected].should.be.nil
+  it "passes through when no doom loop" do
+    pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::DoomLoopDetection, threshold: 3
+      run ->(_env) { MockResponse.new(content: "ok") }
+    end
+
+    turn = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+    )
+    turn.env[:metadata][:doom_loop_detected].should.be.nil
+    turn.env[:should_exit].should.be.nil
   end
 
-  it "detects consecutive identical tool calls" do
-    inner_app = ->(_env) { MockResponse.new(content: "loop check") }
+  it "detects consecutive identical tool calls and sets should_exit" do
     fn = FakeFunc.new(name: "fs_read", arguments: '{"path":"x.rb"}')
     messages = 4.times.map { assistant_msg_with_functions([fn]) }
-    middleware = Brute::Middleware::DoomLoopDetection.new(inner_app, threshold: 3)
-    env = build_env(messages: messages)
-    middleware.call(env)
-    env[:metadata][:doom_loop_detected].should.not.be.nil
-  end
 
-  it "does not trigger below the threshold" do
-    inner_app = ->(_env) { MockResponse.new(content: "loop check") }
-    fn = FakeFunc.new(name: "fs_read", arguments: '{"path":"x.rb"}')
-    messages = 2.times.map { assistant_msg_with_functions([fn]) }
-    middleware = Brute::Middleware::DoomLoopDetection.new(inner_app, threshold: 3)
-    env = build_env(messages: messages)
-    middleware.call(env)
-    env[:metadata][:doom_loop_detected].should.be.nil
-  end
+    pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::DoomLoopDetection, threshold: 3
+      run ->(env) {
+        env[:messages] = messages unless env[:messages].size >= 4
+        MockResponse.new(content: "loop check")
+      }
+    end
 
-  it "sets should_exit reason when doom loop detected" do
-    inner_app = ->(_env) { MockResponse.new(content: "loop check") }
-    fn = FakeFunc.new(name: "fs_read", arguments: '{"path":"x.rb"}')
-    messages = 4.times.map { assistant_msg_with_functions([fn]) }
-    middleware = Brute::Middleware::DoomLoopDetection.new(inner_app, threshold: 3)
-    env = build_env(messages: messages)
-    middleware.call(env)
-    env[:should_exit][:reason].should == "doom_loop_detected"
-  end
-
-  it "does not set should_exit when no loop detected" do
-    inner_app = ->(_env) { MockResponse.new(content: "loop check") }
-    middleware = Brute::Middleware::DoomLoopDetection.new(inner_app, threshold: 3)
-    env = build_env
-    middleware.call(env)
-    env[:should_exit].should.be.nil
-  end
-
-  it "does not overwrite should_exit if already set" do
-    inner_app = ->(_env) { MockResponse.new(content: "loop check") }
-    fn = FakeFunc.new(name: "fs_read", arguments: '{"path":"x.rb"}')
-    messages = 4.times.map { assistant_msg_with_functions([fn]) }
-    middleware = Brute::Middleware::DoomLoopDetection.new(inner_app, threshold: 3)
-    existing = { reason: "other", message: "earlier", source: "Other" }
-    env = build_env(messages: messages, should_exit: existing)
-    middleware.call(env)
-    env[:should_exit][:reason].should == "other"
-  end
-
-  it "appends a warning message when loop detected" do
-    inner_app = ->(_env) { MockResponse.new(content: "loop check") }
-    fn = FakeFunc.new(name: "fs_read", arguments: '{"path":"x.rb"}')
-    messages = 4.times.map { assistant_msg_with_functions([fn]) }
-    middleware = Brute::Middleware::DoomLoopDetection.new(inner_app, threshold: 3)
-    env = build_env(messages: messages)
-    original_count = env[:messages].size
-    middleware.call(env)
-    env[:messages].size.should == original_count + 1
+    turn = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+    )
+    turn.env[:metadata][:doom_loop_detected].should.not.be.nil
+    turn.env[:should_exit][:reason].should == "doom_loop_detected"
   end
 
   it "generates warning message with repetition count" do

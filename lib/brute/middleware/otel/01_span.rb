@@ -81,25 +81,30 @@ test do
   require_relative "../../../../spec/support/mock_provider"
   require_relative "../../../../spec/support/mock_response"
 
-  def build_env(**overrides)
-    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
-      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
-      tool_results: nil, streaming: false, should_exit: nil, pending_functions: [] }.merge(overrides)
-  end
+  turn = nil
+  build_turn = -> {
+    return turn if turn
+
+    pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::OTel::Span
+      run ->(_env) { MockResponse.new(content: "hello from LLM") }
+    end
+
+    turn = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+    )
+  }
 
   it "passes through when OpenTelemetry::SDK is not defined" do
-    response = MockResponse.new(content: "hello from LLM")
-    middleware = Brute::Middleware::OTel::Span.new(->(_env) { response })
-    env = build_env
-    result = middleware.call(env)
-    result.should == response
+    build_turn.call
+    turn.result.content.should == "hello from LLM"
   end
 
   it "env[:span] is nil when OTel is not defined" do
-    response = MockResponse.new(content: "hello from LLM")
-    middleware = Brute::Middleware::OTel::Span.new(->(_env) { response })
-    env = build_env
-    middleware.call(env)
-    env[:span].should.be.nil
+    build_turn.call
+    turn.env[:span].should.be.nil
   end
 end

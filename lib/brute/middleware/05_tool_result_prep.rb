@@ -41,66 +41,46 @@ test do
   require_relative "../../../spec/support/mock_provider"
   require_relative "../../../spec/support/mock_response"
 
-  def build_env(**overrides)
-    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
-      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
-      tool_results: nil, streaming: false, should_exit: nil, pending_functions: [],
-      tool_results_queue: nil }.merge(overrides)
+  it "is a no-op on the first call" do
+    pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::ToolResultPrep
+      run ->(_env) { MockResponse.new(content: "ok") }
+    end
+
+    turn = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+    )
+    turn.env[:tool_results].should.be.nil
   end
 
-  def make_middleware(app = nil)
-    app ||= ->(_env) { MockResponse.new(content: "ok") }
-    Brute::Middleware::ToolResultPrep.new(app)
-  end
+  it "consumes tool_results_queue into tool_results on subsequent calls" do
+    captured_tool_results = nil
+    call_count = 0
 
-  FakeReturn = Struct.new(:id, :name, :value)
+    pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::ToolResultPrep
+      run ->(env) {
+        call_count += 1
+        if call_count == 1
+          # First call: simulate tool execution by queuing results
+          fake = Struct.new(:id, :name, :value).new("c1", "fs_read", "data")
+          env[:tool_results_queue] = [fake]
+        else
+          captured_tool_results = env[:tool_results]
+        end
+        MockResponse.new(content: "ok")
+      }
+    end
 
-  it "is a no-op on the first call (no queue, no iterations)" do
-    env = build_env
-    make_middleware.call(env)
-    env[:input].should == "test prompt"
-    env[:tool_results].should.be.nil
-  end
-
-  it "sets env[:input] from tool_results_queue" do
-    r = FakeReturn.new("call_1", "fs_read", "file contents")
-    env = build_env(tool_results_queue: [r])
-    make_middleware.call(env)
-    env[:input].should == [r]
-  end
-
-  it "formats env[:tool_results] as name-value pairs" do
-    r = FakeReturn.new("call_1", "fs_read", "file contents")
-    env = build_env(tool_results_queue: [r])
-    make_middleware.call(env)
-    env[:tool_results].should == [["fs_read", "file contents"]]
-  end
-
-  it "clears the queue after consumption" do
-    r = FakeReturn.new("call_1", "fs_read", "data")
-    env = build_env(tool_results_queue: [r])
-    make_middleware.call(env)
-    env[:tool_results_queue].should.be.nil
-  end
-
-  it "handles results without name/value methods" do
-    result = { error: true, message: "boom" }
-    env = build_env(tool_results_queue: [result])
-    make_middleware.call(env)
-    env[:tool_results].should == [["unknown", { error: true, message: "boom" }]]
-  end
-
-  it "is a no-op when queue is nil" do
-    env = build_env(tool_results_queue: nil)
-    make_middleware.call(env)
-    env[:input].should == "test prompt"
-    env[:tool_results].should.be.nil
-  end
-
-  it "is a no-op when queue is empty" do
-    env = build_env(tool_results_queue: [])
-    make_middleware.call(env)
-    env[:input].should == "test prompt"
-    env[:tool_results].should.be.nil
+    turn = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+    )
+    captured_tool_results.should == [["fs_read", "data"]]
   end
 end

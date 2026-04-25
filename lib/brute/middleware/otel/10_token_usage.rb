@@ -36,33 +36,36 @@ test do
   require_relative "../../../../spec/support/mock_provider"
   require_relative "../../../../spec/support/mock_response"
 
-  def build_env(**overrides)
-    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
-      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
-      tool_results: nil, streaming: false, should_exit: nil, pending_functions: [] }.merge(overrides)
-  end
-
-  def make_response
-    MockResponse.new(content: "hello",
-      usage: LLM::Usage.new(input_tokens: 100, output_tokens: 50, reasoning_tokens: 10, total_tokens: 160))
-  end
-
   it "passes the response through unchanged" do
-    response = make_response
-    middleware = Brute::Middleware::OTel::TokenUsage.new(->(_env) { response })
-    result = middleware.call(build_env)
-    result.should == response
-  end
+    pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::OTel::TokenUsage
+      run ->(_env) {
+        MockResponse.new(content: "hello",
+          usage: LLM::Usage.new(input_tokens: 100, output_tokens: 50, reasoning_tokens: 10, total_tokens: 160))
+      }
+    end
 
-  it "passes through without error when span is nil" do
-    response = make_response
-    middleware = Brute::Middleware::OTel::TokenUsage.new(->(_env) { response })
-    lambda { middleware.call(build_env) }.should.not.raise
+    turn = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+    )
+    turn.result.content.should == "hello"
   end
 
   it "handles a response without usage gracefully" do
-    no_usage = Object.new
-    middleware = Brute::Middleware::OTel::TokenUsage.new(->(_env) { no_usage })
-    lambda { middleware.call(build_env) }.should.not.raise
+    pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::OTel::TokenUsage
+      run ->(_env) { Object.new }
+    end
+
+    step = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+    )
+    step.state.should == :completed
   end
 end

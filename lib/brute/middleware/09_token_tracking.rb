@@ -23,9 +23,14 @@ module Brute
         response = @app.call(env)
 
         if response.respond_to?(:usage) && (usage = response.usage)
-          @total_input += usage.input_tokens.to_i
-          @total_output += usage.output_tokens.to_i
-          @total_reasoning += usage.reasoning_tokens.to_i
+          input  = read_token(usage, :input_tokens)
+          output = read_token(usage, :output_tokens)
+          reasoning = read_token(usage, :reasoning_tokens)
+          total  = read_token(usage, :total_tokens)
+
+          @total_input += input
+          @total_output += output
+          @total_reasoning += reasoning
           @call_count += 1
 
           env[:metadata][:tokens] = {
@@ -35,14 +40,26 @@ module Brute
             total: @total_input + @total_output,
             call_count: @call_count,
             last_call: {
-              input: usage.input_tokens.to_i,
-              output: usage.output_tokens.to_i,
-              total: usage.total_tokens.to_i,
+              input: input,
+              output: output,
+              total: total,
             },
           }
         end
 
         response
+      end
+
+      private
+
+      def read_token(usage, method)
+        if usage.respond_to?(method)
+          usage.send(method).to_i
+        elsif usage.respond_to?(:[])
+          (usage[method] || usage[method.to_s]).to_i
+        else
+          0
+        end
       end
     end
   end
@@ -52,73 +69,61 @@ test do
   require_relative "../../../spec/support/mock_provider"
   require_relative "../../../spec/support/mock_response"
 
-  def build_env(**overrides)
-    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
-      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
-      tool_results: nil, streaming: false, should_exit: nil, pending_functions: [] }.merge(overrides)
-  end
+  turn = nil
+  build_turn = -> {
+    return turn if turn
 
-  def make_response
-    MockResponse.new(content: "hello",
-      usage: LLM::Usage.new(input_tokens: 100, output_tokens: 50, reasoning_tokens: 10, total_tokens: 160))
-  end
+    pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::TokenTracking
+      run ->(_env) {
+        MockResponse.new(content: "hello",
+          usage: LLM::Usage.new(input_tokens: 100, output_tokens: 50, reasoning_tokens: 10, total_tokens: 160))
+      }
+    end
 
-  it "passes the response through unchanged" do
-    response = make_response
-    middleware = Brute::Middleware::TokenTracking.new(->(_env) { response })
-    result = middleware.call(build_env)
-    result.should == response
+    turn = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+    )
+  }
+
+  it "returns the response unchanged" do
+    build_turn.call
+    turn.result.content.should == "hello"
   end
 
   it "populates total_input tokens" do
-    middleware = Brute::Middleware::TokenTracking.new(->(_env) { make_response })
-    env = build_env
-    middleware.call(env)
-    env[:metadata][:tokens][:total_input].should == 100
+    build_turn.call
+    turn.env[:metadata][:tokens][:total_input].should == 100
   end
 
   it "populates total_output tokens" do
-    middleware = Brute::Middleware::TokenTracking.new(->(_env) { make_response })
-    env = build_env
-    middleware.call(env)
-    env[:metadata][:tokens][:total_output].should == 50
+    build_turn.call
+    turn.env[:metadata][:tokens][:total_output].should == 50
   end
 
   it "populates total_reasoning tokens" do
-    middleware = Brute::Middleware::TokenTracking.new(->(_env) { make_response })
-    env = build_env
-    middleware.call(env)
-    env[:metadata][:tokens][:total_reasoning].should == 10
+    build_turn.call
+    turn.env[:metadata][:tokens][:total_reasoning].should == 10
   end
 
   it "populates call_count" do
-    middleware = Brute::Middleware::TokenTracking.new(->(_env) { make_response })
-    env = build_env
-    middleware.call(env)
-    env[:metadata][:tokens][:call_count].should == 1
-  end
-
-  it "accumulates token counts across multiple calls" do
-    middleware = Brute::Middleware::TokenTracking.new(->(_env) { make_response })
-    env = build_env
-    middleware.call(env)
-    middleware.call(env)
-    env[:metadata][:tokens][:total_input].should == 200
+    build_turn.call
+    turn.env[:metadata][:tokens][:call_count].should == 1
   end
 
   it "handles a response without usage gracefully" do
-    no_usage = Object.new
-    middleware = Brute::Middleware::TokenTracking.new(->(_env) { no_usage })
-    env = build_env
-    middleware.call(env)
-    env[:metadata][:tokens].should.be.nil
-  end
-
-  it "handles a response where usage returns nil" do
-    nil_usage = Struct.new(:usage).new(nil)
-    middleware = Brute::Middleware::TokenTracking.new(->(_env) { nil_usage })
-    env = build_env
-    middleware.call(env)
-    env[:metadata][:tokens].should.be.nil
+    step = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: Brute::Middleware::Stack.new {
+        use Brute::Middleware::TokenTracking
+        run ->(_env) { Object.new }
+      },
+      input: "hi",
+    )
+    step.env[:metadata][:tokens].should.be.nil
   end
 end

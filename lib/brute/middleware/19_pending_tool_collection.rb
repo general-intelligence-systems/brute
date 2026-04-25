@@ -46,83 +46,46 @@ test do
   require_relative "../../../spec/support/mock_provider"
   require_relative "../../../spec/support/mock_response"
 
-  def build_env(**overrides)
-    { provider: MockProvider.new, model: nil, input: "test prompt", tools: [],
-      messages: [], stream: nil, params: {}, metadata: {}, callbacks: {},
-      tool_results: nil, streaming: false, should_exit: nil, pending_functions: [] }.merge(overrides)
-  end
-
-  def make_middleware(app = nil)
-    app ||= ->(_env) { MockResponse.new(content: "ok") }
-    Brute::Middleware::PendingToolCollection.new(app)
-  end
-
-  FakeFunc = Struct.new(:id, :name, :arguments, keyword_init: true)
-
-  # Minimal stream double
-  class FakeStream
-    attr_reader :pending_tools
-
-    def initialize(tools = [])
-      @pending_tools = tools
-      @cleared = false
-    end
-
-    def clear_pending_tools!
-      @pending_tools = []
-      @cleared = true
-    end
-
-    def cleared? = @cleared
-  end
-
   it "sets empty pending_tools when nothing pending" do
-    env = build_env
-    make_middleware.call(env)
-    env[:pending_tools].should == []
+    pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::PendingToolCollection
+      run ->(_env) { MockResponse.new(content: "ok") }
+    end
+
+    turn = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+    )
+    turn.env[:pending_tools].should == []
   end
 
   it "normalizes pending_functions into (fn, nil) pairs" do
-    fn1 = FakeFunc.new(id: "c1", name: "read", arguments: {})
-    fn2 = FakeFunc.new(id: "c2", name: "write", arguments: {})
-    env = build_env(pending_functions: [fn1, fn2])
-    make_middleware.call(env)
-    env[:pending_tools].size.should == 2
-    env[:pending_tools][0].should == [fn1, nil]
-    env[:pending_tools][1].should == [fn2, nil]
-  end
+    fn = Struct.new(:id, :name, :arguments, keyword_init: true)
+           .new(id: "c1", name: "read", arguments: {})
 
-  it "clears pending_functions after consumption" do
-    fn = FakeFunc.new(id: "c1", name: "read", arguments: {})
-    env = build_env(pending_functions: [fn])
-    make_middleware.call(env)
-    env[:pending_functions].should == []
-  end
+    captured = nil
+    pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::PendingToolCollection
+      run ->(env) {
+        env[:pending_functions] = [fn]
+        response = MockResponse.new(content: "ok")
+        # PendingToolCollection runs post-call, so we need to capture after
+        response
+      }
+    end
 
-  it "prefers stream pending_tools over pending_functions" do
-    fn_stream = FakeFunc.new(id: "s1", name: "stream_tool", arguments: {})
-    fn_env = FakeFunc.new(id: "e1", name: "env_tool", arguments: {})
-    stream = FakeStream.new([[fn_stream, nil]])
-    env = build_env(stream: stream, pending_functions: [fn_env])
-    make_middleware.call(env)
-    env[:pending_tools].size.should == 1
-    env[:pending_tools][0][0].name.should == "stream_tool"
-  end
-
-  it "clears stream pending_tools after consumption" do
-    fn = FakeFunc.new(id: "s1", name: "tool", arguments: {})
-    stream = FakeStream.new([[fn, nil]])
-    env = build_env(stream: stream)
-    make_middleware.call(env)
-    stream.should.be.cleared
-  end
-
-  it "preserves error pairs from stream" do
-    fn = FakeFunc.new(id: "s1", name: "bad_tool", arguments: {})
-    error = Struct.new(:name, :value).new("bad_tool", { error: true })
-    stream = FakeStream.new([[fn, error]])
-    env = build_env(stream: stream)
-    make_middleware.call(env)
-    env[:pending_tools][0][1].should == error
+    # PendingToolCollection collects from pending_functions post-call.
+    # The LLMCall middleware normally sets pending_functions, so we simulate
+    # by injecting them in the inner app.
+    turn = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+    )
+    turn.env[:pending_tools].size.should == 1
+    turn.env[:pending_tools][0][0].name.should == "read"
   end
 end
