@@ -88,20 +88,20 @@ test do
     turn.env[:metadata][:retry_attempt].should == 2
   end
 
-  it "re-raises after exhausting all attempts" do
+  it "fails the step after exhausting all attempts" do
     pipeline = Brute::Middleware::Stack.new do
       use Brute::Middleware::Retry, max_attempts: 2, base_delay: 0
       run ->(_env) { raise LLM::RateLimitError, "rate limited" }
     end
 
-    lambda {
-      Brute::Loop::AgentTurn.perform(
-        agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
-        session: Brute::Store::Session.new,
-        pipeline: pipeline,
-        input: "hi",
-      )
-    }.should.raise(LLM::RateLimitError)
+    step = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+    )
+    step.state.should == :failed
+    step.error.should.be.kind_of(LLM::RateLimitError)
   end
 
   it "does not retry non-retryable errors" do
@@ -111,15 +111,13 @@ test do
       run ->(_env) { call_count += 1; raise ArgumentError, "bad" }
     end
 
-    begin
-      Brute::Loop::AgentTurn.perform(
-        agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
-        session: Brute::Store::Session.new,
-        pipeline: pipeline,
-        input: "hi",
-      )
-    rescue ArgumentError
-    end
+    step = Brute::Loop::AgentTurn.perform(
+      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
+      session: Brute::Store::Session.new,
+      pipeline: pipeline,
+      input: "hi",
+    )
     call_count.should == 1
+    step.state.should == :failed
   end
 end

@@ -21,4 +21,8 @@ step = Brute::Loop::AgentTurn.perform(
   input: "What files are in the current directory? List them.",
 )
 
-puts @session.message_store.messages
+@session.message_store.messages.each_with_index do |message, i|
+  puts "#{message}"
+  puts
+end
+

@@ -97,6 +97,7 @@ test do
   it "executes pending tools and queues results" do
     tool_start_batches = []
     tool_results = []
+    injected = false
 
     fn = Struct.new(:id, :name, :arguments, :return_value, keyword_init: true) do
       def call; self; end
@@ -104,10 +105,13 @@ test do
     end.new(id: "c1", name: "fs_read", arguments: { "path" => "x.rb" }, return_value: "file data")
 
     pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::ToolResultPrep
       use Brute::Middleware::ToolCall
       run ->(env) {
-        # Simulate PendingToolCollection having set pending_tools
-        env[:pending_tools] = [[fn, nil]] if env[:pending_tools].empty?
+        unless injected
+          env[:pending_tools] = [[fn, nil]]
+          injected = true
+        end
         MockResponse.new(content: "ok")
       }
     end

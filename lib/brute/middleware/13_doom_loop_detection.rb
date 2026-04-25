@@ -156,11 +156,19 @@ test do
   it "detects consecutive identical tool calls and sets should_exit" do
     fn = FakeFunc.new(name: "fs_read", arguments: '{"path":"x.rb"}')
     messages = 4.times.map { assistant_msg_with_functions([fn]) }
+    call_count = 0
 
     pipeline = Brute::Middleware::Stack.new do
       use Brute::Middleware::DoomLoopDetection, threshold: 3
       run ->(env) {
-        env[:messages] = messages unless env[:messages].size >= 4
+        call_count += 1
+        # Inject doom-loop messages on first call, trigger a second call
+        if call_count == 1
+          env[:messages] = messages
+          env[:tool_results_queue] = [Object.new]
+        else
+          env[:tool_results_queue] = nil
+        end
         MockResponse.new(content: "loop check")
       }
     end

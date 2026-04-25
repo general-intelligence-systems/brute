@@ -35,7 +35,7 @@ module Brute
   #
   #   stream.complete_assistant_message(tokens: { input: 100, output: 50 })
   #
-  class AgentStream
+  class AgentStream < LLM::Stream
     attr_reader :current_user_id, :current_assistant_id, :store
 
     # Tool call metadata recorded during streaming, used by ToolUseGuard

@@ -55,7 +55,11 @@ test do
       use Brute::Middleware::MaxIterations, max_iterations: max_iterations
       run ->(env) {
         call_count += 1
-        env[:tool_results_queue] = [Object.new] if call_count < loops
+        if call_count < loops
+          env[:tool_results_queue] = [Object.new]
+        else
+          env[:tool_results_queue] = nil
+        end
         MockResponse.new(content: "ok")
       }
     end

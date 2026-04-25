@@ -100,16 +100,17 @@ test do
     turn.env[:metadata][:tool_error_limit_reached].should.be.false
   end
 
-  it "sets should_exit when error limit reached via tool loop" do
+  it "sets should_exit when error limit reached" do
     call_count = 0
     pipeline = Brute::Middleware::Stack.new do
       use Brute::Middleware::ToolErrorTracking, max_failures: 2
       run ->(env) {
         call_count += 1
-        # After first call, simulate tool results with errors
-        if call_count < 4
+        if call_count == 1
           env[:tool_results_queue] = [Object.new]
-          env[:tool_results] = [["fs_read", { error: "fail #{call_count}" }]]
+          env[:tool_results] = [["fs_read", { error: "1" }], ["fs_read", { error: "2" }]]
+        else
+          env[:tool_results_queue] = nil
         end
         MockResponse.new(content: "ok")
       }

@@ -91,10 +91,15 @@ test do
     end.new(id: "q1", name: "question", arguments: { "text" => "hi" }, return_value: "answer")
 
     tool_results = []
+    injected = false
     pipeline = Brute::Middleware::Stack.new do
+      use Brute::Middleware::ToolResultPrep
       use Brute::Middleware::Question
       run ->(env) {
-        env[:pending_tools] = [[fn, nil]] if env[:pending_tools].empty?
+        unless injected
+          env[:pending_tools] = [[fn, nil]]
+          injected = true
+        end
         MockResponse.new(content: "ok")
       }
     end
