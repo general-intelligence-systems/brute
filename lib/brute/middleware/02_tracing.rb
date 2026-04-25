@@ -43,7 +43,6 @@ module Brute
         provider_name = env[:provider]&.respond_to?(:name) ? env[:provider].name : env[:provider].class.name
         model_name = env[:model] || (env[:provider].default_model rescue "unknown")
         @logger.debug("[brute] LLM call ##{@call_count} [#{provider_name}/#{model_name}] (#{messages.size} messages in context)")
-        env[:callbacks].on_log("LLM call ##{@call_count} [#{provider_name}/#{model_name}] (#{messages.size} messages)")
 
         start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         response = @app.call(env)
@@ -120,9 +119,8 @@ test do
     log_output.string.should =~ /LLM call #1/
   end
 
-  it "fires on_log for call and response" do
+  it "fires on_log for response" do
     build_turn.call
-    log_messages.any? { |m| m =~ /LLM call #1/ }.should.be.true
     log_messages.any? { |m| m =~ /LLM response #1/ }.should.be.true
   end
 end
