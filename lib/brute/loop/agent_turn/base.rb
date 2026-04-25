@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'active_support/all'
 require 'colorize_extended'
 
 module Brute
@@ -73,7 +74,10 @@ module Brute
                 $stderr.print "\n"
                 streaming = false
               end
-              batch.each { |tc| $stderr.puts "#{"[tool]".yellow} (#{tc[:name]})" }
+              batch.each do |tc|
+                args = tc[:arguments]&.transform_values { |v| v.is_a?(String) ? v.truncate(20) : v }
+                $stderr.puts "#{"[tool]".yellow} (#{tc[:name]}) #{args}"
+              end
             },
             on_tool_result: ->(name, _) {
               $stderr.puts "#{"[tool]".yellow} (#{name}) done"
@@ -104,7 +108,12 @@ module Brute
           env = @env
           env[:user_text] = @input
           env[:input] = build_initial_input(@input)
-          $stderr.puts "#{"[user]".cyan} #{@input}" if @input
+          model = @agent.model || (@agent.provider.default_model rescue nil)
+          @stream.on_turn_start(provider_id: @agent.provider.name, model_id: model)
+          if @input
+            $stderr.puts "#{"[user]".cyan} #{@input}"
+            @stream.on_user(@input)
+          end
           response = @pipeline.call(env)
 
           while !env[:should_exit] && env[:tool_results_queue]&.any?
