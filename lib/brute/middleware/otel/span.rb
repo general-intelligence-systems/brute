@@ -6,13 +6,13 @@ require "brute"
 module Brute
   module Middleware
     module OTel
-      # Outermost OTel middleware. Creates a span per LLM pipeline call
+      # Outermost OTel middleware. Creates a span per LLM stack call
       # and passes it through env[:span] for inner OTel middlewares to
       # decorate with events and attributes.
       #
       # When opentelemetry-sdk is not loaded, this is a pure pass-through.
       #
-      # Pipeline position: outermost (wraps everything including retries).
+      # Stack position: outermost (wraps everything including retries).
       #
       #   use Brute::Middleware::OTel::Span
       #   use Brute::Middleware::OTel::ToolResults

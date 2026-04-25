@@ -8,7 +8,7 @@ require 'scampi/kernel_ext'
 # Brute — a coding agent built on llm.rb
 #
 # Cross-cutting concerns are implemented as Rack-style middleware in a
-# Pipeline that wraps every LLM call:
+# Middleware::Stack that wraps every LLM call:
 #
 #   Tracing → Retry → Session → Tokens → Compaction → ToolErrors → DoomLoop → Reasoning → [LLM Call]
 #
@@ -33,7 +33,6 @@ require_relative 'brute/diff'
 require_relative 'brute/skill'
 require_relative 'brute/prompts'
 require_relative 'brute/system_prompt'
-require_relative 'brute/pipeline'
 require_relative 'brute/agent'
 
 # Brute::Store
@@ -43,8 +42,6 @@ require_relative 'brute/store/message_store'
 require_relative 'brute/store/session'
 
 # Brute::Loop (before Queue — queue tests reference Loop::Step)
-require_relative 'brute/loop/doom_loop'
-require_relative 'brute/loop/compactor'
 require_relative 'brute/loop/agent_stream'
 require_relative 'brute/loop/step'
 require_relative 'brute/loop/tool_call_step'

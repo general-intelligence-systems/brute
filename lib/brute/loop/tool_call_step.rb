@@ -5,23 +5,23 @@ require "brute"
 
 module Brute
   module Loop
-  # A Step that wraps an LLM::Function tool call.
-  #
-  # Identity comes from the function's call ID so tool results
-  # can be correlated back to the LLM's request.
-  #
-  class ToolCallStep < Step
-    attr_reader :function
+    # A Step that wraps an LLM::Function tool call.
+    #
+    # Identity comes from the function's call ID so tool results
+    # can be correlated back to the LLM's request.
+    #
+    class ToolCallStep < Step
+      attr_reader :function
 
-    def initialize(function:, **rest)
-      super(id: function.id, **rest)
-      @function = function
-    end
+      def initialize(function:, **rest)
+        super(id: function.id, **rest)
+        @function = function
+      end
 
-    def perform(task)
-      @function.call
+      def perform(task)
+        @function.call
+      end
     end
-  end
   end
 end
 

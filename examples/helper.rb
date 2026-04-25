@@ -95,14 +95,15 @@ module ExampleHelper
     provider      = @provider || raise("Call provider_for_example before full_pipeline")
     sys_prompt    = system_prompt
     tools         = @tools || Brute::Tools::ALL
-    compactor     = Brute::Loop::Compactor.new(provider)
     message_store = session.message_store
     logger        = Logger.new($stderr, level: Logger::INFO)
 
-    Brute::Pipeline.new do
+    Brute::Middleware::Stack.new do
       use Brute::Middleware::OTel::Span
       use Brute::Middleware::Tracing, logger: logger
       use Brute::Middleware::OTel::ToolResults
+      use Brute::Middleware::MaxIterations
+      use Brute::Middleware::ToolResultPrep
       use Brute::Middleware::Retry
       use Brute::Middleware::SessionPersistence, session: session
       use Brute::Middleware::MessageTracking, store: message_store
@@ -110,7 +111,6 @@ module ExampleHelper
       use Brute::Middleware::OTel::TokenUsage
 
       use Brute::Middleware::CompactionCheck,
-        compactor: compactor,
         system_prompt: sys_prompt
 
       use Brute::Middleware::ToolErrorTracking
@@ -120,8 +120,11 @@ module ExampleHelper
         use Brute::Middleware::ReasoningNormalizer, **reasoning
       end
 
+      use Brute::Middleware::ToolCall
+      use Brute::Middleware::Question
       use Brute::Middleware::ToolUseGuard
       use Brute::Middleware::OTel::ToolCalls
+      use Brute::Middleware::PendingToolCollection
       run Brute::Middleware::LLMCall.new
     end
   end
