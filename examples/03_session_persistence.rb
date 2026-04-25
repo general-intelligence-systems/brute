@@ -33,6 +33,6 @@ step2 = Brute::Loop::AgentTurn.perform(
   input: "What is the secret project codename I told you?",
 )
 
-puts @session.message_store.messages
+print_events
 
 @session.delete

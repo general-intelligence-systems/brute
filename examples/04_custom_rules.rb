@@ -31,4 +31,4 @@ step = Brute::Loop::AgentTurn.perform(
          "and a #greet method that returns a greeting string. Follow the project rules.",
 )
 
-puts @session.message_store.messages
+print_events

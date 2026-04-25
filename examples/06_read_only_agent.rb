@@ -23,4 +23,4 @@ step = Brute::Loop::AgentTurn.perform(
   input: "Search the lib/ directory for any TODO or FIXME comments and summarize what you find.",
 )
 
-puts @session.message_store.messages
+print_events

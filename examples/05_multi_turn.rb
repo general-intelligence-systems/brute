@@ -33,5 +33,5 @@ Sync do
   queue.start
   queue.drain
 
-  puts @session.message_store.messages
+  print_events
 end

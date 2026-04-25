@@ -48,6 +48,6 @@ step = Brute::Loop::AgentTurn.perform(
          "then run `ruby calculator_test.rb` to verify.",
 )
 
-puts @session.message_store.messages
+print_events
 
 FileUtils.rm_rf(dir)

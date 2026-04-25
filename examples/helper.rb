@@ -19,6 +19,7 @@
 #   )
 #
 
+require "pp"
 require_relative "../lib/brute"
 
 module ExampleHelper
@@ -96,6 +97,21 @@ module ExampleHelper
       use Brute::Middleware::OTel::ToolCalls
       use Brute::Middleware::PendingToolCollection
       run Brute::Middleware::LLMCall.new
+    end
+  end
+
+  # Print all session events in grey using pp formatting.
+  #
+  # Expects @session to be set in the calling scope.
+  #
+  #   @session = Brute::Store::Session.new
+  #   # ... run agent ...
+  #   print_events
+  #
+  def print_events(session = @session)
+    session.message_store.events.each do |event|
+      puts
+      puts event.pretty_inspect.light_black
     end
   end
 
