@@ -5,20 +5,15 @@
 # Usage:
 #   require_relative "helper"
 #
-#   provider_for_example :ollama
-#
-#   @session = Brute::Store::Session.new
-#   @model   = "tinyllama"
-#
 #   agent = Brute::Agent.new(
-#     provider: @provider,
-#     model: @model,
+#     provider: provider,
+#     model: nil,
 #     system_prompt: system_prompt,
 #   )
 #
 #   step = Brute::Loop::AgentTurn.perform(
 #     agent: agent,
-#     session: @session,
+#     session: Brute::Store::Session.new,
 #     pipeline: full_pipeline,
 #     input: "Hi",
 #   )
@@ -27,50 +22,28 @@
 require_relative "../lib/brute"
 
 module ExampleHelper
-  # Select a provider for the example. Sets @provider as a side effect
-  # so that system_prompt, full_pipeline, and Brute::Agent.new can
-  # reference it.
-  #
-  #   provider_for_example :ollama
-  #   provider_for_example :anthropic
-  #   provider_for_example :opencode
-  #
-  def provider_for_example(name)
-    @provider = case name.to_sym
-    when :ollama
-      ensure_ollama!
-      Brute::Providers::Ollama.new
-    when :anthropic
-      Brute::Patches::AnthropicToolRole.apply!
-      LLM.anthropic(key: ENV.fetch("ANTHROPIC_API_KEY"))
-    when :openai
-      LLM.openai(key: ENV.fetch("OPENAI_API_KEY"))
-    when :google
-      LLM.google(key: ENV.fetch("GOOGLE_API_KEY"))
-    when :deepseek
-      LLM.deepseek(key: ENV.fetch("LLM_API_KEY"))
-    when :xai
-      LLM.xai(key: ENV.fetch("LLM_API_KEY"))
-    when :opencode, :opencode_zen
-      LLM::OpencodeZen.new(key: ENV.fetch("OPENCODE_API_KEY", "public"))
-    when :opencode_go
-      LLM::OpencodeGo.new(key: ENV.fetch("OPENCODE_API_KEY", "public"))
-    else
-      Brute::Providers.guess_from_env || raise("Unknown provider: #{name}")
+  # Returns the provider detected from environment variables.
+  # Delegates to Brute::Providers.guess_from_env.
+  def provider
+    @provider ||= begin
+      p = Brute::Providers.guess_from_env || raise(
+        "No provider detected. Set one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, " \
+        "GOOGLE_API_KEY, LLM_API_KEY, OPENCODE_API_KEY, or OLLAMA_HOST"
+      )
+      puts "[brute] Provider: #{p.name} (model: #{p.default_model})"
+      p
     end
   end
 
   # Build the provider-aware system prompt via Brute::SystemPrompt.
   #
-  # Reads @provider, and optionally @model, @custom_rules from the
-  # calling scope.
+  # Optionally reads @custom_rules from the calling scope.
   #
   #   @custom_rules = "Always use frozen_string_literal."
   #   prompt = system_prompt
   #
   def system_prompt
-    provider = @provider || raise("Call provider_for_example before system_prompt")
-    model    = @model || provider.default_model
+    model = provider.default_model
 
     Brute::SystemPrompt.default.prepare(
       provider_name: provider.name.to_s,
@@ -81,18 +54,17 @@ module ExampleHelper
     ).to_s
   end
 
-  # Build the full production middleware pipeline.
+  # Build the full production middleware stack.
   #
-  # Reads @provider and @session from the calling scope. Uses
-  # system_prompt for compaction context. Optionally reads @tools.
+  # Reads @session from the calling scope. Uses system_prompt for
+  # compaction context. Optionally reads @tools.
   #
-#   @session = Brute::Store::Session.new
-#   pipeline = full_pipeline
-  #   pipeline = full_pipeline(reasoning: { effort: :high })
+  #   @session = Brute::Store::Session.new
+  #   stack = full_pipeline
+  #   stack = full_pipeline(reasoning: { effort: :high })
   #
   def full_pipeline(reasoning: {})
     session       = @session  || raise("Set @session before calling full_pipeline")
-    provider      = @provider || raise("Call provider_for_example before full_pipeline")
     sys_prompt    = system_prompt
     tools         = @tools || Brute::Tools::ALL
     message_store = session.message_store
@@ -129,32 +101,8 @@ module ExampleHelper
     end
   end
 
-  # Default callbacks that print agent activity to stdout in real-time.
-  #
-  #   step = Brute::Loop::AgentTurn.perform(
-  #     agent: agent, session: @session, pipeline: full_pipeline,
-  #     input: "Hi", callbacks: default_callbacks,
-  #   )
-  #
-  def default_callbacks
-    {
-      on_content: ->(text) { print text; $stdout.flush },
-      on_tool_call_start: ->(batch) {
-        batch.each { |tc| puts "\n--- tool: #{tc[:name]} ---" }
-      },
-      on_tool_result: ->(name, _result) {
-        puts "--- #{name} done ---\n"
-      },
-    }
-  end
-
-  private
-
-  def ensure_ollama!
-    return if system("pgrep -x ollama > /dev/null 2>&1")
-    spawn("ollama serve", out: "/dev/null", err: "/dev/null")
-    sleep 2
-  end
 end
 
 include ExampleHelper
+
+$stderr.puts Brute::LOGO.light_black

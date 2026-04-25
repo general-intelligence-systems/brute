@@ -28,7 +28,7 @@ module Brute
   end
 end
 
-require_relative "otel/span"
-require_relative "otel/tool_results"
-require_relative "otel/tool_calls"
-require_relative "otel/token_usage"
+require_relative "otel/01_span"
+require_relative "otel/03_tool_results"
+require_relative "otel/18_tool_calls"
+require_relative "otel/10_token_usage"

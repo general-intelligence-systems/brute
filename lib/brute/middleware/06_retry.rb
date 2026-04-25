@@ -39,6 +39,7 @@ module Brute
           env[:metadata][:retry_attempt] = attempts
           env[:metadata][:retry_delay] = delay
 
+          env[:callbacks][:on_log]&.call("Retrying after #{e.class.name.split('::').last} (attempt #{attempts + 1}/#{@max_attempts}, waiting #{delay}s)...")
           sleep(delay)
           retry
         end

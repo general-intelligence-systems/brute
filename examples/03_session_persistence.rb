@@ -5,14 +5,11 @@
 
 require_relative "helper"
 
-provider_for_example :ollama
-
 @session = Brute::Store::Session.new
-@model   = "tinyllama"
 
 agent = Brute::Agent.new(
-  provider: @provider,
-  model: @model,
+  provider: provider,
+  model: nil,
   tools: [],
   system_prompt: system_prompt,
 )
@@ -25,20 +22,17 @@ step1 = Brute::Loop::AgentTurn.perform(
   agent: agent,
   session: @session,
   pipeline: pipeline,
-  callbacks: default_callbacks,
   input: "Remember this: the secret project codename is FALCON. Just acknowledge.",
 )
-puts "\nTurn 1: #{step1.state}"
-
 # Second turn — same session, ask it back
 puts "\n=== Turn 2 ==="
 step2 = Brute::Loop::AgentTurn.perform(
   agent: agent,
   session: @session,
   pipeline: pipeline,
-  callbacks: default_callbacks,
   input: "What is the secret project codename I told you?",
 )
-puts "\nTurn 2: #{step2.state}"
+
+puts @session.message_store.messages
 
 @session.delete

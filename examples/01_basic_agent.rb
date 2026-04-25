@@ -5,26 +5,20 @@
 
 require_relative "helper"
 
-provider_for_example :ollama
+@session = Brute::Store::Session.new
 
-@model = "tinyllama"
-
-@agent = Brute::Agent.new(
-  provider: @provider,
-  model: @model,
+agent = Brute::Agent.new(
+  provider: provider,
+  model: nil,
   tools: Brute::Tools::ALL,
   system_prompt: system_prompt,
 )
 
-@session = Brute::Store::Session.new
-
 step = Brute::Loop::AgentTurn.perform(
-  agent: @agent,
+  agent: agent,
   session: @session,
   pipeline: full_pipeline,
-  callbacks: default_callbacks,
   input: "What files are in the current directory? List them.",
 )
 
-puts "\n\nDone (#{step.state})"
-puts "Error: #{step.error}" if step.state == :failed
+puts @session.message_store.messages

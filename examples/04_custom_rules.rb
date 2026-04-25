@@ -5,10 +5,7 @@
 
 require_relative "helper"
 
-provider_for_example :ollama
-
 @session = Brute::Store::Session.new
-@model   = "tinyllama"
 
 @custom_rules = <<~RULES
   # Project Rules
@@ -20,8 +17,8 @@ provider_for_example :ollama
 RULES
 
 agent = Brute::Agent.new(
-  provider: @provider,
-  model: @model,
+  provider: provider,
+  model: nil,
   tools: Brute::Tools::ALL,
   system_prompt: system_prompt,
 )
@@ -30,10 +27,8 @@ step = Brute::Loop::AgentTurn.perform(
   agent: agent,
   session: @session,
   pipeline: full_pipeline,
-  callbacks: default_callbacks,
   input: "Create a file called user.rb with a User class that has a name attribute " \
          "and a #greet method that returns a greeting string. Follow the project rules.",
 )
 
-puts "\n\nDone (#{step.state})"
-puts "Error: #{step.error}" if step.state == :failed
+puts @session.message_store.messages

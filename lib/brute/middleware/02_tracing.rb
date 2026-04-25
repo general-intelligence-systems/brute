@@ -40,7 +40,10 @@ module Brute
         end
 
         messages = env[:messages]
-        @logger.debug("[brute] LLM call ##{@call_count} (#{messages.size} messages in context)")
+        provider_name = env[:provider]&.respond_to?(:name) ? env[:provider].name : env[:provider].class.name
+        model_name = env[:model] || (env[:provider].default_model rescue "unknown")
+        @logger.debug("[brute] LLM call ##{@call_count} [#{provider_name}/#{model_name}] (#{messages.size} messages in context)")
+        env[:callbacks][:on_log]&.call("LLM call ##{@call_count} [#{provider_name}/#{model_name}] (#{messages.size} messages)")
 
         start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         response = @app.call(env)
@@ -50,7 +53,8 @@ module Brute
         @total_llm_elapsed += elapsed
 
         tokens = response.respond_to?(:usage) ? response.usage&.total_tokens : '?'
-        @logger.info("[brute] LLM response ##{@call_count}: #{tokens} tokens, #{elapsed.round(2)}s")
+        @logger.debug("[brute] LLM response ##{@call_count} [#{provider_name}/#{model_name}]: #{tokens} tokens, #{elapsed.round(2)}s")
+        env[:callbacks][:on_log]&.call("LLM response ##{@call_count}: #{tokens} tokens, #{elapsed.round(2)}s") if response
 
         env[:metadata][:timing] = {
           total_elapsed: now - (@turn_start || start),
@@ -120,5 +124,17 @@ test do
     middleware = Brute::Middleware::Tracing.new(inner_app, logger: Logger.new(log_output))
     middleware.call(build_env(tool_results: nil))
     log_output.string.should =~ /LLM call #1/
+  end
+
+  it "fires on_log callback for pre-call and post-call" do
+    response = MockResponse.new(content: "traced response")
+    inner_app = ->(_env) { response }
+    log_messages = []
+    callbacks = { on_log: ->(text) { log_messages << text } }
+    middleware = Brute::Middleware::Tracing.new(inner_app, logger: Logger.new(StringIO.new))
+    middleware.call(build_env(tool_results: nil, callbacks: callbacks))
+    log_messages.size.should == 2
+    log_messages[0].should =~ /LLM call #1/
+    log_messages[1].should =~ /LLM response #1/
   end
 end

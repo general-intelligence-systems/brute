@@ -28,6 +28,7 @@ module Brute
         env[:metadata][:iterations] += 1
 
         if env[:metadata][:iterations] > @max_iterations
+          env[:callbacks][:on_log]&.call("Max iterations reached (#{@max_iterations}). Stopping.")
           env[:should_exit] ||= {
             reason:  "max_iterations_reached",
             message: "Agent turn exceeded #{@max_iterations} iterations. Stopping.",

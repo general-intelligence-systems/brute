@@ -3,6 +3,7 @@ PATH
   specs:
     brute (1.0.1)
       async (~> 2.0)
+      colorize-extended
       diff-lcs (>= 1.5)
       llm.rb (~> 4.11)
       scampi

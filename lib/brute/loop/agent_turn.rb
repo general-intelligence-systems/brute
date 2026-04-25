@@ -201,7 +201,7 @@ test do
     def value; "tool_result"; end
   end
 
-  # Stack that injects pending_tools and optionally sets should_exit.
+  # Stack that injects tool_results_queue and optionally sets should_exit.
   class ShouldExitStack
     attr_reader :call_count
 
@@ -214,8 +214,8 @@ test do
     def call(env)
       @call_count += 1
 
-      # Always give pending tools so the loop would continue.
-      env[:pending_tools] = [[@fn, nil]]
+      # Simulate tool execution: queue results so the loop continues.
+      env[:tool_results_queue] = [@fn]
 
       if @exit_on_call && @call_count >= @exit_on_call
         env[:should_exit] = {
@@ -277,9 +277,10 @@ test do
       pipeline_obj.define_singleton_method(:call) do |env|
         call_count += 1
         if call_count <= 3
-          env[:pending_tools] = [[fn, nil]]
+          # Simulate tool execution: queue results so the loop continues.
+          env[:tool_results_queue] = [fn]
         else
-          env[:pending_tools] = []
+          env[:tool_results_queue] = nil
         end
         FakeResponse.new("response #{call_count}")
       end
@@ -292,10 +293,10 @@ test do
       )
       step.call(Async::Task.current)
 
-      # Call 1 (initial) → pending_tools has fn → loop enters
-      # Loop iter 1: call pipeline (call 2) → still has fn → continues
-      # Loop iter 2: call pipeline (call 3) → still has fn → continues
-      # Loop iter 3: call pipeline (call 4) → empty → exits
+      # Call 1 (initial) → tool_results_queue has results → loop enters
+      # Loop iter 1: call pipeline (call 2) → still has results → continues
+      # Loop iter 2: call pipeline (call 3) → still has results → continues
+      # Loop iter 3: call pipeline (call 4) → nil → exits
       call_count.should == 4
       step.state.should == :completed
     end

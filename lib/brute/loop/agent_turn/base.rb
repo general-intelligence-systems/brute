@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'colorize_extended'
+
 module Brute
   module Loop
     module AgentTurn
@@ -33,13 +35,59 @@ module Brute
       class Base < Step
         attr_reader :agent, :session
 
+        DEFAULT_CALLBACKS = begin
+          streaming = false
+          {
+            on_content: ->(text) {
+              unless streaming
+                print "#{"[agent]".green} "
+                streaming = true
+              end
+              print text
+              $stdout.flush
+            },
+            on_reasoning: ->(text) {
+              unless streaming
+                $stderr.print "#{"[thinking]".light_black} "
+                streaming = true
+              end
+              $stderr.print text
+              $stderr.flush
+            },
+            on_error: ->(text) {
+              if streaming
+                $stderr.print "\n"
+                streaming = false
+              end
+              $stderr.puts "#{"[error]".red} #{text}"
+            },
+            on_log: ->(text) {
+              if streaming
+                $stderr.print "\n"
+                streaming = false
+              end
+              $stderr.puts "#{"[info]".blue} #{text}"
+            },
+            on_tool_call_start: ->(batch) {
+              if streaming
+                $stderr.print "\n"
+                streaming = false
+              end
+              batch.each { |tc| $stderr.puts "#{"[tool]".yellow} (#{tc[:name]})" }
+            },
+            on_tool_result: ->(name, _) {
+              $stderr.puts "#{"[tool]".yellow} (#{name}) done"
+            },
+          }.freeze
+        end
+
         def initialize(agent:, session:, pipeline:, input: nil, callbacks: {}, **rest)
           super(**rest)
           @agent     = agent
           @session   = session
           @pipeline  = pipeline
           @input     = input
-          @callbacks = callbacks
+          @callbacks = DEFAULT_CALLBACKS.merge(callbacks)
 
           # Create streaming bridge when content or reasoning callbacks are
           # present. The stream is passed into env so LLMCall can wire it
@@ -55,16 +103,18 @@ module Brute
 
         def perform(task)
           env = build_env
+          env[:user_text] = @input
           env[:input] = build_initial_input(@input)
+          $stderr.puts "#{"[user]".cyan} #{@input}" if @input
           response = @pipeline.call(env)
 
-          while !env[:should_exit] && env[:pending_tools]&.any?
+          while !env[:should_exit] && env[:tool_results_queue]&.any?
             response = @pipeline.call(env)
           end
 
           response
         rescue => e
-          @callbacks[:on_content]&.call(e.message)
+          @callbacks[:on_error]&.call(e.message)
           raise
         end
 

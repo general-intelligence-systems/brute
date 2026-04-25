@@ -22,6 +22,7 @@ module Brute
         messages = env[:messages]
 
         if (reps = @detector.detect(messages))
+          env[:callbacks][:on_log]&.call("Doom loop detected — #{reps} repetitions of the same tool call pattern. Stopping.")
           warning = @detector.warning_message(reps)
           # Inject the warning as a user message so the LLM sees it
           env[:messages] << LLM::Message.new(:user, warning)

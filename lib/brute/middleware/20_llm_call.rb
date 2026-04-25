@@ -24,8 +24,9 @@ module Brute
         begin
           response = ctx.talk(env[:input])
         rescue => e
-          error_text = e.message
-          env[:callbacks][:on_content]&.call(error_text)
+          error_type = e.class.name.split('::').last.downcase rescue "unknown"
+          error_text = e.message.to_s.gsub(/\s*\n\s*/, ' ').strip
+          env[:callbacks][:on_error]&.call("(#{error_type}) - #{error_text}")
           env[:messages] << LLM::Message.new(:system, error_text)
           env[:should_exit] = { reason: "llm_error", message: error_text, source: "LLMCall" }
           return nil
@@ -132,5 +133,25 @@ test do
     env = build_env(provider: provider, input: "hello", streaming: false, messages: [existing])
     middleware.call(env)
     env[:messages].first.should == existing
+  end
+
+  it "fires on_error callback on LLM failure" do
+    error_received = nil
+    callbacks = { on_error: ->(text) { error_received = text } }
+    provider = MockProvider.new
+    provider.define_singleton_method(:complete) { |*, **| raise "invalid x-api-key" }
+    middleware = Brute::Middleware::LLMCall.new
+    env = build_env(provider: provider, input: "hello", streaming: false, callbacks: callbacks)
+    middleware.call(env)
+    error_received.should =~ /invalid x-api-key/
+  end
+
+  it "sets should_exit on LLM failure" do
+    provider = MockProvider.new
+    provider.define_singleton_method(:complete) { |*, **| raise "bad key" }
+    middleware = Brute::Middleware::LLMCall.new
+    env = build_env(provider: provider, input: "hello", streaming: false)
+    middleware.call(env)
+    env[:should_exit][:reason].should == "llm_error"
   end
 end

@@ -68,6 +68,9 @@ module Brute
       end
 
       def extract_user_text(env)
+        # Prefer the raw user text stashed by AgentTurn
+        return env[:user_text] if env[:user_text].is_a?(String)
+
         input = env[:input]
         case input
         when String
@@ -76,13 +79,6 @@ module Brute
           # llm.rb prompt format: array of message hashes
           user_msg = input.reverse_each.find { |m| m.respond_to?(:role) && m.role.to_s == "user" }
           user_msg&.content.to_s if user_msg
-        else
-          # Could be a prompt object — try to extract user content
-          if input.respond_to?(:messages)
-            msgs = input.messages.to_a
-            user_msg = msgs.reverse_each.find { |m| m.role.to_s == "user" }
-            user_msg&.content.to_s if user_msg
-          end
         end
       end
 

@@ -20,6 +20,16 @@ require 'scampi/kernel_ext'
 require_relative 'brute/version'
 
 module Brute
+  LOGO = <<-LOGO
+ .o8                                .             
+"888                              .o8             
+ 888oooo.  oooo d8b oooo  oooo  .o888oo  .ooooo.  
+ d88' `88b `888""8P `888  `888    888   d88' `88b 
+ 888   888  888      888   888    888   888ooo888 
+ 888   888  888      888   888    888 . 888    .o 
+ `Y8bod8P' d888b     `V88V"V8P'   "888" `Y8bod8P' 
+  LOGO
+
   def self.provider
     @provider ||= Brute::Providers.guess_from_env
   end
