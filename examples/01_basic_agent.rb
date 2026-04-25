@@ -16,18 +16,15 @@ provider_for_example :ollama
   system_prompt: system_prompt,
 )
 
-Brute::Store::Session.new.then do |session|
-  Brute::Loop::AgentTurn.perform(
-    agent: @agent,
-    session: session,
-    pipeline: full_pipeline,
-    input: "What files are in the current directory? List them.",
-  )
-end
+@session = Brute::Store::Session.new
 
-puts "State: #{step.state}"
-if step.state == :completed
-  puts step.result.content
-else
-  puts "Error: #{step.error}"
-end
+step = Brute::Loop::AgentTurn.perform(
+  agent: @agent,
+  session: @session,
+  pipeline: full_pipeline,
+  callbacks: default_callbacks,
+  input: "What files are in the current directory? List them.",
+)
+
+puts "\n\nDone (#{step.state})"
+puts "Error: #{step.error}" if step.state == :failed

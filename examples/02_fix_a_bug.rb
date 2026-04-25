@@ -47,15 +47,12 @@ step = Brute::Loop::AgentTurn.perform(
   agent: agent,
   session: @session,
   pipeline: full_pipeline,
+  callbacks: default_callbacks,
   input: "Read calculator.rb and calculator_test.rb. Fix the bugs so all tests pass, " \
          "then run `ruby calculator_test.rb` to verify.",
 )
 
-puts "State: #{step.state}"
-if step.state == :completed
-  puts step.result.content
-else
-  puts "Error: #{step.error}"
-end
+puts "\n\nDone (#{step.state})"
+puts "Error: #{step.error}" if step.state == :failed
 
 FileUtils.rm_rf(dir)

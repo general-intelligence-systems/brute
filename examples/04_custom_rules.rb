@@ -30,13 +30,10 @@ step = Brute::Loop::AgentTurn.perform(
   agent: agent,
   session: @session,
   pipeline: full_pipeline,
+  callbacks: default_callbacks,
   input: "Create a file called user.rb with a User class that has a name attribute " \
          "and a #greet method that returns a greeting string. Follow the project rules.",
 )
 
-puts "State: #{step.state}"
-if step.state == :completed
-  puts step.result.content
-else
-  puts "Error: #{step.error}"
-end
+puts "\n\nDone (#{step.state})"
+puts "Error: #{step.error}" if step.state == :failed

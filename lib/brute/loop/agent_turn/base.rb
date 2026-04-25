@@ -63,6 +63,9 @@ module Brute
           end
 
           response
+        rescue => e
+          @callbacks[:on_content]&.call(e.message)
+          raise
         end
 
         # Override in subclasses to filter message types per provider.

@@ -129,6 +129,25 @@ module ExampleHelper
     end
   end
 
+  # Default callbacks that print agent activity to stdout in real-time.
+  #
+  #   step = Brute::Loop::AgentTurn.perform(
+  #     agent: agent, session: @session, pipeline: full_pipeline,
+  #     input: "Hi", callbacks: default_callbacks,
+  #   )
+  #
+  def default_callbacks
+    {
+      on_content: ->(text) { print text; $stdout.flush },
+      on_tool_call_start: ->(batch) {
+        batch.each { |tc| puts "\n--- tool: #{tc[:name]} ---" }
+      },
+      on_tool_result: ->(name, _result) {
+        puts "--- #{name} done ---\n"
+      },
+    }
+  end
+
   private
 
   def ensure_ollama!

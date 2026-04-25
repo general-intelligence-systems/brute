@@ -23,12 +23,9 @@ step = Brute::Loop::AgentTurn.perform(
   agent: agent,
   session: @session,
   pipeline: full_pipeline,
+  callbacks: default_callbacks,
   input: "Search the lib/ directory for any TODO or FIXME comments and summarize what you find.",
 )
 
-puts "State: #{step.state}"
-if step.state == :completed
-  puts step.result.content
-else
-  puts "Error: #{step.error}"
-end
+puts "\n\nDone (#{step.state})"
+puts "Error: #{step.error}" if step.state == :failed

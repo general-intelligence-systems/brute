@@ -20,22 +20,25 @@ agent = Brute::Agent.new(
 pipeline = full_pipeline
 
 # First turn — tell it something
+puts "=== Turn 1 ==="
 step1 = Brute::Loop::AgentTurn.perform(
   agent: agent,
   session: @session,
   pipeline: pipeline,
+  callbacks: default_callbacks,
   input: "Remember this: the secret project codename is FALCON. Just acknowledge.",
 )
-puts "Turn 1: #{step1.state}"
+puts "\nTurn 1: #{step1.state}"
 
 # Second turn — same session, ask it back
+puts "\n=== Turn 2 ==="
 step2 = Brute::Loop::AgentTurn.perform(
   agent: agent,
   session: @session,
   pipeline: pipeline,
+  callbacks: default_callbacks,
   input: "What is the secret project codename I told you?",
 )
-puts "Turn 2: #{step2.state}"
-puts step2.result.content if step2.state == :completed
+puts "\nTurn 2: #{step2.state}"
 
 @session.delete

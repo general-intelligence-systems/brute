@@ -21,7 +21,15 @@ module Brute
         # Load existing conversation history into the ephemeral context
         ctx.messages.concat(env[:messages])
 
-        response = ctx.talk(env[:input])
+        begin
+          response = ctx.talk(env[:input])
+        rescue => e
+          error_text = e.message
+          env[:callbacks][:on_content]&.call(error_text)
+          env[:messages] << LLM::Message.new(:system, error_text)
+          env[:should_exit] = { reason: "llm_error", message: error_text, source: "LLMCall" }
+          return nil
+        end
 
         # Extract new messages appended by talk() and store them
         new_messages = ctx.messages.to_a.drop(env[:messages].size)
