@@ -33,44 +33,43 @@ This is a complete, runnable script. It creates an agent, queues three turns aga
 ```ruby
 require "brute"
 
+provider = Brute::Providers.guess_from_env
+session  = Brute::Store::Session.new
+
+agent = Brute::Agent.new(
+  provider:      provider,
+  model:         provider.default_model,
+  tools:         Brute::Tools::ALL,
+  system_prompt: Brute::SystemPrompt.default.prepare(
+    provider_name: provider.name.to_s,
+    model_name:    provider.default_model.to_s,
+    cwd:           Dir.pwd,
+  ).to_s
+)
+
+pipeline = Brute::Pipeline.new do
+  use Brute::Middleware::Tracing,
+    logger: Logger.new($stderr, level: Logger::INFO)
+  use Brute::Middleware::Retry
+  use Brute::Middleware::SessionPersistence, session: session
+  use Brute::Middleware::TokenTracking
+  use Brute::Middleware::ToolErrorTracking
+  use Brute::Middleware::DoomLoopDetection
+  use Brute::Middleware::ToolUseGuard
+  run Brute::Middleware::LLMCall.new
+end
+
 Sync do
-  Brute::Store::Session.new.then do |session|
-    Brute::Queue::SequentialQueue.new.then do |queue|
-      [
-        "Create a file called config.yml with settings for a web app: port, host, database_url, log_level.",
-        "Change the port to 8080 and add a redis_url setting.",
-        "Read config.yml and summarize all the settings.",
-
-      ].each do |input|
-        queue << Brute::Loop::AgentTurn.new(
-          input:   input,
-          agent:   Brute::Agent.new(
-            provider:      Brute::Providers.guess_from_env,
-            model:         provider.default_model,
-            tools:         Brute::Tools::ALL,
-            system_prompt: Brute::SystemPrompt.default.prepare(
-              provider_name: provider.name.to_s,
-              model_name:    provider.default_model.to_s,
-              cwd:           Dir.pwd,
-            ).to_s
-          ),
-          session: SESSION,
-          pipeline: Brute::Pipeline.new do
-            use Brute::Middleware::Tracing,
-              logger: Logger.new($stderr, level: Logger::INFO)
-            use Brute::Middleware::Retry
-            use Brute::Middleware::SessionPersistence, session: session
-            use Brute::Middleware::TokenTracking
-            use Brute::Middleware::ToolErrorTracking
-            use Brute::Middleware::DoomLoopDetection
-            use Brute::Middleware::ToolUseGuard
-            run Brute::Middleware::LLMCall.new
-          end
-        )
-      end
-    end
+  queue = Brute::Queue::SequentialQueue.new
+  [
+    "Create a file called config.yml with settings for a web app: port, host, database_url, log_level.",
+    "Change the port to 8080 and add a redis_url setting.",
+    "Read config.yml and summarize all the settings.",
+  ].each do |input|
+    queue << Brute::Loop::AgentTurn.new(
+      input: input, agent: agent, session: session, pipeline: pipeline,
+    )
   end
-
   queue.start
   queue.drain
 end
