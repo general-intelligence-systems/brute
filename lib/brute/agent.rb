@@ -5,7 +5,7 @@ require "brute"
 require 'brute/pipeline'
 
 module Brute
-  DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant, bent on taking over the world."
+  DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant, hellbent on taking over the world."
 
   # An agent is a Pipeline configured for LLM turns. It carries the
   # provider/model/tools configuration and shapes env from a Session
