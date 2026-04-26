@@ -16,26 +16,24 @@ module Brute
           hash[instance.name.to_sym] = instance
         end
 
-        kwargs = {
-          model:       env[:model],
-          tools:       available_tools,
-          headers:     env[:provider]&.extra_headers || {},
-          params:      params,
-          temperature: env.dig(:params, :temperature),
-          thinking:    env.dig(:params, :thinking),
+        completion_options = {
+          model: RubyLLM.models.find(env[:model], env[:provider]),
+          tools: available_tools,
+          temperature: env.fetch(:temerature, 0.7),
         }
 
-
-        complete(kwargs, chunk_handler).then do |response|
+        complete(completion_options, env).then do |response|
           env[:messages] << response
         end
       end
 
       private
 
-        def complete(kwargs, chunk_handler)
+        def complete(kwargs, env)
+          provider_client = RubyLLM::Provider.resolve(env[:provider]).new(Brute.config)
+
           if env[:streaming] == true
-            env[:provider].complete(env[:messages], **kwargs) do |chunk|
+            provider_client.complete(env[:messages], **kwargs) do |chunk|
               if chunk.content && !chunk.content.to_s.empty?
                 env[:events] << { type: :content, data: chunk.content.to_s }
               end
@@ -45,7 +43,7 @@ module Brute
               end
             end
           else
-            env[:provider].complete(env[:messages], **kwargs).then do |response|
+            provider_client.complete(env[:messages], **kwargs).then do |response|
               if response.content.present?
                 env[:events] << { type: :content, data: response.content }
               end
