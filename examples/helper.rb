@@ -26,31 +26,7 @@
 require "pp"
 require_relative "../lib/brute"
 
-# Shared event handler that prints streamed events to the terminal.
-class TerminalOutput < Brute::Events::Handler
-  def <<(event)
-    h = event.to_h
-    case h[:type]
-    when :content          then $stdout.write(h[:data])
-    when :reasoning        then $stderr.write(h[:data].to_s.gsub(/^/, "  │ "))
-    when :tool_call_start  then puts "\n→ #{h[:data].map { |c| c[:name] }.join(', ')}"
-    when :tool_result      then puts "  ✓ #{h[:data][:name]}"
-    when :log              then $stderr.puts "[#{h[:data]}]".light_black
-    when :error
-      d = h[:data]
-      if d.is_a?(Hash)
-        $stderr.puts "✗ #{d[:error].class}: #{d[:message]}"
-        $stderr.puts "  provider: #{d[:provider].inspect}"
-        $stderr.puts "  model:    #{d[:model].inspect}"
-      else
-        $stderr.puts "✗ #{d.class}: #{d.message}"
-      end
-    when :assistant_complete then puts
-    end
-    $stdout.flush
-    super
-  end
-end
+include Brute::Events
 
 # Print all session messages in grey using pp formatting.
 def print_events(session)
