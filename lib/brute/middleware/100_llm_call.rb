@@ -19,7 +19,7 @@ module Brute
         completion_options = {
           model: RubyLLM.models.find(env[:model], env[:provider]),
           tools: available_tools,
-          temperature: env.fetch(:temerature, 0.7),
+          temperature: env.fetch(:temperature, 0.7),
         }
 
         complete(completion_options, env).then do |response|
@@ -47,6 +47,7 @@ module Brute
               if response.content.present?
                 env[:events] << { type: :content, data: response.content }
               end
+              response
             end
           end
         end
