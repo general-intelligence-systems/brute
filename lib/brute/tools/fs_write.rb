@@ -2,6 +2,7 @@
 
 require "bundler/setup"
 require "brute"
+require "brute/tools"
 require 'fileutils'
 
 module Brute

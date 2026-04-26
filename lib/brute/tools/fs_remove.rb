@@ -1,10 +1,8 @@
 # frozen_string_literal: true
 
-if __FILE__ == $0
-  require "bundler/setup"
-  require "brute"
-end
-
+require "bundler/setup"
+require "brute"
+require "brute/tools"
 require "fileutils"
 
 module Brute
