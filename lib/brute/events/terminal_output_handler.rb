@@ -3,7 +3,6 @@
 require 'bundler/setup'
 require 'brute'
 
-
 module Brute
   module Events
     class TerminalOutput < Brute::Events::Handler
