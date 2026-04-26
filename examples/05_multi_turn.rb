@@ -1,37 +1,34 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Multi-turn — three turns in a sequential queue, shared session.
+# Multi-turn — three sequential turns, shared session.
 
 require_relative "helper"
 
-@session = Brute::Store::Session.new
-
 agent = Brute::Agent.new(
-  provider: provider,
-  model: nil,
-  tools: Brute::Tools::ALL,
-  system_prompt: system_prompt,
-)
+  provider: Brute.provider,
+  model:    "claude-sonnet-4-20250514",
+  tools:    Brute::Tools::ALL,
+) do
+  use Brute::Middleware::EventHandler, handler_class: TerminalOutput
+  use Brute::Middleware::MaxIterations
+  use Brute::Middleware::SystemPrompt
+  use Brute::Middleware::ToolCall
+  run Brute::Middleware::LLMCall.new
+end
 
-pipeline = full_pipeline
+Brute::Session.new.then do |session|
+  puts "=== Turn 1 ==="
+  session.user("Create a file called config.yml with example settings for a web app: port, host, database_url, log_level.")
+  agent.call(session)
 
-Sync do
-  queue = Brute::Queue::SequentialQueue.new
-  queue << Brute::Loop::AgentTurn.new(
-    agent: agent, session: @session, pipeline: pipeline,
-    input: "Create a file called config.yml with example settings for a web app: port, host, database_url, log_level.",
-  )
-  queue << Brute::Loop::AgentTurn.new(
-    agent: agent, session: @session, pipeline: pipeline,
-    input: "Change the port to 8080 and add a redis_url setting.",
-  )
-  queue << Brute::Loop::AgentTurn.new(
-    agent: agent, session: @session, pipeline: pipeline,
-    input: "Read config.yml and summarize all the settings.",
-  )
-  queue.start
-  queue.drain
+  puts "\n=== Turn 2 ==="
+  session.user("Change the port to 8080 and add a redis_url setting.")
+  agent.call(session)
 
-  print_events
+  puts "\n=== Turn 3 ==="
+  session.user("Read config.yml and summarize all the settings.")
+  agent.call(session)
+
+  print_events(session)
 end

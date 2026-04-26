@@ -5,22 +5,23 @@
 
 require_relative "helper"
 
-@session      = Brute::Store::Session.new
-@tools        = [Brute::Tools::FSRead, Brute::Tools::FSSearch]
-@custom_rules = "You are a read-only code analysis agent. You can read files and search but cannot modify anything."
-
 agent = Brute::Agent.new(
-  provider: provider,
-  model: nil,
-  tools: @tools,
-  system_prompt: system_prompt,
-)
+  provider: Brute.provider,
+  model:    "claude-sonnet-4-20250514",
+  tools:    [Brute::Tools::FSRead, Brute::Tools::FSSearch],
+) do
+  use Brute::Middleware::EventHandler, handler_class: TerminalOutput
+  use Brute::Middleware::MaxIterations
+  use Brute::Middleware::SystemPrompt
+  use Brute::Middleware::ToolCall
+  run Brute::Middleware::LLMCall.new
+end
 
-step = Brute::Loop::AgentTurn.perform(
-  agent: agent,
-  session: @session,
-  pipeline: full_pipeline,
-  input: "Search the lib/ directory for any TODO or FIXME comments and summarize what you find.",
-)
-
-print_events
+Brute::Session.new.then do |session|
+  session.user(
+    "You are a read-only code analysis agent. You can read files and search but cannot modify anything.\n\n" \
+    "Search the lib/ directory for any TODO or FIXME comments and summarize what you find."
+  )
+  agent.call(session)
+  print_events(session)
+end

@@ -30,24 +30,26 @@ File.write("#{dir}/calculator_test.rb", <<~RUBY)
   puts "All tests pass!"
 RUBY
 
-@session      = Brute::Store::Session.new
-@custom_rules = "You are a coding assistant. Fix bugs in the code. Working directory: #{dir}"
-
 agent = Brute::Agent.new(
-  provider: provider,
-  model: nil,
-  tools: Brute::Tools::ALL,
-  system_prompt: system_prompt,
-)
+  provider: Brute.provider,
+  model:    "claude-sonnet-4-20250514",
+  tools:    Brute::Tools::ALL,
+) do
+  use Brute::Middleware::EventHandler, handler_class: TerminalOutput
+  use Brute::Middleware::MaxIterations
+  use Brute::Middleware::SystemPrompt
+  use Brute::Middleware::ToolCall
+  run Brute::Middleware::LLMCall.new
+end
 
-step = Brute::Loop::AgentTurn.perform(
-  agent: agent,
-  session: @session,
-  pipeline: full_pipeline,
-  input: "Read calculator.rb and calculator_test.rb. Fix the bugs so all tests pass, " \
-         "then run `ruby calculator_test.rb` to verify.",
-)
-
-print_events
+Brute::Session.new.then do |session|
+  session.user(
+    "You are a coding assistant. Working directory: #{dir}\n\n" \
+    "Read #{dir}/calculator.rb and #{dir}/calculator_test.rb. Fix the bugs so all tests pass, " \
+    "then run `ruby #{dir}/calculator_test.rb` to verify."
+  )
+  agent.call(session)
+  print_events(session)
+end
 
 FileUtils.rm_rf(dir)

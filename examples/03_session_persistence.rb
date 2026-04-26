@@ -5,34 +5,28 @@
 
 require_relative "helper"
 
-@session = Brute::Store::Session.new
-
 agent = Brute::Agent.new(
-  provider: provider,
-  model: nil,
-  tools: [],
-  system_prompt: system_prompt,
-)
+  provider: Brute.provider,
+  model:    "claude-sonnet-4-20250514",
+  tools:    [],
+) do
+  use Brute::Middleware::EventHandler, handler_class: TerminalOutput
+  use Brute::Middleware::MaxIterations
+  use Brute::Middleware::SystemPrompt
+  use Brute::Middleware::ToolCall
+  run Brute::Middleware::LLMCall.new
+end
 
-pipeline = full_pipeline
+Brute::Session.new.then do |session|
+  # First turn — tell it something
+  puts "=== Turn 1 ==="
+  session.user("Remember this: the secret project codename is FALCON. Just acknowledge.")
+  agent.call(session)
 
-# First turn — tell it something
-puts "=== Turn 1 ==="
-step1 = Brute::Loop::AgentTurn.perform(
-  agent: agent,
-  session: @session,
-  pipeline: pipeline,
-  input: "Remember this: the secret project codename is FALCON. Just acknowledge.",
-)
-# Second turn — same session, ask it back
-puts "\n=== Turn 2 ==="
-step2 = Brute::Loop::AgentTurn.perform(
-  agent: agent,
-  session: @session,
-  pipeline: pipeline,
-  input: "What is the secret project codename I told you?",
-)
+  # Second turn — same session, ask it back
+  puts "\n=== Turn 2 ==="
+  session.user("What is the secret project codename I told you?")
+  agent.call(session)
 
-print_events
-
-@session.delete
+  print_events(session)
+end
