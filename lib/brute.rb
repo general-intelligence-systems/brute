@@ -5,6 +5,7 @@ require 'timeout'
 require 'logger'
 require 'scampi/kernel_ext'
 require 'colorize_extended'
+require 'active_support/all'
 
 # Brute — a coding agent built on ruby_llm
 #
@@ -13,6 +14,7 @@ require 'colorize_extended'
 #
 #   Tracing → Retry → Session → Tokens → Compaction → ToolErrors → DoomLoop → Reasoning → [LLM Call]
 #
+
 require 'brute/version'
 
 module Brute
