@@ -8,10 +8,10 @@ module Brute
     module Skills
       def self.call(ctx)
         cwd = ctx[:cwd] || Dir.pwd
-        skills = Skill.all(cwd: cwd)
+        skills = Brute::Skill.all(cwd: cwd)
         return nil if skills.empty?
 
-        listing = Skill.fmt(skills)
+        listing = Brute::Skill.fmt(skills)
 
         <<~TXT
           Skills provide specialized instructions and workflows for specific tasks.

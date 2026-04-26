@@ -36,8 +36,9 @@ agent = Brute::Agent.new(
   tools:    Brute::Tools::ALL,
 ) do
   use Brute::Middleware::EventHandler, handler_class: TerminalOutput
-  use Brute::Middleware::MaxIterations
   use Brute::Middleware::SystemPrompt
+  use Brute::Middleware::ToolResults
+  use Brute::Middleware::MaxIterations
   use Brute::Middleware::ToolCall
   run Brute::Middleware::LLMCall.new
 end
