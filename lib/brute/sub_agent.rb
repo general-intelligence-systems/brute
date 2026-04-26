@@ -75,17 +75,17 @@ module Brute
 
     private
 
-    def build_session(arguments)
-      task = arguments[:task] || arguments["task"]
-      Brute::Session.new.tap { |s| s.user(task) }
-    end
-
-    def extract_result(session)
-      last = session.reverse_each.find do |m|
-        m.role == :assistant && m.content.is_a?(String) && !m.content.empty?
+      def build_session(arguments)
+        task = arguments[:task] || arguments["task"]
+        Brute::Session.new.tap { |s| s.user(task) }
       end
-      last&.content || "(sub-agent completed but produced no text response)"
-    end
+
+      def extract_result(session)
+        last = session.reverse_each.find do |m|
+          m.role == :assistant && m.content.is_a?(String) && !m.content.empty?
+        end
+        last&.content || "(sub-agent completed but produced no text response)"
+      end
   end
 end
 
