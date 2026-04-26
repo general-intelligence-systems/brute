@@ -5,17 +5,18 @@ require "brute"
 
 module Brute
   module Tools
-    class FSPatch < LLM::Tool
-      name 'patch'
+    class FSPatch < RubyLLM::Tool
       description 'Replace a specific string in a file. The old_string must match exactly ' \
                   '(including whitespace and indentation). Always read a file before patching it.'
 
-      param :file_path, String, 'Path to the file to patch', required: true
-      param :old_string, String, 'The exact text to find and replace', required: true
-      param :new_string, String, 'The replacement text', required: true
-      param :replace_all, Boolean, 'Replace all occurrences (default: false)'
+      param :file_path, type: 'string', desc: 'Path to the file to patch', required: true
+      param :old_string, type: 'string', desc: 'The exact text to find and replace', required: true
+      param :new_string, type: 'string', desc: 'The replacement text', required: true
+      param :replace_all, type: 'boolean', desc: 'Replace all occurrences (default: false)', required: false
 
-      def call(file_path:, old_string:, new_string:, replace_all: false)
+      def name; "patch"; end
+
+      def execute(file_path:, old_string:, new_string:, replace_all: false)
         path = File.expand_path(file_path)
         Brute::Queue::FileMutationQueue.serialize(path) do
           raise "File not found: #{path}" unless File.exist?(path)

@@ -1,22 +1,66 @@
-require_relative 'providers/shell_response'
-require_relative 'providers/shell'
-require_relative 'providers/models_dev'
-require_relative 'providers/opencode_zen'
-require_relative 'providers/opencode_go'
-require_relative 'providers/ollama'
+require 'brute/providers/shell_response'
+require 'brute/providers/shell'
+require 'brute/providers/models_dev'
+require 'brute/providers/opencode_zen'
+require 'brute/providers/opencode_go'
+require 'brute/providers/ollama'
 
 module Brute
   module Providers
+    # Simple wrapper for providers that just need a key + ruby_llm provider class.
+    class Simple
+      attr_reader :key
+
+      def initialize(key:, provider_class:, config_key:, name:, default_model:)
+        @key = key
+        @provider_class = provider_class
+        @config_key = config_key
+        @name_sym = name
+        @default_model_id = default_model
+      end
+
+      def name;          @name_sym; end
+      def default_model; @default_model_id; end
+
+      def ruby_llm_provider
+        @ruby_llm_provider ||= begin
+          config = RubyLLM::Configuration.new
+          config.send(:"#{@config_key}=", @key)
+          @provider_class.new(config)
+        end
+      end
+    end
+
     ALL = {
-      'anthropic' => ->(key) { LLM.anthropic(key: key).tap { Patches::AnthropicToolRole.apply! } },
-      'openai' => ->(key) { LLM.openai(key: key) },
-      'google' => ->(key) { LLM.google(key: key) },
-      'deepseek' => ->(key) { LLM.deepseek(key: key) },
+      'anthropic' => ->(key) {
+        Simple.new(key: key, provider_class: RubyLLM::Providers::Anthropic,
+                   config_key: :anthropic_api_key, name: :anthropic,
+                   default_model: "claude-sonnet-4-20250514")
+      },
+      'openai' => ->(key) {
+        Simple.new(key: key, provider_class: RubyLLM::Providers::OpenAI,
+                   config_key: :openai_api_key, name: :openai,
+                   default_model: "gpt-4.1")
+      },
+      'google' => ->(key) {
+        Simple.new(key: key, provider_class: RubyLLM::Providers::Gemini,
+                   config_key: :gemini_api_key, name: :google,
+                   default_model: "gemini-2.5-pro")
+      },
+      'deepseek' => ->(key) {
+        Simple.new(key: key, provider_class: RubyLLM::Providers::DeepSeek,
+                   config_key: :deepseek_api_key, name: :deepseek,
+                   default_model: "deepseek-chat")
+      },
       'ollama' => ->(_key) { Providers::Ollama.new },
-      'xai' => ->(key) { LLM.xai(key: key) },
-      'opencode_zen' => ->(key) { LLM::OpencodeZen.new(key: key) },
-      'opencode_go' => ->(key) { LLM::OpencodeGo.new(key: key) },
-      'shell' => ->(_key) { Providers::Shell.new },
+      'xai' => ->(key) {
+        Simple.new(key: key, provider_class: RubyLLM::Providers::XAI,
+                   config_key: :xai_api_key, name: :xai,
+                   default_model: "grok-3")
+      },
+      'opencode_zen' => ->(key) { Providers::OpencodeZen.new(key: key) },
+      'opencode_go'  => ->(key) { Providers::OpencodeGo.new(key: key) },
+      'shell'        => ->(_key) { Providers::Shell.new },
     }.freeze
 
     # Resolve the LLM provider from environment variables.

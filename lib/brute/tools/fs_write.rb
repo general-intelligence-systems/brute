@@ -6,15 +6,16 @@ require 'fileutils'
 
 module Brute
   module Tools
-    class FSWrite < LLM::Tool
-      name 'write'
+    class FSWrite < RubyLLM::Tool
       description "Write content to a file. Creates parent directories if they don't exist. " \
                   'Use this for creating new files or completely replacing file contents.'
 
-      param :file_path, String, 'Path to the file to write', required: true
-      param :content, String, 'The full content to write to the file', required: true
+      param :file_path, type: 'string', desc: 'Path to the file to write', required: true
+      param :content, type: 'string', desc: 'The full content to write to the file', required: true
 
-      def call(file_path:, content:)
+      def name; "write"; end
+
+      def execute(file_path:, content:)
         path = File.expand_path(file_path)
         Brute::Queue::FileMutationQueue.serialize(path) do
           old_content = File.exist?(path) ? File.read(path) : ''

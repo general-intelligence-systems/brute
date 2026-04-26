@@ -9,18 +9,19 @@ require "open3"
 
 module Brute
   module Tools
-    class Shell < LLM::Tool
-      name "shell"
+    class Shell < RubyLLM::Tool
       description "Execute a shell command and return stdout, stderr, and exit code. " \
                   "Use for git operations, running tests, installing packages, etc."
 
-      param :command, String, "The shell command to execute", required: true
-      param :cwd, String, "Working directory for the command (defaults to project root)"
+      param :command, type: 'string', desc: "The shell command to execute", required: true
+      param :cwd, type: 'string', desc: "Working directory for the command (defaults to project root)", required: false
+
+      def name; "shell"; end
 
       TIMEOUT = 300 # 5 minutes
       MAX_OUTPUT = 50_000
 
-      def call(command:, cwd: nil)
+      def execute(command:, cwd: nil)
         dir = cwd ? File.expand_path(cwd) : Dir.pwd
         raise "Directory not found: #{dir}" unless File.directory?(dir)
 

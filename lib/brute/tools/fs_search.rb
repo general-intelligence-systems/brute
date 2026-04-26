@@ -9,19 +9,20 @@ require "open3"
 
 module Brute
   module Tools
-    class FSSearch < LLM::Tool
-      name "fs_search"
+    class FSSearch < RubyLLM::Tool
       description "Search file contents using ripgrep (regex), or find files by glob pattern. " \
                   "Returns matching lines with file paths and line numbers."
 
-      param :pattern, String, "Regex pattern to search for in file contents", required: true
-      param :path, String, "Directory to search in (defaults to current working directory)"
-      param :glob, String, "File glob filter, e.g. '*.rb', '*.{js,ts}'"
-      param :ignore_case, Boolean, "Case-insensitive search (default: false)"
+      param :pattern, type: 'string', desc: "Regex pattern to search for in file contents", required: true
+      param :path, type: 'string', desc: "Directory to search in (defaults to current working directory)", required: false
+      param :glob, type: 'string', desc: "File glob filter, e.g. '*.rb', '*.{js,ts}'", required: false
+      param :ignore_case, type: 'boolean', desc: "Case-insensitive search (default: false)", required: false
+
+      def name; "fs_search"; end
 
       MAX_OUTPUT = 40_000
 
-      def call(pattern:, path: nil, glob: nil, ignore_case: false)
+      def execute(pattern:, path: nil, glob: nil, ignore_case: false)
         dir = File.expand_path(path || Dir.pwd)
         raise "Directory not found: #{dir}" unless File.directory?(dir)
 

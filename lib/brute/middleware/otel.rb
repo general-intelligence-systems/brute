@@ -1,9 +1,12 @@
 # frozen_string_literal: true
 
-if __FILE__ == $0
-  require "bundler/setup"
-  require "brute"
-end
+require "bundler/setup"
+require "brute"
+
+#require 'brute/middleware/otel/01_span'
+#require 'brute/middleware/otel/03_tool_results'
+#require 'brute/middleware/otel/18_tool_calls'
+#require 'brute/middleware/otel/10_token_usage'
 
 module Brute
   module Middleware
@@ -27,8 +30,3 @@ module Brute
     end
   end
 end
-
-require_relative "otel/01_span"
-require_relative "otel/03_tool_results"
-require_relative "otel/18_tool_calls"
-require_relative "otel/10_token_usage"

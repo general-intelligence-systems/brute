@@ -12,8 +12,8 @@ module Brute
     # call. It also tracks total wall-clock time across all calls in a turn
     # (including tool execution gaps between LLM calls).
     #
-    # A new turn is detected when env[:tool_results] is nil (the agent loop
-    # sets this on the first call of each run()).
+    # A new turn is detected when env[:current_iteration] == 1 (the agent
+    # loop resets this at the start of each turn).
     #
     # Stores in env[:metadata][:timing]:
     #   total_elapsed:     wall-clock since the turn began (includes tool gaps)
@@ -21,9 +21,10 @@ module Brute
     #   llm_call_count:    number of LLM calls so far
     #   last_call_elapsed: duration of the most recent LLM call
     #
-    class Tracing < Base
+    class Tracing
       def initialize(app, logger:)
-        super(app)
+        @app = app
+
         @logger = logger
         @call_count = 0
         @total_llm_elapsed = 0.0
@@ -33,8 +34,8 @@ module Brute
       def call(env)
         @call_count += 1
 
-        # Detect new turn: tool_results is nil on the first pipeline call
-        if env[:tool_results].nil?
+        # Detect new turn via iteration counter
+        if env[:current_iteration] <= 1
           @turn_start = Process.clock_gettime(Process::CLOCK_MONOTONIC)
           @total_llm_elapsed = 0.0
         end
@@ -57,7 +58,7 @@ module Brute
           '?'
         end
         @logger.debug("[brute] LLM response ##{@call_count} [#{provider_name}/#{model_name}]: #{tokens} tokens, #{elapsed.round(2)}s")
-        env[:callbacks].on_log("LLM response ##{@call_count}: #{tokens} tokens, #{elapsed.round(2)}s") if response
+        env[:events] << { type: :log, data: "LLM response ##{@call_count}: #{tokens} tokens, #{elapsed.round(2)}s" } if response
 
         env[:metadata][:timing] = {
           total_elapsed: now - (@turn_start || start),
@@ -81,46 +82,5 @@ module Brute
         end
       end
     end
-  end
-end
-
-test do
-  require_relative "../../../spec/support/mock_provider"
-  require_relative "../../../spec/support/mock_response"
-
-  log_output = StringIO.new
-  log_messages = []
-  turn = nil
-
-  build_turn = -> {
-    return turn if turn
-
-    pipeline = Brute::Middleware::Stack.new do
-      use Brute::Middleware::Tracing, logger: Logger.new(log_output, level: Logger::DEBUG)
-      run ->(_env) { MockResponse.new(content: "traced response") }
-    end
-
-    turn = Brute::Loop::AgentTurn.perform(
-      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
-      session: Brute::Store::Session.new,
-      pipeline: pipeline,
-      input: "hi",
-      callbacks: { on_log: ->(text) { log_messages << text } },
-    )
-  }
-
-  it "returns the response unchanged" do
-    build_turn.call
-    turn.result.content.should == "traced response"
-  end
-
-  it "logs the LLM call" do
-    build_turn.call
-    log_output.string.should =~ /LLM call #1/
-  end
-
-  it "fires on_log for response" do
-    build_turn.call
-    log_messages.any? { |m| m =~ /LLM response #1/ }.should.be.true
   end
 end

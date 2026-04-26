@@ -6,3 +6,4 @@ examples/tmp/
 /pkg/
 /vendor/bundle
 .gem/
+NOTES.txt

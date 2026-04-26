@@ -29,24 +29,20 @@ module Brute
       def messages
         return [empty_assistant] if @command.nil?
 
-        call_id    = "shell_#{SecureRandom.hex(8)}"
-        tool_call  = LLM::Object.from(
-          id: call_id,
-          name: "shell",
-          arguments: { "command" => @command },
-        )
-        original = [{
-          "type"  => "tool_use",
-          "id"    => call_id,
-          "name"  => "shell",
-          "input" => { "command" => @command },
-        }]
+        call_id = "shell_#{SecureRandom.hex(8)}"
+        tool_calls = {
+          call_id => RubyLLM::ToolCall.new(
+            id: call_id,
+            name: "shell",
+            arguments: { "command" => @command },
+          )
+        }
 
-        [LLM::Message.new(:assistant, "", {
-          tool_calls: [tool_call],
-          original_tool_calls: original,
-          tools: @tools,
-        })]
+        [RubyLLM::Message.new(
+          role: :assistant,
+          content: "",
+          tool_calls: tool_calls,
+        )]
       end
       alias_method :choices, :messages
 
@@ -71,11 +67,12 @@ module Brute
       end
 
       def content
-        messages.find(&:assistant?)&.content
+        msg = messages.find { |m| m.role == :assistant }
+        msg&.content
       end
 
       def content!
-        LLM.json.load(content)
+        JSON.parse(content)
       end
 
       def reasoning_content
@@ -83,22 +80,17 @@ module Brute
       end
 
       def usage
-        LLM::Usage.new(
-          input_tokens: 0,
-          output_tokens: 0,
-          reasoning_tokens: 0,
-          total_tokens: 0,
+        RubyLLM::Tokens.new(
+          input: 0,
+          output: 0,
+          reasoning: 0,
         )
       end
-
-      # Contract must be included AFTER method definitions —
-      # LLM::Contract checks that all required methods exist at include time.
-      include LLM::Contract::Completion
 
       private
 
       def empty_assistant
-        LLM::Message.new(:assistant, "")
+        RubyLLM::Message.new(role: :assistant, content: "")
       end
     end
   end

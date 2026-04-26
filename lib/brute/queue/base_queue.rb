@@ -10,70 +10,70 @@ require "async/semaphore"
 
 module Brute
   module Queue
-  # A queue that dequeues Step objects and runs them, honoring cancellation.
-  #
-  # Composes four async primitives:
-  #   - An inbox (Async::Queue) that holds pending steps
-  #   - A barrier (Async::Barrier) that tracks every task the queue spawns
-  #   - A semaphore (Async::Semaphore) parented to the barrier, limiting concurrency
-  #   - Workers — long-lived tasks that dequeue from the inbox and run steps
-  #
-  # The barrier-semaphore composition via parent: means every task the
-  # semaphore spawns is also tracked by the barrier. One call site
-  # (semaphore.async), two guarantees (scoped lifetime + bounded concurrency).
-  #
-  class BaseQueue
-    attr_reader :steps
+    # A queue that dequeues Step objects and runs them, honoring cancellation.
+    #
+    # Composes four async primitives:
+    #   - An inbox (Async::Queue) that holds pending steps
+    #   - A barrier (Async::Barrier) that tracks every task the queue spawns
+    #   - A semaphore (Async::Semaphore) parented to the barrier, limiting concurrency
+    #   - Workers — long-lived tasks that dequeue from the inbox and run steps
+    #
+    # The barrier-semaphore composition via parent: means every task the
+    # semaphore spawns is also tracked by the barrier. One call site
+    # (semaphore.async), two guarantees (scoped lifetime + bounded concurrency).
+    #
+    class BaseQueue
+      attr_reader :steps
 
-    def initialize(concurrency:, worker_count:, parent: Async::Task.current)
-      @steps        = []
-      @inbox        = Async::Queue.new
-      @barrier      = Async::Barrier.new(parent: parent)
-      @semaphore    = Async::Semaphore.new(concurrency, parent: @barrier)
-      @worker_count = worker_count
-      @started      = false
-    end
+      def initialize(concurrency:, worker_count:, parent: Async::Task.current)
+        @steps        = []
+        @inbox        = Async::Queue.new
+        @barrier      = Async::Barrier.new(parent: parent)
+        @semaphore    = Async::Semaphore.new(concurrency, parent: @barrier)
+        @worker_count = worker_count
+        @started      = false
+      end
 
-    def <<(step)
-      @steps << step
-      @inbox.push(step)
-      self
-    end
+      def <<(step)
+        @steps << step
+        @inbox.push(step)
+        self
+      end
 
-    def first = @steps.first
-    def last  = @steps.last
+      def first = @steps.first
+      def last  = @steps.last
 
-    def start
-      return self if @started
-      @started = true
+      def start
+        return self if @started
+        @started = true
 
-      @worker_count.times do
-        @barrier.async do
-          while (step = @inbox.dequeue)
-            @semaphore.async do |task|
-              step.call(task)
+        @worker_count.times do
+          @barrier.async do
+            while (step = @inbox.dequeue)
+              @semaphore.async do |task|
+                step.call(task)
+              end
             end
           end
         end
+        self
       end
-      self
-    end
 
-    # Graceful: stop accepting, wait for running work to finish.
-    def drain
-      @inbox.close
-      @barrier.wait
-    end
-
-    # Hard: close inbox, cancel pending steps, cancel running work.
-    def cancel
-      @inbox.close
-      @steps.each do |step|
-        step.cancel if step.state == :pending
+      # Graceful: stop accepting, wait for running work to finish.
+      def drain
+        @inbox.close
+        @barrier.wait
       end
-      @barrier.cancel
+
+      # Hard: close inbox, cancel pending steps, cancel running work.
+      def cancel
+        @inbox.close
+        @steps.each do |step|
+          step.cancel if step.state == :pending
+        end
+        @barrier.cancel
+      end
     end
-  end
   end
 end
 

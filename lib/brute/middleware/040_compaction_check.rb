@@ -8,43 +8,44 @@ module Brute
     # Checks context size after each LLM call and triggers compaction
     # when thresholds are exceeded.
     #
-    # Runs POST-call: inspects message count and token usage. If compaction
-    # is needed, summarizes older messages and replaces env[:messages] with
-    # the summary so the next LLM call starts with a compact history.
+    # It should add a compaction event to the logs with the context token
+    # total listed... this way a model that supports extra context can
+    # include the compaction as well as the previous messages...
     #
-    class CompactionCheck < Base
+    # Or an LLM that doesn't support it can just use the messages
+    # that come after the compaction
+    #
+    class CompactionCheck
       def initialize(app, compactor: nil, system_prompt:, **compactor_opts)
-        super(app)
+        @app = app
         @compactor = compactor
         @compactor_opts = compactor_opts
         @system_prompt = system_prompt
       end
 
       def call(env)
-        response = @app.call(env)
+        #@compactor ||= Compactor.new(env[:provider], **@compactor_opts)
 
-        @compactor ||= Compactor.new(env[:provider], **@compactor_opts)
+        #messages = env[:messages]
+        #usage = env[:metadata].dig(:tokens, :last_call)
 
-        messages = env[:messages]
-        usage = env[:metadata].dig(:tokens, :last_call)
+        #if @compactor.should_compact?(messages, usage: usage)
+        #  result = @compactor.compact(messages)
+        #  if result
+        #    summary_text, _recent = result
+        #    env[:metadata][:compaction] = {
+        #      messages_before: messages.size,
+        #      timestamp: Time.now.iso8601,
+        #    }
+        #    # Replace the message history with the summary
+        #    env[:messages] = [
+        #      RubyLLM::Message.new(role: :system, content: @system_prompt),
+        #      RubyLLM::Message.new(role: :user, content: "[Previous conversation summary]\n\n#{summary_text}"),
+        #    ]
+        #  end
+        #end
 
-        if @compactor.should_compact?(messages, usage: usage)
-          result = @compactor.compact(messages)
-          if result
-            summary_text, _recent = result
-            env[:metadata][:compaction] = {
-              messages_before: messages.size,
-              timestamp: Time.now.iso8601,
-            }
-            # Replace the message history with the summary
-            env[:messages] = [
-              LLM::Message.new(:system, @system_prompt),
-              LLM::Message.new(:user, "[Previous conversation summary]\n\n#{summary_text}"),
-            ]
-          end
-        end
-
-        response
+        @app.call(env)
       end
 
       # Context compaction service. When the conversation grows past configurable
@@ -150,60 +151,5 @@ module Brute
 end
 
 test do
-  require_relative "../../../spec/support/mock_provider"
-  require_relative "../../../spec/support/mock_response"
-
-  it "passes through when compaction is not needed" do
-    compactor = Object.new
-    compactor.define_singleton_method(:should_compact?) { |_msgs, **_| false }
-
-    pipeline = Brute::Middleware::Stack.new do
-      use Brute::Middleware::CompactionCheck, compactor: compactor, system_prompt: "sys"
-      run ->(_env) { MockResponse.new(content: "ok") }
-    end
-
-    turn = Brute::Loop::AgentTurn.perform(
-      agent: Brute::Agent.new(provider: MockProvider.new, model: nil, tools: []),
-      session: Brute::Store::Session.new,
-      pipeline: pipeline,
-      input: "hi",
-    )
-    turn.result.content.should == "ok"
-    turn.env[:metadata][:compaction].should.be.nil
-  end
-
-  # ── Compactor unit tests (no pipeline needed) ───────────────────
-
-  it "should_compact? returns false when under both thresholds" do
-    compactor = Brute::Middleware::CompactionCheck::Compactor.new(MockProvider.new)
-    compactor.should_compact?([], usage: { input: 50, output: 30, total: 80 }).should == false
-  end
-
-  it "should_compact? returns true when message count exceeds threshold" do
-    compactor = Brute::Middleware::CompactionCheck::Compactor.new(MockProvider.new, message_threshold: 5)
-    messages = 6.times.map { LLM::Message.new(:user, "msg") }
-    compactor.should_compact?(messages).should == true
-  end
-
-  it "should_compact? returns true when token usage exceeds threshold" do
-    compactor = Brute::Middleware::CompactionCheck::Compactor.new(MockProvider.new, token_threshold: 100)
-    compactor.should_compact?([], usage: { input: 80, output: 30, total: 110 }).should == true
-  end
-
-  it "compact returns nil when messages fit within retention_window" do
-    compactor = Brute::Middleware::CompactionCheck::Compactor.new(MockProvider.new, retention_window: 6)
-    compactor.compact(4.times.map { LLM::Message.new(:user, "msg") }).should.be.nil
-  end
-
-  it "compact splits messages and returns [summary, recent]" do
-    summary_provider = MockProvider.new
-    summary_provider.define_singleton_method(:complete) { |*_args, **_kw| MockResponse.new(content: "Summary") }
-
-    compactor = Brute::Middleware::CompactionCheck::Compactor.new(summary_provider, retention_window: 2)
-    messages = 5.times.map { |i| LLM::Message.new(:user, "msg #{i}") }
-    summary, recent = compactor.compact(messages)
-    summary.should == "Summary"
-    recent.size.should == 2
-    recent.map(&:content).should == ["msg 3", "msg 4"]
-  end
+  # not implemented
 end

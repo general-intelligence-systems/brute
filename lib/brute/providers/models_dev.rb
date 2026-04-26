@@ -7,7 +7,7 @@ module Brute
   module Providers
     # Fetches and caches model metadata from the models.dev catalog.
     #
-    # Quacks like llm.rb's provider.models so that the REPL's model
+    # Quacks like a provider.models interface so that the REPL's model
     # picker can call:
     #
     #   provider.models.all.select(&:chat?)
@@ -21,7 +21,7 @@ module Brute
 
       ModelEntry = Struct.new(:id, :name, :chat?, :cost, :limit, :reasoning, :tool_call, keyword_init: true)
 
-      # @param provider [LLM::Provider] the provider instance (for delegating execute/headers)
+      # @param provider [Brute::Providers::*] the provider instance
       # @param provider_id [String] the provider key in models.dev (e.g., "opencode", "opencode-go")
       def initialize(provider:, provider_id: "opencode")
         @provider = provider

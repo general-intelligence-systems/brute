@@ -9,13 +9,14 @@ require "fileutils"
 
 module Brute
   module Tools
-    class FSRemove < LLM::Tool
-      name "remove"
+    class FSRemove < RubyLLM::Tool
       description "Remove a file or empty directory."
 
-      param :path, String, "Path to the file or directory to remove", required: true
+      param :path, type: 'string', desc: "Path to the file or directory to remove", required: true
 
-      def call(path:)
+      def name; "remove"; end
+
+      def execute(path:)
         target = File.expand_path(path)
         Brute::Queue::FileMutationQueue.serialize(target) do
           raise "Path not found: #{target}" unless File.exist?(target)

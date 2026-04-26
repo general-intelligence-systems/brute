@@ -7,12 +7,13 @@ end
 
 module Brute
   module Tools
-    class TodoRead < LLM::Tool
-      name "todo_read"
+    class TodoRead < RubyLLM::Tool
       description "Read the current todo list to check task status and progress."
-      param :_placeholder, String, "Unused, pass any value"
+      param :_placeholder, type: 'string', desc: "Unused, pass any value", required: false
 
-      def call(_placeholder: nil)
+      def name; "todo_read"; end
+
+      def execute(_placeholder: nil)
         {todos: Brute::Store::TodoStore.all}
       end
     end

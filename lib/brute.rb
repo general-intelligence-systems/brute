@@ -1,14 +1,15 @@
 # frozen_string_literal: true
 
-require 'llm'
+require 'ruby_llm'
 require 'timeout'
 require 'logger'
 require 'scampi/kernel_ext'
+require 'colorize_extended'
 
-# Brute — a coding agent built on llm.rb
+# Brute — a coding agent built on ruby_llm
 #
 # Cross-cutting concerns are implemented as Rack-style middleware in a
-# Middleware::Stack that wraps every LLM call:
+# Pipeline that wraps every LLM call:
 #
 #   Tracing → Retry → Session → Tokens → Compaction → ToolErrors → DoomLoop → Reasoning → [LLM Call]
 #
@@ -17,7 +18,7 @@ require 'scampi/kernel_ext'
 #   agent = Brute::Agent.new(provider:, model:, tools:, system_prompt:)
 #   step  = Brute::Loop::AgentTurn.perform(agent:, session:, pipeline:, input:)
 #
-require_relative 'brute/version'
+require 'brute/version'
 
 module Brute
   LOGO = <<-LOGO
@@ -39,35 +40,6 @@ module Brute
   end
 end
 
-require_relative 'brute/diff'
-require_relative 'brute/skill'
-require_relative 'brute/prompts'
-require_relative 'brute/system_prompt'
-require_relative 'brute/agent'
-
-# Brute::Store
-require_relative 'brute/store/snapshot_store'
-require_relative 'brute/store/todo_store'
-require_relative 'brute/store/message_store'
-require_relative 'brute/store/session'
-
-# Brute::Loop (before Queue — queue tests reference Loop::Step)
-require_relative 'brute/loop/agent_stream'
-require_relative 'brute/loop/step'
-require_relative 'brute/loop/tool_call_step'
-
-# Brute::Queue
-require_relative 'brute/queue/file_mutation_queue'
-require_relative 'brute/queue/base_queue'
-require_relative 'brute/queue/sequential_queue'
-require_relative 'brute/queue/parallel_queue'
-
-# Brute::Loop (agent_turn depends on Queue)
-require_relative 'brute/loop/agent_turn'
-
-require_relative 'brute/patches/anthropic_tool_role'
-require_relative 'brute/patches/buffer_nil_guard'
-
-require_relative 'brute/middleware'
-require_relative 'brute/tools'
-require_relative 'brute/providers'
+Dir.glob("#{__dir__}/brute/**/*.rb").sort.each do |path|
+  require path
+end

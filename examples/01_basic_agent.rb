@@ -1,24 +1,22 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Basic agent — ask a question, get a response.
-
 require_relative "helper"
 
-@session = Brute::Store::Session.new
 
 agent = Brute::Agent.new(
-  provider: provider,
-  model: nil,
-  tools: Brute::Tools::ALL,
-  system_prompt: system_prompt,
-)
+  provider: Brute.provider,
+  model:    "claude-sonnet-4-20250514",
+  tools:    Brute::Tools::ALL
+) do
+  use Brute::Middleware::MaxIterations
+  use Brute::Middleware::SystemPrompt
+  use Brute::Middleware::ToolCall
 
-step = Brute::Loop::AgentTurn.perform(
-  agent: agent,
-  session: @session,
-  pipeline: full_pipeline,
-  input: "What files are in the current directory? List them.",
-)
+  run Brute::Middleware::LLMCall.new
+end
 
-print_events
+Brute::Session.new.then do |session|
+  session.user("What files are in the current directory? List them.")
+  agent.call(session)
+end

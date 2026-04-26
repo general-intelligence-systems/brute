@@ -70,7 +70,7 @@ module ExampleHelper
     tools         = @tools || Brute::Tools::ALL
     logger        = Logger.new($stderr, level: Logger::INFO)
 
-    Brute::Middleware::Stack.new do
+    Brute::Pipeline.new do
       use Brute::Middleware::OTel::Span
       use Brute::Middleware::Tracing, logger: logger
       use Brute::Middleware::OTel::ToolResults
@@ -109,7 +109,7 @@ module ExampleHelper
   #   print_events
   #
   def print_events(session = @session)
-    session.message_store.events.each do |event|
+    session.messages.each do |event|
       puts
       puts event.pretty_inspect.light_black
     end

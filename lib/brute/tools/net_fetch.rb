@@ -10,16 +10,17 @@ require "uri"
 
 module Brute
   module Tools
-    class NetFetch < LLM::Tool
-      name "fetch"
+    class NetFetch < RubyLLM::Tool
       description "Fetch content from a URL. Returns the response body as text."
 
-      param :url, String, "The URL to fetch", required: true
+      param :url, type: 'string', desc: "The URL to fetch", required: true
+
+      def name; "fetch"; end
 
       MAX_BODY = 50_000
       TIMEOUT = 30
 
-      def call(url:)
+      def execute(url:)
         uri = URI.parse(url)
         raise "Invalid URL scheme: #{uri.scheme}" unless %w[http https].include?(uri.scheme)
 

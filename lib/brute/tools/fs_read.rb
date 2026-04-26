@@ -7,16 +7,17 @@ end
 
 module Brute
   module Tools
-    class FSRead < LLM::Tool
-      name "read"
+    class FSRead < RubyLLM::Tool
       description "Read the contents of a file. Returns file content with line numbers. " \
                   "Use start_line/end_line for partial reads of large files."
 
-      param :file_path, String, "Absolute or relative path to the file to read", required: true
-      param :start_line, Integer, "Starting line number (1-indexed). Omit to read from beginning"
-      param :end_line, Integer, "Ending line number (inclusive). Omit to read to end"
+      param :file_path, type: 'string', desc: "Absolute or relative path to the file to read", required: true
+      param :start_line, type: 'integer', desc: "Starting line number (1-indexed). Omit to read from beginning", required: false
+      param :end_line, type: 'integer', desc: "Ending line number (inclusive). Omit to read to end", required: false
 
-      def call(file_path:, start_line: nil, end_line: nil)
+      def name; "read"; end
+
+      def execute(file_path:, start_line: nil, end_line: nil)
         path = File.expand_path(file_path)
         raise "File not found: #{path}" unless File.exist?(path)
         raise "Not a file: #{path}" unless File.file?(path)

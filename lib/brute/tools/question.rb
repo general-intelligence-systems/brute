@@ -7,8 +7,7 @@ end
 
 module Brute
   module Tools
-    class Question < LLM::Tool
-      name "question"
+    class Question < RubyLLM::Tool
       description "Ask the user questions during execution. Use this to gather preferences, " \
                   "clarify ambiguous instructions, get decisions on implementation choices, or " \
                   "offer choices about direction. Users can always select \"Other\" to provide " \
@@ -16,25 +15,39 @@ module Brute
                   "to allow selecting more than one. If you recommend a specific option, make it " \
                   "the first option and add \"(Recommended)\" at the end of the label."
 
-      params do |s|
-        s.object(
-          questions: s.array(
-            s.object(
-              question: s.string.required,
-              header: s.string.required,
-              options: s.array(
-                s.object(
-                  label: s.string.required,
-                  description: s.string.required,
-                )
-              ).required,
-              multiple: s.boolean,
-            )
-          ).required
-        )
-      end
+      params({
+        type: 'object',
+        properties: {
+          questions: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                question: { type: 'string' },
+                header: { type: 'string' },
+                options: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      label: { type: 'string' },
+                      description: { type: 'string' },
+                    },
+                    required: %w[label description],
+                  },
+                },
+                multiple: { type: 'boolean' },
+              },
+              required: %w[question header options],
+            },
+          },
+        },
+        required: %w[questions],
+      })
 
-      def call(questions:)
+      def name; "question"; end
+
+      def execute(questions:)
         handler = Thread.current[:on_question]
         unless handler
           return { error: true, message: "Cannot ask questions in non-interactive mode" }

@@ -8,12 +8,16 @@
     utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        ruby = pkgs.ruby_3_4;
       in
       {
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = [ pkgs.pkg-config ];
-          buildInputs = [ ruby pkgs.libyaml pkgs.openssl ];
+          buildInputs = with pkgs; [
+            ruby_3_4
+            libyaml 
+            openssl
+          ];
+
           shellHook = ''
             export GEM_HOME="$PWD/.gem"
             export GEM_PATH="$GEM_HOME"

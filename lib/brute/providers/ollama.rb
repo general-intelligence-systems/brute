@@ -1,24 +1,21 @@
 # frozen_string_literal: true
 
-require "bundler/setup"
-require "brute"
-
-# Ensure the Ollama provider is loaded (llm.rb lazy-loads providers).
-unless defined?(LLM::Ollama)
-  require "llm/providers/ollama"
+if __FILE__ == $0
+  require "bundler/setup"
+  require "brute"
 end
 
 module Brute
   module Providers
     ##
-    # Brute-level wrapper around LLM::Ollama for local model inference.
+    # Brute-level wrapper for Ollama local model inference.
     #
     # Adds environment-variable-based configuration so that all Brute
     # examples and the CLI work out of the box with a local Ollama
     # instance:
     #
-    #   OLLAMA_HOST  — base URL (default: http://localhost:11434)
-    #   OLLAMA_MODEL — default model (default: llm.rb's default, currently qwen3:latest)
+    #   OLLAMA_HOST  -- base URL (default: http://localhost:11434)
+    #   OLLAMA_MODEL -- default model (default: qwen3:latest)
     #
     # @example Auto-detect via environment
     #   export OLLAMA_HOST=http://localhost:11434
@@ -29,7 +26,10 @@ module Brute
     #   export OLLAMA_MODEL=llama3.1:8b
     #   ruby examples/02_fix_a_bug.rb
     #
-    class Ollama < LLM::Ollama
+    class Ollama
+      DEFAULT_HOST = "localhost"
+      DEFAULT_PORT = 11434
+
       ##
       # Parse OLLAMA_HOST into host, port, and ssl components.
       # Accepts formats like:
@@ -41,37 +41,47 @@ module Brute
       # @param url [String, nil] raw OLLAMA_HOST value
       # @return [Hash] with :host, :port, :ssl keys
       def self.parse_host(url)
-        return { host: LLM::Ollama::HOST, port: 11434, ssl: false } if url.nil? || url.empty?
+        return { host: DEFAULT_HOST, port: DEFAULT_PORT, ssl: false } if url.nil? || url.empty?
 
         # Prepend scheme if missing so URI.parse works
         url = "http://#{url}" unless url.match?(%r{\A\w+://})
         uri = URI.parse(url)
 
         {
-          host: uri.host || LLM::Ollama::HOST,
-          port: uri.port || 11434,
+          host: uri.host || DEFAULT_HOST,
+          port: uri.port || DEFAULT_PORT,
           ssl: uri.scheme == "https",
         }
       end
 
       ##
       # @param key [String] ignored (Ollama needs no auth), kept for provider interface
-      def initialize(key: "none", **)
-        config = self.class.parse_host(ENV["OLLAMA_HOST"])
-        super(key: key, host: config[:host], port: config[:port], ssl: config[:ssl], **)
+      def initialize(key: "none")
+        @key = key
+        @host_config = self.class.parse_host(ENV["OLLAMA_HOST"])
       end
 
-      ##
-      # @return [Symbol]
       def name
         :ollama
       end
 
       ##
       # Returns the default model, preferring OLLAMA_MODEL env var.
-      # @return [String]
       def default_model
-        ENV["OLLAMA_MODEL"] || super
+        ENV["OLLAMA_MODEL"] || "qwen3:latest"
+      end
+
+      ##
+      # Returns a RubyLLM::Providers::Ollama instance for the configured host.
+      def ruby_llm_provider
+        @ruby_llm_provider ||= begin
+          h = @host_config
+          scheme = h[:ssl] ? "https" : "http"
+          config = RubyLLM::Configuration.new
+          config.ollama_api_base = "#{scheme}://#{h[:host]}:#{h[:port]}"
+          config.ollama_api_key = @key if @key != "none"
+          RubyLLM::Providers::Ollama.new(config)
+        end
       end
     end
   end
@@ -114,7 +124,7 @@ test do
   end
 
   describe "#default_model" do
-    it "falls back to llm.rb default when OLLAMA_MODEL is not set" do
+    it "falls back to qwen3:latest when OLLAMA_MODEL is not set" do
       original = ENV["OLLAMA_MODEL"]
       ENV.delete("OLLAMA_MODEL")
       provider = Brute::Providers::Ollama.new

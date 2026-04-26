@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
-# A mock LLM provider that returns pre-scripted responses.
+# A mock LLM provider for testing. Quacks like a Brute provider
+# (has name, default_model, ruby_llm_provider).
 class MockProvider
   attr_reader :calls
 
@@ -16,30 +17,13 @@ class MockProvider
     'mock-model'
   end
 
-  def user_role
-    :user
+  # Returns self as the ruby_llm_provider — tests can stub complete() on this.
+  def ruby_llm_provider
+    self
   end
 
-  def system_role
-    :system
-  end
-
-  def assistant_role
-    :assistant
-  end
-
-  def tool_role
-    :tool
-  end
-
-  def tracer
-    nil
-  end
-
-  def tracer=(*); end
-
-  def complete(prompt, params = {})
-    @calls << { prompt: prompt, params: params }
-    MockResponse.new(content: 'mock response')
+  def complete(messages, tools: {}, temperature: nil, model: nil, params: {}, headers: {}, thinking: nil, **rest, &block)
+    @calls << { messages: messages, tools: tools, model: model }
+    RubyLLM::Message.new(role: :assistant, content: 'mock response')
   end
 end
