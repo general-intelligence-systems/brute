@@ -13,7 +13,7 @@ module Brute
       end
 
       def call(env)
-        env[:events] = @handler_class.new(env[:events], **opts)
+        env[:events] = @handler_class.new(env[:events], **@opts)
         @app.call(env)
       end
     end

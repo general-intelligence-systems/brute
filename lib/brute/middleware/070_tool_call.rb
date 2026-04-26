@@ -65,7 +65,11 @@ module Brute
           return {} unless tools&.any?
 
           tools.each_with_object({}) do |tool, hash|
-            instance = tool.is_a?(Class) ? tool.new : tool
+            instance = case tool
+                       when Class                              then tool.new
+                       when Brute::Tool, Brute::SubAgent       then tool.to_ruby_llm
+                       else                                          tool
+                       end
             hash[instance.name.to_s] = instance
           end
         end

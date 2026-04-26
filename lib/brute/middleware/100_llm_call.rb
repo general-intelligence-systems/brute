@@ -105,8 +105,16 @@ module Brute
 
       def handle_error(env, error)
         message = error.message.to_s.gsub(/\s*\n\s*/, " ").strip
-
-        env[:events] << { type: :error, data: error }
+      
+        env[:events] << {
+          type: :error,
+          data: {
+            error:    error,
+            provider: env[:provider]&.name,
+            model:    env[:model] || env[:provider]&.default_model,
+            message:  message,
+          }
+        }
         env[:messages] << RubyLLM::Message.new(role: :system, content: message)
         env[:should_exit] = { reason: "llm_error", message: message, source: "LLMCall" }
         env[:events] << { type: :assistant_complete, data: nil }
