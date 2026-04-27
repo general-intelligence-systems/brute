@@ -43,7 +43,7 @@ agent = Brute::Agent.new(
   run Brute::Middleware::LLMCall.new
 end
 
-Brute::Session.new.then do |session|
+Brute::Session.new(path: File.join(__dir__, "tmp", "session_02.jsonl")).then do |session|
   session.user(
     "You are a coding assistant. Working directory: #{dir}\n\n" \
     "Read #{dir}/calculator.rb and #{dir}/calculator_test.rb. Fix the bugs so all tests pass, " \

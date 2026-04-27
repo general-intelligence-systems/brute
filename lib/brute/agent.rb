@@ -61,7 +61,12 @@ end
 
 test do
   it "runs a turn and returns the session" do
-    # not implemented — needs a stub provider
+    agent = Brute::Agent.new(provider: :stub) do
+      run ->(env) { env[:messages].assistant("hello") }
+    end
+    session = Brute::Session.new
+    session.user("hi")
+    agent.call(session).should == session
   end
 
   it "passes provider/model/tools through env" do

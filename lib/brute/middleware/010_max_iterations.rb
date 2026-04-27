@@ -38,12 +38,19 @@ end
 
 test do
   it "can be added to a stack" do
-    # not implemented
-    # this test must prove that it runs without error
+    called = false
+    inner = ->(env) { called = true }
+    mw = Brute::Middleware::MaxIterations.new(inner)
+    mw.call({ current_iteration: 1 })
+    called.should.be.true
   end
 
   it "prevents execution after given max" do
-    # not implemented
-    # this test must set it to 0 then check it ends before it starts.
+    called = false
+    inner = ->(env) { called = true }
+    mw = Brute::Middleware::MaxIterations.new(inner, max_iterations: 0)
+    env = { current_iteration: 1 }
+    mw.call(env)
+    called.should.be.false
   end
 end

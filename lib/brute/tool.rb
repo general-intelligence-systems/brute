@@ -40,7 +40,7 @@ module Brute
 
     # Execute the tool. Arguments come in as kwargs; result is whatever
     # the terminal app puts into env[:result].
-    def call(arguments = {}, events: NullSink.new)
+    def call(events: NullSink.new, **arguments)
       env = {
         name:      @name,
         arguments: arguments,
@@ -60,7 +60,7 @@ module Brute
         description tool.description
         tool.params.each { |k, opts| param k, **opts }
         define_method(:name) { tool.name }
-        define_method(:execute) { |**args| tool.call(args) }
+        define_method(:execute) { |**args| tool.call(**args) }
       end.new
     end
   end
@@ -91,7 +91,7 @@ test do
     log = []
     wrap = Class.new do
       def initialize(app, tag:); @app = app; @tag = tag; end
-      def call(env); env[:metadata][:log] << "in-#{@tag}"; @app.call(env); env[:metadata][:log] << "out-#{@tag}"; end
+      def call(env); (env[:metadata][:log] ||= []) << "in-#{@tag}"; @app.call(env); env[:metadata][:log] << "out-#{@tag}"; end
     end
 
     t = Brute::Tool.new(name: "x", description: "x") do

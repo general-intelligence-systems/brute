@@ -5,22 +5,6 @@ require "brute"
 
 module Brute
   module Middleware
-    # Executes question tool calls sequentially, with the on_question handler
-    # available via Thread.current[:on_question].
-    #
-    # Runs POST-call. After the LLM response is appended to env[:messages],
-    # this middleware checks for question tool calls:
-    #
-    #   1. Reads tool calls from env[:messages].last.tool_calls
-    #   2. Partitions out tools where name == "question"
-    #   3. Fires :on_tool_call_start for the question batch
-    #   4. Executes each question sequentially (blocking, interactive)
-    #   5. Fires :on_tool_result per question
-    #   6. Appends :tool role messages directly to env[:messages]
-    #
-    # Questions run before parallel tools (in ToolCall) because they are
-    # interactive and may block waiting for user input.
-    #
     class Question
       def initialize(app)
         @app = app

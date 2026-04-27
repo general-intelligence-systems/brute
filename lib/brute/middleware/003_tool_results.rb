@@ -26,7 +26,7 @@ module Brute
         loop do
           @app.call(env)
 
-          brea if env[:should_exit]
+          break if env[:should_exit]
           break unless env[:messages].last&.role == :tool
 
           env[:current_iteration] += 1

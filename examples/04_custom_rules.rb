@@ -18,7 +18,7 @@ agent = Brute::Agent.new(
   run Brute::Middleware::LLMCall.new
 end
 
-Brute::Session.new.then do |session|
+Brute::Session.new(path: File.join(__dir__, "tmp", "session_04.jsonl")).then do |session|
   session.user(
     "Follow these project rules:\n\n" \
     "- All Ruby code MUST use frozen_string_literal comments.\n" \

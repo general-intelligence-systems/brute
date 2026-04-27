@@ -18,7 +18,7 @@ agent = Brute::Agent.new(
   run Brute::Middleware::LLMCall.new
 end
 
-Brute::Session.new.then do |session|
+Brute::Session.new(path: File.join(__dir__, "tmp", "session_06.jsonl")).then do |session|
   session.user(
     "You are a read-only code analysis agent. You can read files and search but cannot modify anything.\n\n" \
     "Search the lib/ directory for any TODO or FIXME comments and summarize what you find."

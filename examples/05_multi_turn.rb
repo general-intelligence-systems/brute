@@ -18,7 +18,7 @@ agent = Brute::Agent.new(
   run Brute::Middleware::LLMCall.new
 end
 
-Brute::Session.new.then do |session|
+Brute::Session.new(path: File.join(__dir__, "tmp", "session_05.jsonl")).then do |session|
   puts "=== Turn 1 ==="
   session.user("Create a file called config.yml with example settings for a web app: port, host, database_url, log_level.")
   agent.call(session)

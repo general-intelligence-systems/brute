@@ -25,6 +25,8 @@ module Brute
         complete(completion_options, env).then do |response|
           env[:messages] << response
         end
+
+        env
       end
 
       private

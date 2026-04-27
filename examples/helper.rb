@@ -24,16 +24,16 @@
 #     print_events(session)
 #   end
 
-require "pp"
+require "json"
 require_relative "../lib/brute"
 
 include Brute::Events
 
-# Print all session messages in grey using pp formatting.
+# Print all session messages as JSON in grey.
 def print_events(session)
   session.each do |msg|
     puts
-    puts msg.pretty_inspect.light_black
+    puts JSON.pretty_generate(msg.to_h).light_black
   end
 end
 

@@ -91,10 +91,16 @@ end
 
 test do
   it "exposes a name matching the sub-agent identifier" do
-    # not implemented
+    sa = Brute::SubAgent.new(name: "research", description: "test", provider: :stub) do
+      run ->(env) { env[:messages].assistant("done") }
+    end
+    sa.name.should == "research"
   end
 
   it "execute returns the last assistant message" do
-    # not implemented
+    sa = Brute::SubAgent.new(name: "research", description: "test", provider: :stub) do
+      run ->(env) { env[:messages].assistant("result text") }
+    end
+    sa.execute(task: "do something").should == "result text"
   end
 end

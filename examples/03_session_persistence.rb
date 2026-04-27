@@ -1,9 +1,12 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Session persistence — two turns share the same session.
+# Session persistence — messages are saved to a JSONL file on every append.
+# Run this twice to see the session resume from where it left off.
 
 require_relative "helper"
+
+SESSION_PATH = File.join(__dir__, "tmp", "session_03.jsonl")
 
 agent = Brute::Agent.new(
   provider: Brute.provider,
@@ -18,16 +21,19 @@ agent = Brute::Agent.new(
   run Brute::Middleware::LLMCall.new
 end
 
-Brute::Session.new.then do |session|
-  # First turn — tell it something
-  puts "=== Turn 1 ==="
+# Load existing session (or start fresh). Every << auto-persists to disk.
+session = Brute::Session.from_jsonl(SESSION_PATH)
+
+if session.empty?
+  # First run — tell it something
+  puts "=== Turn 1 (first run) ==="
   session.user("Remember this: the secret project codename is FALCON. Just acknowledge.")
   agent.call(session)
-
-  # Second turn — same session, ask it back
-  puts "\n=== Turn 2 ==="
+else
+  # Subsequent run — ask it back
+  puts "=== Turn 2 (resumed from #{SESSION_PATH}) ==="
   session.user("What is the secret project codename I told you?")
   agent.call(session)
-
-  print_events(session)
 end
+
+print_events(session)

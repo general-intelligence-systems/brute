@@ -16,7 +16,7 @@ agent = Brute::Agent.new(
   run Brute::Middleware::LLMCall.new
 end
 
-Brute::Session.new.then do |session|
+Brute::Session.new(path: File.join(__dir__, "tmp", "session_01.jsonl")).then do |session|
   session.user("What files are in the current directory? List them.")
   agent.call(session)
   print_events(session)
