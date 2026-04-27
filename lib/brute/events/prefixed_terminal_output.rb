@@ -42,6 +42,7 @@ module Brute
         end
 
         def on_tool_call_start(data)
+          puts
           data.each do |tool_call|
             puts "#{@tag} [tool] #{tool_call[:name]} - #{tool_call[:arguments]}"
           end
