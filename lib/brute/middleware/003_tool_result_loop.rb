@@ -17,7 +17,7 @@ module Brute
     #   - The LLM responds with text only (no tool calls) — last message is :assistant
     #   - env[:should_exit] is set (e.g. by MaxIterations)
     #
-    class ToolResults
+    class ToolResultLoop
       def initialize(app)
         @app = app
       end
@@ -54,7 +54,7 @@ test do
       end
     end
 
-    mw = Brute::Middleware::ToolResults.new(inner)
+    mw = Brute::Middleware::ToolResultLoop.new(inner)
     env = { messages: Brute::Session.new, current_iteration: 1 }
     env[:messages].user("hi")
 
@@ -74,7 +74,7 @@ test do
       env[:should_exit] = { reason: "max" } if call_count >= 2
     end
 
-    mw = Brute::Middleware::ToolResults.new(inner)
+    mw = Brute::Middleware::ToolResultLoop.new(inner)
     env = { messages: Brute::Session.new, current_iteration: 1 }
     env[:messages].user("hi")
 
@@ -91,7 +91,7 @@ test do
       env[:messages] << RubyLLM::Message.new(role: :assistant, content: "hello")
     end
 
-    mw = Brute::Middleware::ToolResults.new(inner)
+    mw = Brute::Middleware::ToolResultLoop.new(inner)
     env = { messages: Brute::Session.new, current_iteration: 1 }
     env[:messages].user("hi")
 

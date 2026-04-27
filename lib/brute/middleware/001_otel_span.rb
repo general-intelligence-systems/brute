@@ -14,7 +14,7 @@ module Brute
     # Stack position: outermost (wraps everything including retries).
     #
     #   use Brute::Middleware::OTel::Span
-    #   use Brute::Middleware::OTel::ToolResults
+    #   use Brute::Middleware::OTel::ToolResultLoop
     #   use Brute::Middleware::OTel::ToolCalls
     #   use Brute::Middleware::OTel::TokenUsage
     #   # ... existing middleware ...
