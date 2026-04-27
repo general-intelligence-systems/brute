@@ -13,12 +13,12 @@ module Brute
       def call(env)
         @app.call(env)
 
-        if any_pending_tool_calls?(env[:messages].last)
-
+        tools_to_run = pending_tool_calls(env[:messages].last)
+        if tools_to_run.any?
           available_tools = resolve_tools(env[:tools])
-          env[:events] << on_tool_call_start_event(pending_tool_calls)
+          env[:events] << on_tool_call_start_event(tools_to_run)
 
-          pending_tool_calls.each do |_id, tool_call|
+          tools_to_run.each do |_id, tool_call|
 
             tool = available_tools[tool_call.name.to_sym]
             result = tool.call(tool_call.arguments)
@@ -37,12 +37,8 @@ module Brute
 
       private
 
-        def any_pending_tool_calls?(message)
-          message.tool_call? && pending_tool_calls(message).any?
-        end
-
         def pending_tool_calls(message)
-          message.tool_calls.reject { |_id, tc| tc.name == "question" }
+          message.tool_calls.to_h.reject { |_id, tc| tc.name == "question" }
         end
 
         def resolve_tools(tools)
