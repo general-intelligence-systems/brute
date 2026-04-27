@@ -12,17 +12,24 @@ module Brute
 
       def call(env)
         @app.call(env).tap do
-          if env[:messages].last.tool_call?
+          message = env[:messages].last
+
+          if message.tool_call?
             pending_tools = message.tool_calls.reject { |_id, tc| tc.name == "question" }
 
             if pending_tools.any?
+              available_tools = resolve_tools(env[:tools])
               env[:events] << on_tool_call_start_event(pending_tools)
 
               pending_tools.each do |_id, tool_call|
-                tool.call(tool_call.arguments)
+                tool = available_tools[tool_call.name.to_sym]
+                result = tool.call(tool_call.arguments)
+                # Coerce to String so RubyLLM::Message doesn't treat Hash results
+                # (e.g. Shell's {stdout:, stderr:, exit_code:}) as attachments.
+                content = result.is_a?(String) ? result : result.to_s
 
-                env[:events] << { type: :tool_result, data: { name: tc.name, content: content } }
-                env[:messages] << RubyLLM::Message.new(role: :tool, content: content, tool_call_id: tc.id)
+                env[:events] << { type: :tool_result, data: { name: tool_call.name, content: content } }
+                env[:messages] << RubyLLM::Message.new(role: :tool, content: content, tool_call_id: tool_call.id)
               end
             end
           end
@@ -30,6 +37,13 @@ module Brute
       end
 
       private
+
+        def resolve_tools(tools)
+          tools.each_with_object({}) do |tool, hash|
+            instance = tool.is_a?(Class) ? tool.new : tool
+            hash[instance.name.to_sym] = instance
+          end
+        end
 
         def on_tool_call_start_event(pending_tools)
           {
