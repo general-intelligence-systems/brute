@@ -11,58 +11,37 @@ module Brute
       end
 
       def call(env)
-        @app.call(env)
+        @app.call(env).tap do
+          if env[:messages].last.tool_call?
+            pending_tools = message.tool_calls.reject { |_id, tc| tc.name == "question" }
 
-        last_message = env[:messages].last
+            if pending_tools.any?
+              env[:events] << on_tool_call_start_event(pending_tools)
 
-        if last_message&.tool_call?
-          tool_calls = last_message.tool_calls
+              pending_tools.each do |_id, tool_call|
+                tool.call(tool_call.arguments)
 
-          # Filter out question tools (already handled by Question middleware)
-          remaining = tool_calls.reject { |_id, tc| tc.name == "question" }
-
-          if remaining.any?
-            tools = build_tools_hash(env[:tools])
-
-            env[:events] << {
-              type: :tool_call_start,
-              data: remaining.map { |_id, tc| { name: tc.name, call_id: tc.id, arguments: tc.arguments } }
-            }
-
-            remaining.each do |_id, tc|
-              tool = tools[tc.name]
-              result = if tool
-                         tool.call(tc.arguments)
-                       else
-                         { error: "Unknown tool: #{tc.name}. Available: #{tools.keys.join(', ')}" }
-                       end
-
-              content = result.is_a?(String) ? result : result.to_s
-              env[:events] << { type: :tool_result, data: { name: tc.name, content: content } }
-
-              env[:messages] << RubyLLM::Message.new(
-                role: :tool, content: content, tool_call_id: tc.id
-              )
+                env[:events] << { type: :tool_result, data: { name: tc.name, content: content } }
+                env[:messages] << RubyLLM::Message.new(role: :tool, content: content, tool_call_id: tc.id)
+              end
             end
           end
-
-          env
-        else
-          env
         end
       end
 
       private
 
-        def build_tools_hash(tools)
-          if tools&.any?
-            tools.each_with_object({}) do |tool, hash|
-              instance = tool.is_a?(Class) ? tool.new : tool
-              hash[instance.name.to_s] = instance
-            end
-          else
-            {}
-          end
+        def on_tool_call_start_event(pending_tools)
+          {
+            type: :tool_call_start,
+            data: pending_tools.map { |_id, tc|
+              {
+                name: tc.name,
+                call_id: tc.id,
+                arguments: tc.arguments
+              }
+            }
+          }
         end
     end
   end

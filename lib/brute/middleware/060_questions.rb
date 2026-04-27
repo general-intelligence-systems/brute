@@ -11,32 +11,34 @@ module Brute
       end
 
       def call(env)
-        @app.call(env)
+        @app.call(env).tap do
+          if env[:messages].last.tool_call?
+            questions = last_message.tool_calls.select { |_id, tc| tc.name == "question" }
 
-        last_message = env[:messages].last
-        return env unless last_message&.tool_call?
+            if questions.any?
+              env[:events] << {
+                type: :tool_call_start,
+                data: questions.map { |_id, tc| { name: tc.name, call_id: tc.id, arguments: tc.arguments } }
+              }
 
-        questions = last_message.tool_calls.select { |_id, tc| tc.name == "question" }
-        return env unless questions.any?
+              questions.each do |_id, tc|
+                result = tc.call
 
-        # Fire tool_call_start with the question batch
-        env[:events] << {
-          type: :tool_call_start,
-          data: questions.map { |_id, tc| { name: tc.name, call_id: tc.id, arguments: tc.arguments } }
-        }
+                if result.is_a?(String)
+                  content = result
+                else
+                  content = result.to_s
+                end
 
-        questions.each do |_id, tc|
-          result = tc.call
-          content = result.is_a?(String) ? result : result.to_s
+                env[:events] << { type: :tool_result, data: { name: tc.name, content: content } }
 
-          env[:events] << { type: :tool_result, data: { name: tc.name, content: content } }
-
-          env[:messages] << RubyLLM::Message.new(
-            role: :tool, content: content, tool_call_id: tc.id
-          )
+                env[:messages] << RubyLLM::Message.new(
+                  role: :tool, content: content, tool_call_id: tc.id
+                )
+              end
+            end
+          end
         end
-
-        env
       end
     end
   end
