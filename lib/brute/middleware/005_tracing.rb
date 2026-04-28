@@ -67,6 +67,14 @@ module Brute
           last_call_elapsed: elapsed
         }
 
+        if response.respond_to?(:usage) && (u = response.usage)
+          env[:metadata][:tokens] = {
+            total:        read_token(u, :total_tokens),
+            total_input:  read_token(u, :input_tokens),
+            total_output: read_token(u, :output_tokens),
+          }
+        end
+
         response
       end
 

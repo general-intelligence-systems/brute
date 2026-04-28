@@ -41,7 +41,8 @@ module Brute
     end
 
     # Run one turn against the given session. The session is mutated
-    # in place (assistant + tool messages appended) and returned.
+    # in place (assistant + tool messages appended). Returns the env
+    # hash so callers can access metadata (timing, tokens, etc.).
     def call(session, events: NullSink.new)
       env = {
         messages:          session,
@@ -54,19 +55,20 @@ module Brute
         current_iteration: 1,
       }
       super(env)
-      session
+      env
     end
   end
 end
 
 test do
-  it "runs a turn and returns the session" do
+  it "runs a turn and returns the env with session in :messages" do
     agent = Brute::Agent.new(provider: :stub) do
       run ->(env) { env[:messages].assistant("hello") }
     end
     session = Brute::Session.new
     session.user("hi")
-    agent.call(session).should == session
+    env = agent.call(session)
+    env[:messages].should == session
   end
 
   it "passes provider/model/tools through env" do
