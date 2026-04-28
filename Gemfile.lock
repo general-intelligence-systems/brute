@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    brute (2.0.1)
+    brute (2.0.2)
       activesupport
       async (~> 2.0)
       colorize-extended
