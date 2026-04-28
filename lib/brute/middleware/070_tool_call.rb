@@ -128,6 +128,7 @@ module Brute
         def resolve_tools(tools)
           tools.each_with_object({}) do |tool, hash|
             instance = tool.is_a?(Class) ? tool.new : tool
+            instance = instance.to_ruby_llm if instance.respond_to?(:to_ruby_llm)
             hash[instance.name.to_sym] = instance
           end
         end
