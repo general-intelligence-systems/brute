@@ -18,7 +18,7 @@ module Brute
     #
     #   use Brute::Middleware::SystemPrompt,
     #       system_prompt: Brute::SystemPrompt.build { |p, _ctx|
-    #         p << Brute::Prompts.agent_prompt("explore")
+    #         p.append Brute::Prompts.agent_prompt("explore")
     #       }
     #
     # Skips injection when env[:messages] already contains a :system

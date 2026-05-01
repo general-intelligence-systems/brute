@@ -20,7 +20,7 @@ module Brute
     #    When reading completes, append "(End of file - total N lines)".
     # 5. Binary file detection — read first 4 KB sample, check for null bytes
     #    and known binary extensions (.zip, .exe, .so, .pyc, etc.).
-    #    Reject with "Cannot read binary file: <path>".
+    #    Reject with "Cannot read binary file: (path)".
     # 6. Directory listing — when file_path points to a directory, list entries
     #    (paginated, respecting limit) instead of raising an error.
     # 7. File-not-found suggestions — on miss, scan the parent directory for

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Brute
+  # @namespace
   module Queue
   # Per-file serialization queue for concurrent tool execution.
   #
@@ -36,9 +37,9 @@ module Brute
       # sequentially in FIFO order. Calls targeting different paths
       # proceed in parallel with zero contention.
       #
-      # @param path [String] The file path to serialize on.
-      # @yield The mutation work to perform (snapshot, read, write, etc.)
-      # @return Whatever the block returns.
+      # @parameter path [String] The file path to serialize on.
+      # @yields {block} The mutation work to perform (snapshot, read, write, etc.)
+      # @returns Whatever the block returns.
       def serialize(path, &block)
         key = canonical_path(path)
         mutex = acquire_mutex(key)

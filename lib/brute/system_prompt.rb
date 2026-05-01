@@ -10,9 +10,9 @@ module Brute
   # is called with a runtime context hash (provider_name, model_name, cwd, etc).
   #
   #   sp = Brute::SystemPrompt.build do |prompt, ctx|
-  #     prompt << Brute::Prompts::Identity.call(ctx)
-  #     prompt << Brute::Prompts::ToneAndStyle.call(ctx)
-  #     prompt << Brute::Prompts::Environment.call(ctx)
+  #     prompt.append Brute::Prompts::Identity.call(ctx)
+  #     prompt.append Brute::Prompts::ToneAndStyle.call(ctx)
+  #     prompt.append Brute::Prompts::Environment.call(ctx)
   #   end
   #
   #   result = sp.prepare(provider_name: "anthropic", model_name: "claude-sonnet-4-20250514", cwd: Dir.pwd)

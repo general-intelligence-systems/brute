@@ -20,7 +20,7 @@ module Brute
         if File.exist?(path)
           File.foreach(path).map(&:strip).each do |line|
             if line.present?
-              # Use push to bypass << persistence (avoids re-writing existing lines)
+              # Use push to bypass append persistence (avoids re-writing existing lines)
               session.push(RubyLLM::Message.new(**JSON.parse(line, symbolize_names: true)))
             end
           end

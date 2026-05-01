@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Brute
+  # @namespace
   module Store
     # Per-path stack of file snapshots used by fs_write, fs_patch, fs_remove
     # to enable undo. Each call to .save pushes the current content (or

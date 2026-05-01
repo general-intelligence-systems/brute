@@ -11,26 +11,7 @@ module Brute
       end
 
       def call(env)
-        @app.call(env).tap do
-          #if env[:messages].last.tool_call?
-          #  questions = last_message.tool_calls.select { |_id, tc| tc.name == "question" }
-
-          #  if questions.any?
-          #    env[:events] << {
-          #      type: :tool_call_start,
-          #      data: questions.map { |_id, tc| { name: tc.name, call_id: tc.id, arguments: tc.arguments } }
-          #    }
-
-          #    questions.each do |_id, question|
-          #      result = question.call
-
-          #      env[:events] << { type: :tool_result, data: { name: tc.name, content: content } }
-
-          #      env[:messages] << RubyLLM::Message.new(role: :tool, content: content, tool_call_id: tc.id)
-          #    end
-          #  end
-          #end
-        end
+        @app.call(env)
       end
     end
   end

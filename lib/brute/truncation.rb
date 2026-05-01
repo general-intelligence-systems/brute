@@ -25,7 +25,7 @@ module Brute
   #    under TRUNCATION_DIR (e.g. ~/.local/share/brute/tool-output/).
   #    Return a preview + hint pointing to the saved file.
   # 5. Hint message — when truncated, append a contextual hint:
-  #    "Full output saved to: <path>. Use Read with offset/limit to
+  #    "Full output saved to: (path). Use Read with offset/limit to
   #    view specific sections."
   # 6. Configurable limits — allow overriding MAX_LINES / MAX_BYTES
   #    via per-call options.
@@ -47,12 +47,12 @@ module Brute
     # Returns the text unchanged if it fits. Otherwise returns a
     # truncated preview with a hint message.
     #
-    # @param text [String] the tool output to truncate
-    # @param max_lines [Integer] maximum number of lines to keep
-    # @param max_bytes [Integer] maximum byte size to keep
-    # @param direction [:head, :tail] which end to keep
-    # @param truncation_dir [String, nil] directory to save full output when truncating
-    # @return [String] the (possibly truncated) text
+    # @parameter text [String] the tool output to truncate
+    # @parameter max_lines [Integer] maximum number of lines to keep
+    # @parameter max_bytes [Integer] maximum byte size to keep
+    # @parameter direction [Symbol] which end to keep
+    # @parameter truncation_dir [String, nil] directory to save full output when truncating
+    # @returns [String] the (possibly truncated) text
     #
     def self.truncate(text, max_lines: MAX_LINES, max_bytes: MAX_BYTES, direction: :head, truncation_dir: nil)
       return text if text.nil? || text.empty?
