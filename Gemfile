@@ -4,8 +4,9 @@ source "https://rubygems.org"
 
 gemspec
 
-gem "net-http-persistent"
-
-gem "json_schemer", "~> 2.5"
-
-gem "google-protobuf", "~> 4.34"
+group :maintenance, optional: true do
+	gem "utopia-project"
+	gem "bake-gem"
+	gem "bake-modernize"
+	gem "bake-releases"
+end

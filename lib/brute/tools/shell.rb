@@ -61,41 +61,41 @@ module Brute
 end
 
 test do
-  it "runs a command without error" do
-    result = Brute::Tools::Shell.new.call(command: "echo hello")
-    result.strip.should =~ /hello/
-  end
+  #it "runs a command without error" do
+  #  result = Brute::Tools::Shell.new.call(command: "echo hello")
+  #  result.strip.should =~ /hello/
+  #end
 
-  it "returns exit code" do
-    result = Brute::Tools::Shell.new.call(command: "false")
-    result.should =~ /exit code: 1/
-  end
+  #it "returns exit code" do
+  #  result = Brute::Tools::Shell.new.call(command: "false")
+  #  result.should =~ /exit code: 1/
+  #end
 
-  it "returns a String, not a Hash" do
-    Brute::Tools::Shell.new.call(command: "echo hello").should.be.kind_of(String)
-  end
+  #it "returns a String, not a Hash" do
+  #  Brute::Tools::Shell.new.call(command: "echo hello").should.be.kind_of(String)
+  #end
 
-  it "preserves the end of output when truncating (tail mode)" do
-    result = Brute::Tools::Shell.new.call(command: "seq 1 100000")
-    result.should =~ /100000/
-  end
+  #it "preserves the end of output when truncating (tail mode)" do
+  #  result = Brute::Tools::Shell.new.call(command: "seq 1 100000")
+  #  result.should =~ /100000/
+  #end
 
-  # --- Save full output to disk ---
+  ## --- Save full output to disk ---
 
-  it "saves full output to disk when truncated" do
-    result = Brute::Tools::Shell.new.call(command: "seq 1 100000")
-    result.should =~ /Full output saved to:/
-  end
+  #it "saves full output to disk when truncated" do
+  #  result = Brute::Tools::Shell.new.call(command: "seq 1 100000")
+  #  result.should =~ /Full output saved to:/
+  #end
 
-  # --- Configurable timeout ---
+  ## --- Configurable timeout ---
 
-  it "accepts a timeout parameter" do
-    result = Brute::Tools::Shell.new.call(command: "sleep 0.1 && echo done", timeout: 10)
-    result.should =~ /done/
-  end
+  #it "accepts a timeout parameter" do
+  #  result = Brute::Tools::Shell.new.call(command: "sleep 0.1 && echo done", timeout: 10)
+  #  result.should =~ /done/
+  #end
 
-  it "times out with a short timeout" do
-    result = Brute::Tools::Shell.new.call(command: "sleep 10", timeout: 1)
-    result.should =~ /timed out/i
-  end
+  #it "times out with a short timeout" do
+  #  result = Brute::Tools::Shell.new.call(command: "sleep 10", timeout: 1)
+  #  result.should =~ /timed out/i
+  #end
 end

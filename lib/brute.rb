@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'ruby_llm'
+require "rack"
 require 'timeout'
 require 'logger'
 require 'scampi/kernel_ext'
