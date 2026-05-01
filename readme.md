@@ -1,5 +1,7 @@
 # brute
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/general-intelligence-systems/brute)
+
 Production-grade coding agent framework for Ruby. Built on [llm.rb](https://rubygems.org/gems/llm.rb).
 
 ## Usage
