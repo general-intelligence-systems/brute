@@ -12,7 +12,7 @@ Gem::Specification.new do |spec|
                         'and multi-provider LLM support.'
   spec.license       = 'MIT'
   spec.homepage      = 'https://github.com/general-intelligence-systems/brute'
-  spec.required_ruby_version = '>= 3.4'
+  spec.required_ruby_version = '>= 3.3'
 
   spec.metadata = {
     "documentation_uri" => "https://general-intelligence-systems.github.io/brute/",
