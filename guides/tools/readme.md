@@ -1,42 +1,85 @@
 # Tools
 
-Brute ships with 12 built-in tools that give the agent full access to the filesystem, network, and task management.
+Brute ships with 11 built-in tools that give the agent access to the filesystem, network, and task management.
 
 ## Built-in Tools
 
-| Tool | Purpose |
-|------|---------|
-| `read` | Read files (supports line ranges) |
-| `write` | Create/overwrite files |
-| `patch` | Find-and-replace in files |
-| `remove` | Delete files/directories |
-| `fs_search` | Ripgrep content search with glob filter |
-| `undo` | Revert last file mutation |
-| `shell` | Execute commands (5 min timeout, 50KB cap) |
-| `fetch` | HTTP GET |
-| `todo_write` | Replace task list |
-| `todo_read` | Read task list |
-| `delegate` | Spawn read-only sub-agent |
-| `question` | Ask user interactive questions |
+| Tool | Class | Purpose |
+|------|-------|---------|
+| `read` | `FSRead` | Read files (supports line ranges) |
+| `write` | `FSWrite` | Create/overwrite files |
+| `patch` | `FSPatch` | Find-and-replace in files |
+| `remove` | `FSRemove` | Delete files/directories |
+| `fs_search` | `FSSearch` | Ripgrep content search with glob filter |
+| `undo` | `FSUndo` | Revert last file mutation |
+| `shell` | `Shell` | Execute commands (5 min timeout, 50KB cap) |
+| `fetch` | `NetFetch` | HTTP GET |
+| `todo_write` | `TodoWrite` | Replace task list |
+| `todo_read` | `TodoRead` | Read task list |
+| `question` | `Question` | Ask user interactive questions |
 
 ## Using Tools
 
-Pass tools when creating an agent:
+Pass tools when creating an agent. Use `Brute::Tools::ALL` for the full set:
 
 ```ruby
 agent = Brute::Agent.new(
-  provider: provider,
-  model:    provider.default_model,
+  provider: Brute.provider,
+  model:    "claude-sonnet-4-20250514",
   tools:    Brute::Tools::ALL,
-)
+) do
+  use Brute::Middleware::SystemPrompt
+  use Brute::Middleware::ToolResultLoop
+  use Brute::Middleware::MaxIterations
+  use Brute::Middleware::ToolCall
+  run Brute::Middleware::LLMCall.new
+end
 ```
 
 For a restricted, read-only agent:
 
 ```ruby
 agent = Brute::Agent.new(
-  provider: provider,
-  model:    provider.default_model,
-  tools:    [Brute::Tools::FsRead, Brute::Tools::FsSearch],
-)
+  provider: Brute.provider,
+  model:    "claude-sonnet-4-20250514",
+  tools:    [Brute::Tools::FSRead, Brute::Tools::FSSearch],
+) do
+  use Brute::Middleware::SystemPrompt
+  use Brute::Middleware::ToolResultLoop
+  use Brute::Middleware::MaxIterations
+  use Brute::Middleware::ToolCall
+  run Brute::Middleware::LLMCall.new
+end
 ```
+
+## Sub-Agent Delegation
+
+For delegating tasks to other agents, use `Brute::SubAgent` rather than a built-in tool. Sub-agents are wrapped as tools via `.to_ruby_llm` and registered in the parent agent's tool list:
+
+```ruby
+explorer = Brute::SubAgent.new(
+  name:        "explore_code",
+  description: "Delegate a code exploration task to a read-only sub-agent.",
+  provider:    Brute.provider,
+  model:       "claude-sonnet-4-20250514",
+  tools:       [Brute::Tools::FSRead, Brute::Tools::FSSearch],
+) do
+  use Brute::Middleware::SystemPrompt
+  use Brute::Middleware::Summarize
+  use Brute::Middleware::ToolResultLoop
+  use Brute::Middleware::MaxIterations, max_iterations: 15
+  use Brute::Middleware::ToolCall
+  run Brute::Middleware::LLMCall.new
+end
+
+# Register the sub-agent as a tool in the parent agent
+agent = Brute::Agent.new(
+  provider: Brute.provider,
+  model:    "claude-sonnet-4-20250514",
+  tools:    [explorer.to_ruby_llm],
+) do
+  # ...
+end
+```
+
+See `examples/07_subagent_exploration.rb` for a full working example with parallel sub-agents.

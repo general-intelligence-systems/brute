@@ -1,6 +1,6 @@
 # Providers
 
-Brute supports multiple LLM providers with automatic detection from environment variables.
+Brute supports multiple LLM providers via [RubyLLM](https://rubyllm.com). Provider detection is handled by RubyLLM based on environment variables.
 
 ## Supported Providers
 
@@ -13,19 +13,38 @@ Brute supports multiple LLM providers with automatic detection from environment 
 | `ollama` | `OLLAMA_HOST` (no key needed) |
 | `xai` | `LLM_API_KEY` + `LLM_PROVIDER=xai` |
 
-## Auto-Detection
+## Configuration
 
-Brute checks environment variables in order and uses the first match:
+Brute exposes a global provider accessor that defaults to `:anthropic`:
 
 ```ruby
-provider = Brute::Providers.guess_from_env
+Brute.provider          # => :anthropic (default)
+Brute.provider = :openai  # switch to OpenAI
 ```
 
-## Explicit Configuration
+Set the provider and key via environment variables:
 
-Set the provider and key explicitly:
+```bash
+export ANTHROPIC_API_KEY=sk-...
+```
 
-```sh
+Or for providers that aren't auto-detected by key name:
+
+```bash
 export LLM_API_KEY=your-key
-export LLM_PROVIDER=anthropic  # openai | google | deepseek | ollama | xai
+export LLM_PROVIDER=deepseek  # openai | google | deepseek | ollama | xai
+```
+
+## Usage in Agents
+
+Pass the provider when creating an agent:
+
+```ruby
+agent = Brute::Agent.new(
+  provider: Brute.provider,
+  model:    "claude-sonnet-4-20250514",
+  tools:    Brute::Tools::ALL,
+) do
+  # middleware stack...
+end
 ```
