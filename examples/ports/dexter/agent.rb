@@ -1,19 +1,6 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# A financial research agent ported from virattt/dexter.
-#
-# An agent is just prompt + tools + skills — the architecture is already
-# solved by the brute gem:
-#
-#   prompt — dexter's system prompt (src/agent/prompts.ts, CLI channel
-#            profile), reproduced verbatim below minus the sections whose
-#            tools (web_fetch, spawn_subagent, memory) aren't part of this
-#            example
-#   tools  — examples/ports/dexter/tools.rb (dexter's finance tools as
-#            plain hashes; no tool library)
-#   skills — examples/ports/dexter/.brute/skills/**/SKILL.md
-#
 # Usage:
 #   export FINANCIAL_DATASETS_API_KEY=...   # https://financialdatasets.ai
 #   export ANTHROPIC_API_KEY=...
