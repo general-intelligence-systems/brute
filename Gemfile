@@ -12,7 +12,7 @@ group :completions, optional: true do
 	gem "langchainrb"
 end
 
-# Chrome-over-CDP driver for examples/browser_agent.
+# Chrome-over-CDP driver for examples/ports/browser-agent.
 group :browser, optional: true do
 	gem "ferrum"
 end
