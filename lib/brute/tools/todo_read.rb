@@ -13,7 +13,7 @@ module Brute
       def name; "todo_read"; end
 
       def execute(_placeholder: nil)
-        {todos: Brute::Store::TodoStore.all}
+        {todos: Brute::Tools::TodoList::Store.all}
       end
     end
   end

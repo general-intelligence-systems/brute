@@ -1,0 +1,36 @@
+# frozen_string_literal: true
+
+require "bundler/setup"
+require "brute"
+
+module Brute
+  module Tools
+    # @namespace
+    module TodoList
+      # In-memory todo list storage. The agent uses this to track multi-step
+      # tasks via the todo_read / todo_write tools. The list is replaced
+      # wholesale on each todo_write call.
+      module Store
+        @items = []
+        @mutex = Mutex.new
+
+        class << self
+          # Replace the entire todo list.
+          def replace(items)
+            @mutex.synchronize { @items = items.dup }
+          end
+
+          # Return all current items.
+          def all
+            @mutex.synchronize { @items.dup }
+          end
+
+          # Clear all items.
+          def clear!
+            @mutex.synchronize { @items.clear }
+          end
+        end
+      end
+    end
+  end
+end
