@@ -20,7 +20,7 @@ module Brute
     #   use ToolResultLoop
     #   use MaxIterations
     #   use ToolCall
-    #   run LLMCall.new
+    #   run Completion::RubyLLM.new
     #
     class Summarize
       DEFAULT_PROMPT = "Provide your complete findings based on everything you've explored."

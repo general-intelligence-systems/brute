@@ -18,7 +18,7 @@ module Brute
     #   use Brute::Middleware::OTel::ToolCalls
     #   use Brute::Middleware::OTel::TokenUsage
     #   # ... existing middleware ...
-    #   run Brute::Middleware::LLMCall.new
+    #   run Brute::Middleware::Completion::RubyLLM.new
     #
     class OtelSpan
       def initialize(app)

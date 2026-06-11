@@ -7,10 +7,10 @@ module Brute
   module Middleware
     # Re-invokes the inner stack whenever the last message is a :tool result.
     #
-    # After the inner pipeline runs (LLMCall responds, ToolCall executes tools
+    # After the inner pipeline runs (the completion middleware responds, ToolCall executes tools
     # and appends :tool messages), this middleware checks if tool results are
     # pending. If so, it increments the iteration counter and loops — sending
-    # the tool results back through MaxIterations → ToolCall → LLMCall so the
+    # the tool results back through MaxIterations → ToolCall → Completion so the
     # LLM can see them.
     #
     # The loop breaks when:

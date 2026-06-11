@@ -23,7 +23,7 @@ module Brute
   #     use Brute::Middleware::MaxIterations
   #     use Brute::Middleware::Question
   #     use Brute::Middleware::ToolCall
-  #     run Brute::Middleware::LLMCall.new
+  #     run Brute::Middleware::Completion::RubyLLM.new
   #   end
   #
   #   session = Brute::Session.new
