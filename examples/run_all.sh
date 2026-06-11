@@ -10,3 +10,6 @@ bundle exec ruby examples/03_session_persistence.rb
 bundle exec ruby examples/04_custom_rules.rb
 bundle exec ruby examples/05_multi_turn.rb
 bundle exec ruby examples/06_read_only_agent.rb
+
+# Example 07 spawns parallel sub-agents — slower and more expensive.
+bundle exec ruby examples/07_subagent_exploration.rb

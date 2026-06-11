@@ -7,3 +7,5 @@ examples/tmp/
 /vendor/bundle
 .gem/
 NOTES.txt
+*.swp
+*.swo

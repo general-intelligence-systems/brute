@@ -22,7 +22,7 @@ agent = Brute::Agent.new(
 end
 
 # Load existing session (or start fresh). Every << auto-persists to disk.
-session = Brute::Session.from_jsonl(SESSION_PATH)
+session = Brute::Session.new(path: SESSION_PATH)
 
 if session.empty?
   # First run — tell it something

@@ -79,9 +79,9 @@ end
 
 # --- Parent agent with both sub-agents registered as tools ---
 #
-# to_ruby_llm wraps each SubAgent in an anonymous RubyLLM::Tool subclass
-# so LLMCall sends the correct JSON schema to the model, and ToolCall
-# can route calls through RubyLLM::Tool#call -> execute -> SubAgent#execute.
+# SubAgents respond to #to_ruby_llm, which LLMCall and ToolCall
+# middleware call automatically — just pass them directly in the
+# tools array.
 #
 # Because ToolCall middleware dispatches via Async::Barrier, when the LLM
 # emits both tool calls in the same response they execute concurrently.
@@ -89,7 +89,7 @@ end
 agent = Brute::Agent.new(
   provider: Brute.provider,
   model:    "claude-sonnet-4-20250514",
-  tools:    [explore_architecture.to_ruby_llm, explore_tools.to_ruby_llm],
+  tools:    [explore_architecture, explore_tools],
 ) do
   use Brute::Middleware::EventHandler, handler_class: TerminalOutput
   use Brute::Middleware::SystemPrompt
