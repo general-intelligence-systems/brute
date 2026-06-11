@@ -3,6 +3,9 @@
 require "json"
 require "fileutils"
 
+require "bundler/setup"
+require "brute"
+
 module Brute
   class Session < Array
     attr_reader :path

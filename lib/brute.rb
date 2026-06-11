@@ -1,22 +1,17 @@
 # frozen_string_literal: true
 
-require 'ruby_llm'
+require "bundler/setup"
+require "scampi"
+require 'scampi/kernel_ext'
+
+require "ruby_llm"
 require "rack"
 require 'timeout'
 require 'logger'
-require 'scampi/kernel_ext'
 require 'colorize_extended'
 require 'active_support/all'
 
-# Brute — a coding agent built on ruby_llm
-#
-# Cross-cutting concerns are implemented as Rack-style middleware in a
-# Pipeline that wraps every LLM call:
-#
-#   Tracing → Retry → Session → Tokens → Compaction → ToolErrors → DoomLoop → Reasoning → [LLM Call]
-#
-
-require 'brute/version'
+require_relative 'brute/version'
 
 module Brute
   LOGO = <<-LOGO
@@ -102,3 +97,4 @@ Dir.glob("#{__dir__}/brute/**/*.rb").sort.each do |path|
   require path
 end
 
+# gangsta g-dogg bruh...

@@ -1,3 +1,8 @@
+# frozen_string_literal: true
+
+require "bundler/setup"
+require "brute"
+
 require 'brute/prompts/base'
 require 'brute/prompts/identity'
 require 'brute/prompts/tone_and_style'

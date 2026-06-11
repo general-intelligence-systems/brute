@@ -2,6 +2,9 @@
 
 require "yaml"
 
+require "bundler/setup"
+require "brute"
+
 module Brute
   # Discovers and loads SKILL.md files from standard directories.
   #
