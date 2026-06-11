@@ -1,0 +1,17 @@
+# writer
+
+Content writer. Creates documentation, articles, and technical writing.
+
+Ported from **[RightNow-AI/openfang](https://github.com/RightNow-AI/openfang)** —
+source manifest: [`agents/writer/agent.toml`](https://github.com/RightNow-AI/openfang/blob/main/agents/writer/agent.toml).
+
+The system prompt is verbatim; temperature (0.7) matches the manifest;
+the manifest's tools (`file_read, file_write, file_list, web_search, web_fetch, memory_store, memory_recall`) are mapped to brute tools via
+[`../tools.rb`](../tools.rb).
+
+## Usage
+
+```sh
+export ANTHROPIC_API_KEY=...
+bundle exec ruby examples/agents/openfang-based/writer/agent.rb "<your request>"
+```
