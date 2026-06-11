@@ -29,6 +29,8 @@ GEM
       securerandom (>= 0.3)
       tzinfo (~> 2.0, >= 2.0.5)
       uri (>= 0.13.1)
+    addressable (2.9.0)
+      public_suffix (>= 2.0.2, < 8.0)
     async (2.39.0)
       console (~> 1.29)
       fiber-annotation
@@ -79,6 +81,7 @@ GEM
     bake-releases (0.5.4)
       bake (~> 0.21)
       markly (~> 0.8)
+    baran (0.1.12)
     base64 (0.3.0)
     bigdecimal (4.1.2)
     build-files (1.10.2)
@@ -91,11 +94,13 @@ GEM
       fiber-annotation
       fiber-local (~> 1.1)
       json
+    csv (3.3.5)
     date (3.5.1)
     decode (0.27.0)
       prism
       rbs
     diff-lcs (2.0.0)
+    dotenv (3.2.0)
     drb (2.2.3)
     erb (6.0.4)
     event_stream_parser (1.0.0)
@@ -122,6 +127,12 @@ GEM
       net-http (~> 0.5)
     faraday-retry (2.4.0)
       faraday (~> 2.0)
+    ferrum (0.17.2)
+      addressable (~> 2.5)
+      base64 (~> 0.2)
+      concurrent-ruby (~> 1.1)
+      webrick (~> 1.7)
+      websocket-driver (~> 0.7)
     fiber-annotation (0.2.0)
     fiber-local (1.1.0)
       fiber-storage
@@ -146,11 +157,21 @@ GEM
       rdoc (>= 4.0.0)
       reline (>= 0.4.2)
     json (2.19.4)
+    json-schema (5.1.0)
+      addressable (~> 2.8)
     json_schemer (2.5.0)
       bigdecimal
       hana (~> 1.3)
       regexp_parser (~> 2.0)
       simpleidn (~> 0.2)
+    langchainrb (0.19.5)
+      baran (~> 0.1.9)
+      csv
+      json-schema (>= 4, < 6)
+      matrix
+      pragmatic_segmenter (~> 0.3.0)
+      zeitwerk (~> 2.5)
+    llm.rb (11.2.0)
     localhost (1.7.0)
     logger (1.7.0)
     mail (2.9.0)
@@ -162,6 +183,7 @@ GEM
     mapping (1.1.3)
     marcel (1.1.0)
     markly (0.16.0)
+    matrix (0.4.3)
     metrics (0.15.0)
     mime-types (3.7.0)
       logger
@@ -186,9 +208,15 @@ GEM
       timeout
     net-smtp (0.5.1)
       net-protocol
+    open_router (0.3.3)
+      activesupport (>= 6.0)
+      dotenv (>= 2)
+      faraday (>= 1)
+      faraday-multipart (>= 1)
     openssl (4.0.1)
     pp (0.6.3)
       prettyprint
+    pragmatic_segmenter (0.3.24)
     prettyprint (0.2.0)
     prism (1.9.0)
     protocol-hpack (1.5.1)
@@ -206,6 +234,7 @@ GEM
     psych (5.3.1)
       date
       stringio
+    public_suffix (7.0.5)
     rack (3.2.6)
     rackula (1.4.1)
       falcon (~> 0.46)
@@ -276,6 +305,11 @@ GEM
       utopia (~> 2.32)
     variant (0.1.1)
       thread-local
+    webrick (1.9.2)
+    websocket-driver (0.8.1)
+      base64
+      websocket-extensions (>= 0.1.0)
+    websocket-extensions (0.1.5)
     xrb (0.11.2)
     zeitwerk (2.7.5)
 
@@ -288,6 +322,10 @@ DEPENDENCIES
   bake-modernize
   bake-releases
   brute!
+  ferrum
+  langchainrb
+  llm.rb
+  open_router
   rake (~> 13.0)
   utopia-project
 
