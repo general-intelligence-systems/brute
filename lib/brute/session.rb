@@ -10,22 +10,21 @@ module Brute
     def initialize(path: nil)
       super()
       @path = path
-      FileUtils.mkdir_p(File.dirname(@path)) if @path
-    end
-
-    # Load a session from a JSONL file. Subsequent appends will persist
-    # back to the same file automatically.
-    def self.from_jsonl(path)
-      new(path: path).tap do |session|
-        if File.exist?(path)
-          File.foreach(path).map(&:strip).each do |line|
-            if line.present?
-              # Use push to bypass append persistence (avoids re-writing existing lines)
-              session.push(RubyLLM::Message.new(**JSON.parse(line, symbolize_names: true)))
-            end
+      if @path
+        FileUtils.mkdir_p(File.dirname(@path))
+        if File.exist?(@path)
+          File.foreach(@path) do |line|
+            line.strip!
+            # Use push to bypass append persistence (avoids re-writing existing lines)
+            push(RubyLLM::Message.new(**JSON.parse(line, symbolize_names: true))) if line.present?
           end
         end
       end
+    end
+
+    # @deprecated Use Session.new(path:) instead.
+    def self.from_jsonl(path)
+      new(path: path)
     end
 
     # Append a message and persist it to disk if a path is set.
