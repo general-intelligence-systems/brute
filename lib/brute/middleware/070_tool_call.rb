@@ -54,7 +54,7 @@ module Brute
     #   one fiber runs at a time within a Sync block). No mutex needed.
     #
     # - FileMutationQueue compatibility — tools that mutate files use
-    #   Brute::Queue::FileMutationQueue.serialize, which uses Ruby 3.4's
+    #   Brute::Tools::FS::FileMutationQueue.serialize, which uses Ruby 3.4's
     #   fiber-scheduler-aware Mutex. Operations on the same file are serialized;
     #   operations on different files proceed in parallel.
     #
@@ -126,11 +126,7 @@ module Brute
         end
 
         def resolve_tools(tools)
-          tools.each_with_object({}) do |tool, hash|
-            instance = tool.is_a?(Class) ? tool.new : tool
-            instance = instance.to_ruby_llm if instance.respond_to?(:to_ruby_llm)
-            hash[instance.name.to_sym] = instance
-          end
+          Brute::Tools::Adapter.wrap_all(tools)
         end
 
         def on_tool_call_start_event(pending_tools)
