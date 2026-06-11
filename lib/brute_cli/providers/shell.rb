@@ -2,7 +2,7 @@
 
 require "shellwords"
 
-module Brute
+module BruteCLI
   module Providers
     # A pseudo-LLM provider that executes user input as code via the
     # existing Brute::Tools::Shell tool.

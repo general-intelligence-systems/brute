@@ -1,13 +1,8 @@
 # frozen_string_literal: true
 
-if __FILE__ == $0
-  require "bundler/setup"
-  require "brute"
-end
-
 require "securerandom"
 
-module Brute
+module BruteCLI
   module Providers
     # Synthetic completion response returned by Brute::Providers::Shell.
     #
