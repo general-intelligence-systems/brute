@@ -1,10 +1,15 @@
 # OpenFang-based agents
 
-One example per agent in **[RightNow-AI/openfang](https://github.com/RightNow-AI/openfang/tree/main/agents)**.
+A port of **[RightNow-AI/openfang](https://github.com/RightNow-AI/openfang)**'s
+agent catalog, demonstrating the full anatomy of an agent with brute: an agent
+is a **prompt**, **skills**, and **tools** — nothing else. The architecture is
+the brute gem's; the content is openfang's, copied word-for-word.
 
+## Agents
+
+One example per agent in [openfang's `agents/`](https://github.com/RightNow-AI/openfang/tree/main/agents).
 Each `agent.rb` carries its manifest's system prompt verbatim and its original
 temperature; manifest tool names map to brute tools through [`tools.rb`](tools.rb).
-Agents are just prompt + tools — the architecture is the brute gem's.
 
 | Agent | Description |
 |-------|-------------|
@@ -39,3 +44,48 @@ Agents are just prompt + tools — the architecture is the brute gem's.
 | [travel-planner](travel-planner/agent.rb) | Trip planning agent for itinerary creation, booking research, budget estimation, and travel logistics. |
 | [tutor](tutor/agent.rb) | Teaching and explanation agent for learning, tutoring, and educational content creation. |
 | [writer](writer/agent.rb) | Content writer. Creates documentation, articles, and technical writing. |
+
+## Skills
+
+[`.brute/skills/`](.brute/skills) holds all **61 bundled openfang skills**
+(`crates/openfang-skills/bundled/`), copied byte-for-byte. They are prompt-only
+expert-knowledge packs whose `SKILL.md` format is exactly what `Brute::Skill`
+reads — no conversion needed.
+
+Skill discovery is working-directory based, so run agents from this directory
+to put the catalog in their system prompt:
+
+```sh
+cd examples/ports/openfang
+bundle exec ruby coder/agent.rb "<your request>"
+```
+
+One fidelity note: openfang injects every enabled skill's body wholesale into
+each agent's system prompt; brute lists name + description and the agent reads
+the `SKILL.md` on demand. The content is identical — only the delivery differs.
+
+## Tools
+
+The 31 manifests declare exactly 18 distinct tool names, and
+[`tools.rb`](tools.rb)'s `OpenFang::TOOL_MAP` resolves every one of them:
+
+- `file_read`, `file_write`, `file_list`, `shell_exec`, `web_fetch` map to
+  brute's own tools.
+- The rest are implemented under [`tools/`](tools) with their **names,
+  descriptions, and parameter schemas copied verbatim** from openfang's
+  `tool_runner.rs`, and their behavior written brute-style:
+  - [`tools/memory.rb`](tools/memory.rb) — `memory_store` / `memory_recall`:
+    openfang's kernel-wide shared memory as a flock-guarded JSON file
+    (`OPENFANG_MEMORY_PATH` overrides the location).
+  - [`tools/web_search.rb`](tools/web_search.rb) — `web_search`: a port of
+    openfang's own DuckDuckGo HTML fallback, including its result parsing and
+    formatting; set `SEARXNG_URL` for a self-hosted engine.
+  - [`tools/agents.rb`](tools/agents.rb) — `agent_send` / `agent_spawn` /
+    `agent_list` / `agent_kill`: the kernel's agent table as an in-process
+    registry. `agent_spawn` parses the same agent.toml manifest shape and
+    builds a `Brute::Agent` whose tools resolve through the same map;
+    openfang's `MAX_AGENT_CALL_DEPTH = 5` guard is mirrored.
+  - [`tools/browser.rb`](tools/browser.rb) — the six `browser_*` tools
+    (travel-planner), delegating to the
+    [browser-agent port](../browser-agent)'s Ferrum driver (needs the
+    optional `ferrum` gem and Chrome/Chromium).

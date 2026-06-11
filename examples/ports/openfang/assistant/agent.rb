@@ -5,7 +5,7 @@
 #
 # Ported from RightNow-AI/openfang agents/assistant/agent.toml — the system
 # prompt is verbatim; tools are the manifest's capabilities.tools mapped
-# through OpenFang::TOOL_MAP (unmapped names are listed there).
+# through OpenFang::TOOL_MAP.
 # Upstream manifest marks this agent autonomous: {'max_iterations': 100}
 #
 # Usage:

@@ -5,7 +5,7 @@
 #
 # Ported from RightNow-AI/openfang agents/orchestrator/agent.toml — the system
 # prompt is verbatim; tools are the manifest's capabilities.tools mapped
-# through OpenFang::TOOL_MAP (unmapped names are listed there).
+# through OpenFang::TOOL_MAP.
 # Upstream manifest also defines a schedule ({'continuous': {'check_interval_secs': 120}}) — scheduling is left to the host app.
 #
 # Usage:

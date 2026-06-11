@@ -5,7 +5,7 @@
 #
 # Ported from RightNow-AI/openfang agents/analyst/agent.toml — the system
 # prompt is verbatim; tools are the manifest's capabilities.tools mapped
-# through OpenFang::TOOL_MAP (unmapped names are listed there).
+# through OpenFang::TOOL_MAP.
 #
 # Usage:
 #   bundle exec ruby examples/ports/openfang/analyst/agent.rb "<your request>"

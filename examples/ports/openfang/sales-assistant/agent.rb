@@ -5,7 +5,7 @@
 #
 # Ported from RightNow-AI/openfang agents/sales-assistant/agent.toml — the system
 # prompt is verbatim; tools are the manifest's capabilities.tools mapped
-# through OpenFang::TOOL_MAP (unmapped names are listed there).
+# through OpenFang::TOOL_MAP.
 #
 # Usage:
 #   bundle exec ruby examples/ports/openfang/sales-assistant/agent.rb "<your request>"
