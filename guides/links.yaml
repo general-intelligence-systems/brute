@@ -2,9 +2,11 @@ getting-started:
   order: 1
 tools:
   order: 2
-providers:
+skills:
   order: 3
-middleware:
+providers:
   order: 4
-examples:
+middleware:
   order: 5
+examples:
+  order: 6

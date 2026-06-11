@@ -1,6 +1,6 @@
 # Tools
 
-Brute ships with 11 built-in tools that give the agent access to the filesystem, network, and task management.
+Brute ships with 12 built-in tools that give the agent access to the filesystem, network, task management, and skills.
 
 ## Built-in Tools
 
@@ -17,6 +17,7 @@ Brute ships with 11 built-in tools that give the agent access to the filesystem,
 | `todo_write` | `TodoWrite` | Replace task list |
 | `todo_read` | `TodoRead` | Read task list |
 | `question` | `Question` | Ask user interactive questions |
+| `skill` | `SkillLoad` | Load a skill's full instructions + bundled files ([skills guide](../skills/readme.md)) |
 
 ## Using Tools
 

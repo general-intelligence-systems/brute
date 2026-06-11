@@ -15,7 +15,9 @@ module Brute
 
         <<~TXT
           Skills provide specialized instructions and workflows for specific tasks.
-          When a task matches a skill's description, load the skill to get detailed guidance.
+          Use the skill tool to load a skill when a task matches its description. The tool
+          returns the skill's full instructions plus a base directory whose bundled files
+          (scripts, references, assets) you can read or run by relative path.
 
           #{listing}
         TXT

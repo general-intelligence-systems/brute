@@ -10,6 +10,8 @@ Please see the [project documentation](https://general-intelligence-systems.gith
 
   - [Tools](https://general-intelligence-systems.github.io/brute/guides/tools/index) - Brute ships with 12 built-in tools that give the agent full access to the filesystem, network, and task management.
 
+  - [Skills](https://general-intelligence-systems.github.io/brute/guides/skills/index) - Brute implements the Agent Skills spec: specialized instruction sets the agent discovers and loads on demand via progressive disclosure.
+
   - [Providers](https://general-intelligence-systems.github.io/brute/guides/providers/index) - Brute supports multiple LLM providers with automatic detection from environment variables.
 
   - [Middleware](https://general-intelligence-systems.github.io/brute/guides/middleware/index) - Brute uses a middleware pipeline to handle cross-cutting concerns like retries, token tracking, and session persistence.

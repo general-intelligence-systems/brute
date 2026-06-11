@@ -20,7 +20,8 @@ module Brute
       Tools::NetFetch,
       Tools::TodoWrite,
       Tools::TodoRead,
-      Tools::Question
+      Tools::Question,
+      Tools::SkillLoad
     ].freeze
   end
 end

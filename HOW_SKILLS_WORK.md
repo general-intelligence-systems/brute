@@ -6,10 +6,15 @@ procedure. Skills are not code: they are prompt material, discovered from the
 filesystem and surfaced to the model so it can pull in detailed guidance when a task
 matches.
 
-The entire mechanism lives in two files:
+Brute implements the [Agent Skills specification](https://agentskills.io/specification)
+and its three-stage progressive-disclosure lifecycle. The mechanism lives in three files:
 
-- `lib/brute/skill.rb` — discovery, parsing, formatting (`Brute::Skill`)
+- `lib/brute/skill.rb` — discovery, validation, parsing, formatting (`Brute::Skill`)
 - `lib/brute/prompts/skills.rb` — the system-prompt section (`Brute::Prompts::Skills`)
+- `lib/brute/tools/skill_load.rb` — the `skill` tool (`Brute::Tools::SkillLoad`)
+
+For the full reference (frontmatter rules, the three stages, cwd syncing), see
+`guides/skills/readme.md`. This file is the narrative walkthrough.
 
 ## The file format
 
@@ -25,18 +30,22 @@ description: Systematic debugging workflow for isolating and fixing bugs
 When debugging, follow these steps...
 ```
 
-Parsing rules (`Brute::Skill.load`, `lib/brute/skill.rb:70`):
+Parsing and validation (`Brute::Skill.load`) mirror the spec's reference validator:
 
-- `description` is **required** — a skill without one (or with a blank one) is
-  silently skipped.
-- `name` is optional — it defaults to the name of the directory containing
-  `SKILL.md` (`lib/brute/skill.rb:75`).
-- The body (everything after the frontmatter) is the skill's content.
-- A file that fails to parse logs a warning to stderr and is skipped rather than
-  raising (`lib/brute/skill.rb:85-87`).
+- `name`: 1–64 chars, lowercase, letters/digits/hyphens only, no leading/trailing or
+  consecutive hyphens, and **must match the parent directory name**. It may be omitted,
+  in which case it defaults to the directory name.
+- `description`: **required**, non-empty, 1–1024 chars.
+- Optional fields are parsed instead of dropped: `license`, `compatibility` (≤500
+  chars), `metadata` (map), `allowed-tools` (experimental, space-separated → `allowed_tools`).
+- A skill that violates a normative rule is **skipped with a stderr warning naming the
+  rule** — never raised. Unexpected fields (e.g. `tags`) are dropped with a warning but
+  the skill still loads (a deliberate deviation from the reference validator, which
+  hard-fails, so brute tolerates the vendor extensions real skills carry).
 
-Each loaded skill becomes a `Skill::Info` struct with four fields: `name`,
-`description`, `location` (the file path), and `content` (the body).
+Each loaded skill becomes a `Skill::Info` struct: `name`, `description`, `location`
+(the file path), `content` (the body), `license`, `compatibility`, `metadata`, and
+`allowed_tools`.
 
 ## Discovery
 
@@ -94,13 +103,42 @@ When a task matches a skill's description, load the skill to get detailed guidan
 The `ollama` stack deliberately omits it to keep prompts lean for small-context
 local models.
 
-## Loading a skill's body
+## Loading a skill's body — the `skill` tool
 
-There is no dedicated "skill" tool. When the model decides a skill applies, it loads
-the body itself using the ordinary `read` tool against the conventional path
-(`.brute/skills/<name>/SKILL.md`). Programmatically, the body is also available as
-`Brute::Skill.get("debugging").content`, e.g. if you want to inject a skill's full
-text into a prompt yourself.
+When the model decides a skill applies, it calls the `skill` tool
+(`Brute::Tools::SkillLoad`, `lib/brute/tools/skill_load.rb`) with the skill name. The
+tool resolves it via `Brute::Skill.get` and returns the full `SKILL.md` body, the
+skill's **base directory**, and a capped listing (up to 10) of bundled files:
+
+```
+<skill name="debugging">
+# Skill: debugging
+
+When debugging, follow these steps...
+
+Base directory for this skill: /project/.brute/skills/debugging
+Relative paths in this skill (e.g. scripts/, references/, assets/) are relative to
+this base directory. Use your existing tools (read, shell) to access them.
+
+Bundled files (sampled, up to 10):
+  references/checklist.md
+  scripts/bisect.sh
+</skill>
+```
+
+The directory + file listing is the spec's third stage: skills bundle `scripts/`,
+`references/`, and `assets/` that the model then runs or reads **through the agent's
+existing tools** (`shell`, `read`) by relative path. There is no separate skill
+runtime. An unknown name returns a tool-error string listing the available names — it
+never raises.
+
+The tool takes a `cwd:` at construction (default `Dir.pwd`) and must scan the same
+root as `Prompts::Skills`, or it would advertise skills it can't load. `Brute::Tools::ALL`
+includes it as the class (default `Dir.pwd`); agents that point the prompt at a custom
+root build the tool with the matching `cwd`.
+
+Programmatically, the body is also available as `Brute::Skill.get("debugging").content`,
+e.g. if you want to inject a skill's full text into a prompt yourself.
 
 ## Using skills in your own agent
 
@@ -131,7 +169,9 @@ example's own directory, so it picks up `examples/ports/dexter/.brute/skills/`.
                        │
             <available_skills> listing    (names + descriptions only)
                        │
-            model matches task → reads SKILL.md with the read tool
+            model matches task → calls the `skill` tool (SkillLoad)
                        │
-            full instructions enter the conversation as a tool result
+            tool returns body + base dir + file listing (enters as a tool result)
+                       │
+            model runs/reads bundled resources via shell/read (relative paths)
 ```

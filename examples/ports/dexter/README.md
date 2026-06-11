@@ -11,7 +11,8 @@ from the [Financial Datasets API](https://financialdatasets.ai).
 | File | Role |
 |------|------|
 | `agent.rb` | prompt + wiring (run this) |
-| `tools.rb` | dexter's finance tools as `RubyLLM::Tool` subclasses |
+| `tools.rb` | requires the tools and assembles the `TOOLS` array |
+| `tools/` | one file per finance tool (`RubyLLM::Tool` subclasses), plus the shared `api.rb` client and `statements_tool.rb` base — mirrors dexter's `src/tools/finance/` |
 | `.brute/skills/dcf-valuation/` | dexter's DCF skill + sector WACC reference |
 
 ## Usage
