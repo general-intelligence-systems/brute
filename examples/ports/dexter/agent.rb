@@ -70,7 +70,10 @@ end
 agent = Brute::Agent.new(
   provider: Brute.provider,
   model:    "claude-sonnet-4-20250514",
-  tools:    FinancialAgent::TOOLS,
+  # The skill tool loads the bundled dcf-valuation SKILL.md on demand. Its cwd
+  # must match the one SYSTEM_PROMPT scans (ctx.merge(cwd: __dir__)) so it
+  # advertises and loads the same skills.
+  tools:    FinancialAgent::TOOLS + [Brute::Tools::SkillLoad.new(cwd: __dir__)],
 ) do
   use Brute::Middleware::EventHandler, handler_class: Brute::Events::TerminalOutput
   use Brute::Middleware::SystemPrompt, system_prompt: SYSTEM_PROMPT
