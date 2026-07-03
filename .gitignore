@@ -10,3 +10,4 @@ tmp/
 NOTES.txt
 *.swp
 *.swo
+.claude/settings.local.json
