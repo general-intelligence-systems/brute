@@ -14,7 +14,7 @@ module Brute
     # 1. Using any tools library — anything that quacks like a tool
     #    (RubyLLM::Tool today, others via their own adapters) is wrapped
     #    into the same interface.
-    # 2. Avoiding tool libraries entirely — Brute::Tool pipelines and
+    # 2. Avoiding tool libraries entirely — Brute::Turn::ToolPipeline and
     #    Tools::SubAgent work without inheriting from a library class.
     # 3. Quickly adding tools — a plain Hash with a proc is enough:
     #
@@ -33,7 +33,7 @@ module Brute
     #   adapter.call(args)  # execute with a (string- or symbol-keyed) Hash
     #
     # Completion middlewares convert adapters into whatever their LLM
-    # library expects (e.g. #to_ruby_llm); ToolCall executes them via #call.
+    # library expects (e.g. #to_ruby_llm); ToolPipeline executes them via #call.
     #
     class Adapter
       attr_reader :name, :description, :params
@@ -54,7 +54,7 @@ module Brute
           handler:     ->(**args) { tool.execute(args) },
           original:    tool,
         )
-        when Brute::Tool then new(
+        when Brute::Turn::ToolPipeline then new(
           name:        tool.name,
           description: tool.description,
           params:      tool.params,
@@ -67,7 +67,7 @@ module Brute
       end
 
       # Wrap a list of tools into a { name_sym => adapter } lookup hash —
-      # the shape ToolCall and completion middlewares work with.
+      # the shape ToolPipeline works with.
       def self.wrap_all(tools)
         Array(tools).each_with_object({}) do |tool, hash|
           adapter = wrap(tool)
@@ -136,7 +136,7 @@ module Brute
         @original    = original
       end
 
-      # The tool object this adapter wraps (RubyLLM::Tool, Brute::Tool,
+      # The tool object this adapter wraps (RubyLLM::Tool, Brute::Turn::ToolPipeline,
       # SubAgent, Hash definition, ...).
       attr_reader :original
 
@@ -191,7 +191,9 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/tools/adapter" do
   it "wraps a RubyLLM::Tool class" do
     klass = Class.new(::RubyLLM::Tool) do
       description "test tool"
@@ -207,8 +209,8 @@ test do
     adapter.call("input" => "x").should == "got x"
   end
 
-  it "wraps a Brute::Tool pipeline" do
-    t = Brute::Tool.new(name: "echo", description: "echo input") do
+  it "wraps a Brute::Turn::ToolPipeline" do
+    t = Brute::Turn::ToolPipeline.new(name: "echo", description: "echo input") do
       run ->(env) { env[:result] = env[:arguments][:msg] }
     end
 
@@ -218,7 +220,7 @@ test do
   end
 
   it "wraps a SubAgent" do
-    sa = Brute::Tools::SubAgent.new(name: "research", description: "test", provider: :stub) do
+    sa = Brute::Tools::SubAgent.new(name: "research", description: "test") do
       run ->(env) { env[:messages].assistant("result text") }
     end
 

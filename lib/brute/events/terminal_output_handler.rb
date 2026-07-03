@@ -63,6 +63,8 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/events/terminal_output_handler" do
   # not implemented
 end

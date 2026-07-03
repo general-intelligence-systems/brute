@@ -5,10 +5,10 @@ require "brute"
 
 module Brute
   module Middleware
-    # Runs a final tool-free LLM call after the ToolResultLoop completes,
+    # Runs a final tool-free LLM call after the Loop::ToolResult completes,
     # ensuring the agent produces a clean summary response.
     #
-    # This middleware sits above ToolResultLoop in the stack. After the tool
+    # This middleware sits above Loop::ToolResult in the stack. After the tool
     # loop finishes (either naturally or via MaxIterations), Summarize
     # injects a summary prompt and calls the inner stack one more time
     # with tools removed. The LLM responds with text only, giving the
@@ -17,10 +17,10 @@ module Brute
     # Stack order:
     #
     #   use Summarize
-    #   use ToolResultLoop
+    #   use Loop::ToolResult
     #   use MaxIterations
-    #   use ToolCall
-    #   run Completion::RubyLLM.new
+    #   use ToolPipeline
+    #   run ->(env) { ... }   # inline LLM call proc (see Brute.agent)
     #
     class Summarize
       DEFAULT_PROMPT = "Provide your complete findings based on everything you've explored."
@@ -46,8 +46,10 @@ module Brute
   end
 end
 
-test do
-  require "brute/session"
+__END__
+
+describe "brute/middleware/004_summarize" do
+  require "brute/messages"
 
   it "produces a final assistant message after tool loop" do
     call_count = 0
@@ -64,7 +66,7 @@ test do
     end
 
     mw = Brute::Middleware::Summarize.new(inner)
-    session = Brute::Session.new
+    session = Brute.log
     session.user("explore the codebase")
     env = { messages: session, tools: [:some_tool], current_iteration: 5 }
     mw.call(env)
@@ -80,7 +82,7 @@ test do
 
     mw = Brute::Middleware::Summarize.new(inner)
     tools = [:read, :search]
-    env = { messages: Brute::Session.new, tools: tools.dup, current_iteration: 1 }
+    env = { messages: Brute.log, tools: tools.dup, current_iteration: 1 }
     env[:messages].user("hi")
     mw.call(env)
 
@@ -95,7 +97,7 @@ test do
     }
 
     mw = Brute::Middleware::Summarize.new(inner)
-    env = { messages: Brute::Session.new, tools: [], current_iteration: 99 }
+    env = { messages: Brute.log, tools: [], current_iteration: 99 }
     env[:messages].user("hi")
     mw.call(env)
 
@@ -113,7 +115,7 @@ test do
     }
 
     mw = Brute::Middleware::Summarize.new(inner)
-    env = { messages: Brute::Session.new, tools: [], current_iteration: 1 }
+    env = { messages: Brute.log, tools: [], current_iteration: 1 }
     env[:messages].user("hi")
     mw.call(env)
 
@@ -130,7 +132,7 @@ test do
     }
 
     mw = Brute::Middleware::Summarize.new(inner, prompt: "Give me the TL;DR.")
-    env = { messages: Brute::Session.new, tools: [], current_iteration: 1 }
+    env = { messages: Brute.log, tools: [], current_iteration: 1 }
     env[:messages].user("hi")
     mw.call(env)
 

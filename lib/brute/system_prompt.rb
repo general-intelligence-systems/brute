@@ -180,6 +180,8 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/system_prompt" do
   # not implemented
 end

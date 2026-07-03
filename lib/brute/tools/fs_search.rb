@@ -62,7 +62,9 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/tools/fs_search" do
   require "tmpdir"
 
   it "searches the current directory without error" do

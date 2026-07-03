@@ -150,6 +150,8 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/middleware/040_compaction_check" do
   # not implemented
 end

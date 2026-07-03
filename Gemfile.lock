@@ -11,7 +11,7 @@ PATH
       net-http-persistent
       rack (~> 3.0)
       ruby_llm
-      scampi
+      scampi (~> 1.0)
 
 GEM
   remote: https://rubygems.org/
@@ -267,8 +267,7 @@ GEM
     samovar (2.4.1)
       console (~> 1.0)
       mapping (~> 1.0)
-    scampi (0.1.7)
-      colorize-extended
+    scampi (1.0.0)
     securerandom (0.4.1)
     simpleidn (0.2.3)
     string-format (0.2.0)

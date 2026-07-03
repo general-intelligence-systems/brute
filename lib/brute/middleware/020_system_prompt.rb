@@ -58,15 +58,17 @@ module Brute
   end
 end
 
-test do
-  require "brute/session"
+__END__
+
+describe "brute/middleware/020_system_prompt" do
+  require "brute/messages"
 
   def build_middleware(system_prompt: Brute::SystemPrompt.default, &inner_block)
     inner = inner_block || ->(env) { env }
     Brute::Middleware::SystemPrompt.new(inner, system_prompt: system_prompt)
   end
 
-  def base_env(messages: Brute::Session.new)
+  def base_env(messages: Brute.log)
     {
       messages: messages,
       provider: :anthropic,

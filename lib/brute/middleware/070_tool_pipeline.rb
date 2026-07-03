@@ -58,12 +58,17 @@ module Brute
     #   fiber-scheduler-aware Mutex. Operations on the same file are serialized;
     #   operations on different files proceed in parallel.
     #
-    class ToolCall
-      def initialize(app)
-        @app = app
+    class ToolPipeline
+      def initialize(app, tools: [])
+        @app   = app
+        @tools = tools
       end
 
+      # in  -> advertise the tools to the turn (env[:tools], which the LLM-call
+      #        proc reads to tell the model what it can call)
+      # out <- execute the tool calls the model made and append :tool results
       def call(env)
+        env[:tools] = @tools
         @app.call(env)
 
         tools_to_run = pending_tool_calls(env[:messages].last)
@@ -145,23 +150,35 @@ module Brute
   end
 end
 
-test do
-  require "brute/session"
+__END__
+
+describe "brute/middleware/070_tool_pipeline" do
+  require "brute/messages"
   require "brute/truncation"
 
   it "passes through when no tool calls pending" do
     inner = ->(env) {
       env[:messages] << RubyLLM::Message.new(role: :assistant, content: "hi")
     }
-    mw = Brute::Middleware::ToolCall.new(inner)
+    mw = Brute::Middleware::ToolPipeline.new(inner, tools: [])
     env = {
-      messages: Brute::Session.new,
-      tools: [],
+      messages: Brute.log,
       events: [],
     }
     env[:messages].user("hello")
     mw.call(env)
     env[:messages].last.content.should == "hi"
+  end
+
+  it "advertises its tools on env[:tools] on the way in" do
+    seen = nil
+    inner = ->(env) { seen = env[:tools] }
+    tool = { name: "echo", description: "", execute: ->(**) { "ok" } }
+    mw = Brute::Middleware::ToolPipeline.new(inner, tools: [tool])
+    env = { messages: Brute.log, events: [] }
+    env[:messages].user("hi")
+    mw.call(env)
+    seen.should == [tool]
   end
 
   # --- Universal output truncation ---
@@ -189,10 +206,9 @@ test do
     inner = ->(env) {
       env[:messages] << RubyLLM::Message.new(role: :assistant, content: "", tool_calls: tool_calls)
     }
-    mw = Brute::Middleware::ToolCall.new(inner)
+    mw = Brute::Middleware::ToolPipeline.new(inner, tools: [big_tool])
     env = {
-      messages: Brute::Session.new,
-      tools: [big_tool],
+      messages: Brute.log,
       events: [],
     }
     env[:messages].user("hello")
@@ -228,10 +244,9 @@ test do
     inner = ->(env) {
       env[:messages] << RubyLLM::Message.new(role: :assistant, content: "", tool_calls: tool_calls)
     }
-    mw = Brute::Middleware::ToolCall.new(inner)
+    mw = Brute::Middleware::ToolPipeline.new(inner, tools: [pre_truncated_tool])
     env = {
-      messages: Brute::Session.new,
-      tools: [pre_truncated_tool],
+      messages: Brute.log,
       events: [],
     }
     env[:messages].user("hello")

@@ -13,7 +13,9 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/prompts/identity" do
   it "returns a string for anthropic" do
     Brute::Prompts::Identity.call(provider_name: "anthropic").should.be.kind_of(String)
   end

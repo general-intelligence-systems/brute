@@ -31,7 +31,9 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/tools/fs_write" do
   require "tmpdir"
 
   it "writes content to a new file" do

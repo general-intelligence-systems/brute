@@ -21,7 +21,9 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/prompts/build_switch" do
   it "returns a string" do
     Brute::Prompts::BuildSwitch.call({}).should.be.kind_of(String)
   end

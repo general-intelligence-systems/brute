@@ -2,7 +2,6 @@
 
 require "bundler/setup"
 require "scampi"
-require 'scampi/kernel_ext'
 
 require "ruby_llm"
 require "rack"
@@ -24,68 +23,49 @@ module Brute
  `Y8bod8P' d888b     `V88V"V8P'   "888" `Y8bod8P' 
   LOGO
 
-  def self.config
-    @config ||= begin
-      RubyLLM.configure do |config|
-        # Anthropic
-        config.anthropic_api_key = ENV['ANTHROPIC_API_KEY']
-        config.anthropic_api_base = ENV['ANTHROPIC_API_BASE'] # Available in v1.13.0+ (optional custom Anthropic endpoint)
-      
-        # Azure
-        config.azure_api_base = ENV['AZURE_API_BASE'] # Microsoft Foundry project endpoint
-        config.azure_api_key = ENV['AZURE_API_KEY'] # use this or
-        config.azure_ai_auth_token = ENV['AZURE_AI_AUTH_TOKEN'] # this
-      
-        # Bedrock
-        config.bedrock_api_key = ENV['AWS_ACCESS_KEY_ID']
-        config.bedrock_secret_key = ENV['AWS_SECRET_ACCESS_KEY']
-        config.bedrock_region = ENV['AWS_REGION'] # Required for Bedrock
-        config.bedrock_session_token = ENV['AWS_SESSION_TOKEN'] # For temporary credentials
-      
-        # DeepSeek
-        config.deepseek_api_key = ENV['DEEPSEEK_API_KEY']
-        config.deepseek_api_base = ENV['DEEPSEEK_API_BASE'] # Available in v1.13.0+ (optional custom DeepSeek endpoint)
-      
-        # Gemini
-        config.gemini_api_key = ENV['GEMINI_API_KEY']
-        config.gemini_api_base = ENV['GEMINI_API_BASE'] # Available in v1.9.0+ (optional API version override)
-      
-        # GPUStack
-        config.gpustack_api_base = ENV['GPUSTACK_API_BASE']
-        config.gpustack_api_key = ENV['GPUSTACK_API_KEY']
-      
-        # Mistral
-        config.mistral_api_key = ENV['MISTRAL_API_KEY']
-      
-        # Ollama
-        config.ollama_api_base = 'http://localhost:11434/v1'
-        config.ollama_api_key = ENV['OLLAMA_API_KEY'] # Available in v1.13.0+ (optional for authenticated/remote Ollama endpoints)
-      
-        # OpenAI
-        config.openai_api_key = ENV['OPENAI_API_KEY']
-        config.openai_api_base = ENV['OPENAI_API_BASE'] # Optional custom OpenAI-compatible endpoint
-      
-        # OpenRouter
-        config.openrouter_api_key = ENV['OPENROUTER_API_KEY']
-        config.openrouter_api_base = ENV['OPENROUTER_API_BASE'] # Available in v1.13.0+ (optional custom OpenRouter endpoint)
-      
-        # Perplexity
-        config.perplexity_api_key = ENV['PERPLEXITY_API_KEY']
-      
-        # Vertex AI
-        config.vertexai_project_id = ENV['GOOGLE_CLOUD_PROJECT'] # Available in v1.7.0+
-        config.vertexai_location = ENV['GOOGLE_CLOUD_LOCATION']
-        config.vertexai_service_account_key = ENV['VERTEXAI_SERVICE_ACCOUNT_KEY'] # Optional: service account JSON key
-      
-        # xAI
-        config.xai_api_key = ENV['XAI_API_KEY'] # Available in v1.11.0+
-      end
-      RubyLLM.config
-    end
-  end
+  # NOTE: Brute owns no LLM configuration. Calling an LLM is just
+  # `RubyLLM.chat.ask "..."`, and all provider/model/credential config lives
+  # in the pipeline's terminal `run` proc — typically via `RubyLLM.context`:
+  #
+  #   run ->(env) do
+  #     context = RubyLLM.context { |c| c.ollama_api_base = ENV["OLLAMA_API_BASE"] }
+  #     ...
+  #   end
+  #
+  # See examples/agents/01_basic_agent.rb.
 
   def self.provider
     @provider ||= :anthropic
+  end
+
+  # Start building an agent turn. Returns an AgentPipeline — a rack-style
+  # builder that is also the runnable Agent: chain `.use` for middleware and
+  # `.run` for the terminal LLM-call proc (both return the AgentPipeline), then
+  # invoke it with `#start`. It takes no config — LLM config lives in the `run`
+  # proc, tools go to the ToolPipeline middleware, the log to SessionLog.
+  #
+  #   agent = Brute.agent
+  #     .use(Brute::Middleware::SystemPrompt)
+  #     .use(Brute::Middleware::ToolPipeline, tools: Brute::Tools::ALL)
+  #     .run ->(env) { ... }      # the LLM-call proc (provider/model/creds here)
+  #
+  #   agent.start("what changed?")
+  #
+  # A block form is equivalent (evaluated in the AgentPipeline's context):
+  #
+  #   Brute.agent do
+  #     use Brute::Middleware::SystemPrompt
+  #     run ->(env) { ... }
+  #   end
+  def self.agent(&block)
+    Brute::Turn::AgentPipeline.new(&block)
+  end
+
+  # Adapt any Brute tools (hashes, Brute::Turn::ToolPipeline, SubAgent, RubyLLM::Tool …)
+  # into a { name_sym => RubyLLM::Tool } hash — the shape an inline `run`
+  # proc hands to RubyLLM.chat.with_tools or a provider #complete call.
+  def self.rubyllm_tools(tools)
+    Brute::Tools::Adapter.wrap_all(tools || []).transform_values(&:to_ruby_llm)
   end
   
   def self.provider=(p)

@@ -27,7 +27,9 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/prompts/environment" do
   require "tmpdir"
   require "fileutils"
 

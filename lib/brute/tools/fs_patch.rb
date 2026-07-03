@@ -43,7 +43,9 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/tools/fs_patch" do
   require "tmpdir"
 
   it "replaces old_string with new_string" do

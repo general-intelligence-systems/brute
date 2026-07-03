@@ -17,6 +17,8 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/middleware/060_questions" do
   # not implemented
 end

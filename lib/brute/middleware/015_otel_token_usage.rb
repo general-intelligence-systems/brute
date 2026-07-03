@@ -37,6 +37,8 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/middleware/015_otel_token_usage" do
   # not implemented
 end

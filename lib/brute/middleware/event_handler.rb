@@ -20,6 +20,8 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/middleware/event_handler" do
   # not implemented
 end

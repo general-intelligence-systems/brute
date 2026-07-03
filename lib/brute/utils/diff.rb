@@ -27,7 +27,9 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/utils/diff" do
   it "generates a unified diff for changed content" do
     Brute::Diff.unified("line1\nold\nline3\n", "line1\nnew\nline3\n").should =~ /\-old/
   end

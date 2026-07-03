@@ -32,7 +32,9 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/prompts/max_steps" do
   it "returns a string" do
     Brute::Prompts::MaxSteps.call({}).should.be.kind_of(String)
   end

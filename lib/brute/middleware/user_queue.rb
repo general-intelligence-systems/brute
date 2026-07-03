@@ -30,6 +30,8 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/middleware/user_queue" do
   # not implemented
 end

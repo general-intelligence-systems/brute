@@ -25,6 +25,8 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/events/handler" do
   # not implemented
 end

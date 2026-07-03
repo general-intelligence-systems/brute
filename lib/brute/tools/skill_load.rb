@@ -99,7 +99,9 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/tools/skill_load" do
   require "tmpdir"
 
   def write_skill(root, name, body: "Do the thing.", frontmatter: nil)

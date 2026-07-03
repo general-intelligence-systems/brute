@@ -20,7 +20,9 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/prompts/instructions" do
   it "returns nil when custom_rules is nil" do
     Brute::Prompts::Instructions.call(custom_rules: nil).should.be.nil
   end

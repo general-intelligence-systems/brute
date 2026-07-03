@@ -26,7 +26,7 @@ module Brute
     # 7. File-not-found suggestions — on miss, scan the parent directory for
     #    similar names and suggest "Did you mean...?" candidates.
     # 8. Return a plain string instead of a Hash — avoids the .to_s repr
-    #    bloat when ToolCall coerces the result for the LLM message.
+    #    bloat when ToolPipeline coerces the result for the LLM message.
     #
     class FSRead < RubyLLM::Tool
       description "Read the contents of a file. Returns file content with line numbers. " \
@@ -146,7 +146,9 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/tools/fs_read" do
   require "tmpdir"
 
   it "reads a file without error" do

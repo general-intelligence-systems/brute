@@ -1,0 +1,46 @@
+# Local Ollama for running the example agents without any API keys.
+#
+# Usage:
+#   docker compose up -d              # start Ollama + pull the default model
+#   docker compose logs -f ollama-pull  # watch the (one-time) model download
+#
+#   # then run an example against it (Ollama is the default provider):
+#   bundle exec ruby examples/agents/01_basic_agent.rb
+#   bundle exec ruby examples/agents/01b_rubyllm_manages_tools.rb
+#
+# The examples default to provider=ollama, model=llama3.2, base=http://localhost:11434/v1.
+# Override the model with BRUTE_MODEL=... (and pull it: `docker compose exec ollama ollama pull <model>`).
+#
+#   docker compose down               # stop (keeps the model volume)
+#   docker compose down -v            # stop and delete downloaded models
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: brute-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # One-shot: pulls a small, tool-capable model so the examples can call tools,
+  # then exits. Re-runs are instant once the model is cached in the volume.
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: brute-ollama-pull
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: "http://ollama:11434"
+      BRUTE_MODEL: "${BRUTE_MODEL:-llama3.2}"
+    entrypoint: ["/bin/sh", "-c", "ollama pull \"$${BRUTE_MODEL}\""]
+    restart: "no"
+
+volumes:
+  ollama:

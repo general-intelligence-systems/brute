@@ -41,6 +41,8 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/middleware/075_otel_tool_results" do
   # not implemented
 end

@@ -26,7 +26,9 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/prompts/skills" do
   require "tmpdir"
 
   it "returns nil when no skills are found" do

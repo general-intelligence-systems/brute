@@ -42,7 +42,9 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/prompts/plan_reminder" do
   it "returns a string" do
     Brute::Prompts::PlanReminder.call({}).should.be.kind_of(String)
   end

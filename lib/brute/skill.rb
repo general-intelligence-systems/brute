@@ -205,7 +205,9 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/skill" do
   require "tmpdir"
   require "fileutils"
 

@@ -124,7 +124,9 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/truncation" do
   require "tmpdir"
   require "fileutils"
 

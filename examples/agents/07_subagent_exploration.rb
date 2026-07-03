@@ -50,9 +50,9 @@ explore_architecture = Brute::SubAgent.new(
       prefix: "arch"
   use Brute::Middleware::SystemPrompt, system_prompt: EXPLORE_PROMPT
   use Brute::Middleware::Summarize
-  use Brute::Middleware::ToolResultLoop
+  use Brute::Middleware::Loop::ToolResult
   use Brute::Middleware::MaxIterations, max_iterations: 15
-  use Brute::Middleware::ToolCall
+  use Brute::Middleware::ToolPipeline
   run Brute::Middleware::LLMCall.new
 end
 
@@ -71,9 +71,9 @@ explore_tools = Brute::SubAgent.new(
       prefix: "tools"
   use Brute::Middleware::SystemPrompt, system_prompt: EXPLORE_PROMPT
   use Brute::Middleware::Summarize
-  use Brute::Middleware::ToolResultLoop
+  use Brute::Middleware::Loop::ToolResult
   use Brute::Middleware::MaxIterations, max_iterations: 15
-  use Brute::Middleware::ToolCall
+  use Brute::Middleware::ToolPipeline
   run Brute::Middleware::LLMCall.new
 end
 
@@ -93,9 +93,9 @@ agent = Brute::Agent.new(
 ) do
   use Brute::Middleware::EventHandler, handler_class: TerminalOutput
   use Brute::Middleware::SystemPrompt
-  use Brute::Middleware::ToolResultLoop
+  use Brute::Middleware::Loop::ToolResult
   use Brute::Middleware::MaxIterations, max_iterations: 5
-  use Brute::Middleware::ToolCall
+  use Brute::Middleware::ToolPipeline
   run Brute::Middleware::LLMCall.new
 end
 

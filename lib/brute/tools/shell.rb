@@ -60,7 +60,9 @@ module Brute
   end
 end
 
-test do
+__END__
+
+describe "brute/tools/shell" do
   #it "runs a command without error" do
   #  result = Brute::Tools::Shell.new.call(command: "echo hello")
   #  result.strip.should =~ /hello/
