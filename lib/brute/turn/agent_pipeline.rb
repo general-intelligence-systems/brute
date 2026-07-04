@@ -7,34 +7,16 @@ require "brute/turn/pipeline"
 
 module Brute
   module Turn
-    # An AgentPipeline is the runnable Agent *and* its own builder. It inherits
-    # the whole Rack::Builder chain from Pipeline — so `.use`/`.run` chain
-    # directly on it (each returns self) — and adds `#start(input)`, which
-    # shapes the turn's env and runs the chain. There is no separate builder
-    # object: the thing you configure is the thing you run.
-    #
+
     #   agent = Brute.agent            # => AgentPipeline
     #     .use(Middleware::X)          # => same AgentPipeline (.use returns self)
     #     .run ->(env) { ... }         # => same AgentPipeline (.run returns self)
     #
     #   agent.start("what changed?")   # => runs the turn, returns env
     #
-    # It carries NO configuration: LLM config lives in the terminal `run` proc,
-    # tools go to the ToolPipeline middleware, the log to SessionLog.
     class AgentPipeline < Pipeline
-      # Read and evaluate a brute.ru script string into a runnable Agent.
-      # Inherited `parse_file` handles `.ru` files (with Rack's BOM / __END__
-      # stripping) and funnels here; we override only to hand back the Agent
-      # itself rather than Rack's built rack app.
-      def self.new_from_string(script, path = "(brute)", **_opts)
-        # rubocop:disable Security/Eval
-        new.tap { |agent| eval(script, ::Rack::BUILDER_TOPLEVEL_BINDING.call(agent), path, 1) }
-        # rubocop:enable Security/Eval
-      end
 
-      # Register a slash command. Slash-command routing rewrites a *prompt*
-      # string before it reaches the turn, so it lives here on the agent turn —
-      # not on the generic base Pipeline (a ToolPipeline has no prompt to route).
+      # Register a slash command:
       #
       #   map "/weather", "Get the weather in the following location $ARGUMENTS"
       #   map("/weather") { "Get the weather in the following location $ARGUMENTS" }
@@ -57,11 +39,6 @@ module Brute
         end
       end
 
-      # Start one turn. `input` seeds the conversation log (env[:messages]):
-      #   - a String        -> a single user message
-      #   - a RubyLLM::Message or an Array of them -> used as-is
-      #   - nil             -> an empty log (e.g. when SessionLog loads history)
-      # Returns the env hash so callers can read messages, metadata, etc.
       def start(input = nil, events: NullSink.new)
         env = {
           messages:          coerce_messages(input),
@@ -69,8 +46,9 @@ module Brute
           metadata:          {},
           current_iteration: 1,
         }
-        build.call(env)
-        env
+        env.tap do
+          build.call(env)
+        end
       end
 
       private

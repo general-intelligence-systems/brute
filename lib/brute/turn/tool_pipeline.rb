@@ -41,8 +41,6 @@ module Brute
         @pipeline.instance_eval(&block) if block
       end
 
-      # Execute the tool. Arguments come in as kwargs; result is whatever the
-      # terminal app put into env[:result].
       def call(events: Pipeline::NullSink.new, **arguments)
         env = {
           name:      @name,

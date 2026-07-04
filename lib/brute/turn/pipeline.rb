@@ -4,46 +4,8 @@ require "bundler/setup"
 require "brute"
 
 module Brute
-  # Brute::Turn is the middleware machinery that runs a single "turn" — one
-  # pass through a stack of middleware wrapped around a terminal app. An agent
-  # turn and a tool call are both turns; they only differ in how they shape env
-  # and what they return.
-  #
-  #   Brute::Turn::Pipeline       — the generic middleware chain (base class)
-  #   Brute::Turn::AgentPipeline  — a turn shaped from a message log (LLM turn)
-  #   Brute::Turn::ToolPipeline   — a turn shaped from tool arguments
   module Turn
-    # Generic middleware machinery — literally a Rack::Builder. Rack already
-    # gives us the whole chain (`@use` stack, reverse-inject in `to_app`,
-    # `call`, and the `config.ru`-style loaders `parse_file`/`new_from_string`/
-    # `app`), and its env is an opaque hash it just threads through — exactly
-    # what a Brute turn needs. We inherit all of that and override only where
-    # Brute's contract differs from HTTP's:
-    #
-    #   - `use`/`run` return `self` (Rack returns nil) so a pipeline stays
-    #     chainable, e.g. `Pipeline.new.use(mw).run { ... }`, and so they carry
-    #     explicit keyword args to the middleware constructor.
-    #   - `build` aliases Rack's `to_app` — Brute's name for "nest the
-    #     middleware around the terminal app and hand back the callable."
-    #
-    # Everything HTTP-specific Rack also carries (`map`/URLMap, `warmup`,
-    # `freeze_app`) is inert here — no `map` is ever called, so `to_app`'s
-    # map/warmup/freeze branches never fire.
-    #
-    # AgentPipeline *inherits* this (it is its own builder); ToolPipeline
-    # *composes* one. Either way they shape their public arguments into an env
-    # hash before running the chain.
-    #
-    #   class MyPipeline < Brute::Turn::Pipeline
-    #     def call(input)
-    #       env = { input: input, output: nil }
-    #       super(env)
-    #       env[:output]
-    #     end
-    #   end
-    #
     class Pipeline < ::Rack::Builder
-
       module Chainable
         # Enables the following syntax:
         #
