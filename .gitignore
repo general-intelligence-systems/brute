@@ -11,3 +11,8 @@ NOTES.txt
 *.swp
 *.swo
 .claude/settings.local.json
+
+/references/**/
+!/refereces/
+!/refereces/.keep
+!/refereces/README.md

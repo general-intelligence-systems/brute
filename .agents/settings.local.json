@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh issue *)",
+      "Bash(RUBYOPT=\"-Ilib\" bundle exec scampi)",
+      "Bash(bundle exec *)",
+      "Bash(git mv *)",
+      "Bash(python3 -)",
+      "Bash(rm -rf /tmp/dexter /tmp/gcal-agent)",
+      "Bash(git clone *)",
+      "Bash(sed -n '40,64p' /tmp/dexter/src/tools/finance/insider_trades.ts)",
+      "Bash(sed -n '1,120p' /tmp/dexter/src/agent/channels.ts)",
+      "Bash(cd *)"
+    ]
+  }
+}
