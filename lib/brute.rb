@@ -73,7 +73,7 @@ module Brute
   end
 end
 
-Dir.glob("#{__dir__}/brute/**/*.rb").sort.each do |path|
+Dir.glob("#{__dir__}/{brute,ruby_llm}/**/*.rb").sort.each do |path|
   require path
 end
 

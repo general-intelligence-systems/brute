@@ -13,7 +13,7 @@
 
 require_relative "helper"
 
-agent = Brute::Builder.parse_file(File.join(__dir__, "brute.ru"))
+agent = Brute::Turn::AgentPipeline.parse_file(File.join(__dir__, "brute.ru"))
 
 env = agent.start("What files are in the current directory? List them.")
 print_events(env[:messages])

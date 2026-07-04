@@ -22,6 +22,14 @@ node skills/harness-creator/scripts/run-benchmark.mjs --target /path/to/project 
 
 The scripts use only Node.js built-in modules. They can be run after copying the skill directory into another repository.
 
+No Node.js? Use the zero-dependency shell audit instead:
+
+```bash
+bash skills/harness-creator/tools/audit-harness.sh /path/to/project
+```
+
+It checks the same five subsystems, separates CRITICAL from RECOMMENDED findings, and exits non-zero on any CRITICAL failure — handy as a CI gate.
+
 ## What It Creates
 
 - `AGENTS.md` or `CLAUDE.md`
@@ -30,7 +38,7 @@ The scripts use only Node.js built-in modules. They can be run after copying the
 - `init.sh`
 - `session-handoff.md`
 
-`create-harness.mjs` detects common project types and package managers. It supports Node/npm/pnpm/yarn/bun, Python, Go, Rust, Maven, Gradle, and .NET at a basic verification-command level.
+`create-harness.mjs` detects common project types and package managers. It supports Node/npm/pnpm/yarn/bun, Python, Ruby (Bundler/gems — `bin/test`, Rake, or RSpec), Go, Rust, Maven, Gradle, and .NET at a basic verification-command level.
 
 ## What It Checks
 
@@ -67,6 +75,8 @@ harness-creator/
 │   ├── render-assessment-html.mjs
 │   ├── run-benchmark.mjs
 │   └── lib/harness-utils.mjs
+├── tools/
+│   └── audit-harness.sh      # zero-dependency shell audit (no Node.js)
 ├── templates/
 │   ├── agents.md
 │   ├── feature-list.json

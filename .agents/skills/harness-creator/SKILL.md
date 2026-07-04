@@ -64,6 +64,14 @@ node skills/harness-creator/scripts/validate-harness.mjs --target /path/to/proje
 
 Report the five subsystem scores, the lowest-scoring area, and the first 2-3 changes that would improve reliability. Treat the lowest score as a candidate bottleneck; confirm with failures, logs, or task outcomes before claiming causality.
 
+If Node.js is unavailable, use the zero-dependency shell equivalent bundled at `tools/audit-harness.sh`:
+
+```bash
+bash skills/harness-creator/tools/audit-harness.sh /path/to/project
+```
+
+It checks the same five subsystems (L03–L12), splits findings into CRITICAL vs RECOMMENDED, and exits non-zero when any CRITICAL item fails — suitable for CI gates.
+
 ### Produce a report
 
 Use when the user wants a shareable assessment:

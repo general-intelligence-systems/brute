@@ -26,7 +26,7 @@
 #   print_events(env[:messages])
 
 require "json"
-require_relative "../lib/brute"
+require_relative "../../lib/brute"
 
 include Brute::Events
 

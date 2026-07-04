@@ -90,6 +90,8 @@ export async function detectProject(root) {
     else stack = 'node';
   } else if (has('pyproject.toml') || has('requirements.txt')) {
     stack = 'python';
+  } else if (files.some((file) => file.endsWith('.gemspec')) || has('Gemfile')) {
+    stack = 'ruby';
   } else if (has('go.mod')) {
     stack = 'go';
   } else if (has('Cargo.toml')) {
@@ -159,6 +161,22 @@ export function verificationCommands(project, explicitPackageManager) {
       `${py} -m pytest || [ $? -eq 5 ]`,
       `${py} -m compileall -q -x '(^|/)(\\.?venv|env|node_modules|build|dist|__pycache__)(/|$)' .`
     ];
+  }
+
+  if (project.stack === 'ruby') {
+    // Gems/bundler projects: install deps, then run whatever test entrypoint
+    // the repo actually provides. Prefer a project-owned `bin/test` (many gems
+    // wrap a non-standard runner there, e.g. scampi/minitest), then a Rake
+    // `test` task, then RSpec. bundle exec keeps versions pinned to the lockfile.
+    const has = (name) => project.files.some((f) => f === name || f.endsWith(`/${name}`));
+    const test = has('bin/test')
+      ? 'bin/test'
+      : has('Rakefile')
+        ? 'bundle exec rake test'
+        : has('.rspec') || project.files.some((f) => f.startsWith('spec/'))
+          ? 'bundle exec rspec'
+          : 'bundle exec rake';
+    return ['bundle install', test];
   }
 
   if (project.stack === 'go') return ['go test ./...'];
@@ -244,7 +262,7 @@ export function scoreHarness(files) {
     verification: [
       hasFile(byPath, ['init.sh'], 'Verification entrypoint exists'),
       textHas(init, ['set -e'], 'Verification fails fast'),
-      textHas(init + agents, ['test', 'pytest', 'vitest', 'cargo test', 'go test', 'dotnet test'], 'Test command documented'),
+      textHas(init + agents, ['test', 'pytest', 'vitest', 'cargo test', 'go test', 'dotnet test', 'rake', 'rspec', 'bundle exec'], 'Test command documented'),
       textHas(init + agents, ['build', 'type', 'lint', 'compile'], 'Static/build check documented'),
       textHas(allText, ['Evidence', 'Verification Evidence', 'command and output'], 'Verification evidence is recorded')
     ],

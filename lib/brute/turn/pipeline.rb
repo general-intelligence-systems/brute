@@ -23,6 +23,18 @@ module Brute
 
       include Chainable
 
+      # Rack's `new_from_string` evaluates the script then returns `to_app` —
+      # the built callable. An agent, though, is the *builder*: you `.start` it,
+      # and it may be re-`use`d or served through the Rack adapter. So evaluate
+      # the script against a fresh builder and hand back the builder itself.
+      # This also backs `parse_file` (→ `load_file` → here), so
+      # `AgentPipeline.parse_file("agent.ru").start(prompt)` works as documented.
+      def self.new_from_string(builder_script, path = "(rackup)", **options)
+        builder = new(**options)
+        eval(builder_script, ::Rack::BUILDER_TOPLEVEL_BINDING.call(builder), path) # rubocop:disable Security/Eval
+        builder
+      end
+
       # Brute's name for Rack's `to_app`: nest the middleware around the
       # terminal app and return the runnable callable. Raises (via `to_app`)
       # when `run` was never called.
