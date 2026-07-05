@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    brute (2.0.6)
+    brute (3.0.0)
       activesupport
       async (~> 2.0)
       colorize-extended
@@ -11,7 +11,6 @@ PATH
       net-http-persistent
       rack (~> 3.0)
       ruby_llm
-      scampi (~> 1.0)
 
 GEM
   remote: https://rubygems.org/
@@ -326,6 +325,7 @@ DEPENDENCIES
   llm.rb
   open_router
   rake (~> 13.0)
+  scampi (~> 1.0)
   utopia-project
 
 BUNDLED WITH

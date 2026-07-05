@@ -24,7 +24,6 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'async', '~> 2.0'
   spec.add_dependency 'diff-lcs', '>= 1.5'
   spec.add_dependency 'ruby_llm'
-  spec.add_dependency 'scampi', '~> 1.0'
   spec.add_dependency 'activesupport'
   spec.add_dependency 'colorize-extended'
   spec.add_dependency 'rack', "~> 3.0"
@@ -33,4 +32,5 @@ Gem::Specification.new do |spec|
   spec.add_dependency "google-protobuf", "~> 4.34"
 
   spec.add_development_dependency 'rake', '~> 13.0'
+  spec.add_development_dependency 'scampi', '~> 1.0'
 end
