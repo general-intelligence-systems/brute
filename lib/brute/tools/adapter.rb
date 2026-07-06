@@ -12,10 +12,9 @@ module Brute
     # This solves three problems:
     #
     # 1. Using any tools library — anything that quacks like a tool
-    #    (RubyLLM::Tool today, others via their own adapters) is wrapped
-    #    into the same interface.
-    # 2. Avoiding tool libraries entirely — Brute::Turn::ToolPipeline and
-    #    Tools::SubAgent work without inheriting from a library class.
+    #    (#name plus #call or #execute) is wrapped into the same interface.
+    # 2. Avoiding tool libraries entirely — Brute::Tool, Brute::Turn::ToolPipeline
+    #    and Tools::SubAgent work without inheriting from a library class.
     # 3. Quickly adding tools — a plain Hash with a proc is enough:
     #
     #      Brute::Tools::Adapter.wrap(
@@ -32,8 +31,8 @@ module Brute
     #   adapter.params      # { key => { type:, desc:, required: } }
     #   adapter.call(args)  # execute with a (string- or symbol-keyed) Hash
     #
-    # Completion middlewares convert adapters into whatever their LLM
-    # library expects (e.g. #to_ruby_llm); ToolPipeline executes them via #call.
+    # The inline `run` proc converts adapters (via #to_h) into whatever its
+    # LLM library expects; ToolPipeline executes them via #call.
     #
     class Adapter
       attr_reader :name, :description, :params
@@ -46,7 +45,7 @@ module Brute
 
         case tool
         when Hash                then from_hash(tool)
-        when ::RubyLLM::Tool     then from_ruby_llm(tool)
+        when ::Brute::Tool       then from_brute_tool(tool)
         when Brute::Tools::SubAgent then new(
           name:        tool.name,
           description: tool.description,
@@ -90,29 +89,21 @@ module Brute
         )
       end
 
-      # A RubyLLM::Tool instance (the library's own arg normalization and
-      # validation stays in play via tool.call). Tools declared with the
-      # params(...) schema DSL keep their full JSON schema.
-      def self.from_ruby_llm(tool)
-        params = tool.parameters.each_with_object({}) do |(key, param), hash|
-          hash[key.to_sym] = { type: param.type, desc: param.description, required: param.required }.compact
-        end
-
+      # A Brute::Tool instance. Tools declared with the params({...}) schema
+      # DSL keep their full JSON schema.
+      def self.from_brute_tool(tool)
         new(
           name:        tool.name.to_s,
           description: tool.description,
-          params:      params,
-          schema:      (tool.params_schema if tool.respond_to?(:params_schema)),
+          params:      tool.params,
+          schema:      tool.params_schema,
           handler:     ->(**args) { tool.call(args) },
           original:    tool,
         )
       end
 
-      # Anything tool-shaped: needs #name and #call or #execute. Honors
-      # #to_ruby_llm for backward compatibility with existing adapters.
+      # Anything tool-shaped: needs #name and #call or #execute.
       def self.from_duck_type(tool)
-        return from_ruby_llm(tool.to_ruby_llm) if tool.respond_to?(:to_ruby_llm)
-
         unless tool.respond_to?(:name) && (tool.respond_to?(:call) || tool.respond_to?(:execute))
           raise ArgumentError, "don't know how to adapt #{tool.inspect} into a tool"
         end
@@ -136,7 +127,7 @@ module Brute
         @original    = original
       end
 
-      # The tool object this adapter wraps (RubyLLM::Tool, Brute::Turn::ToolPipeline,
+      # The tool object this adapter wraps (Brute::Tool, Brute::Turn::ToolPipeline,
       # SubAgent, Hash definition, ...).
       attr_reader :original
 
@@ -147,23 +138,8 @@ module Brute
         @handler.call(**args)
       end
 
-      # Convert to a RubyLLM::Tool so ruby_llm-backed completion can hand
-      # the tool to its providers. Returns the wrapped tool untouched when
-      # it already is one.
-      def to_ruby_llm
-        return @original if @original.is_a?(::RubyLLM::Tool)
-
-        adapter = self
-        Class.new(::RubyLLM::Tool) do
-          description adapter.description
-          adapter.params.each { |key, opts| param key, **opts.slice(:type, :desc, :required) }
-          define_method(:name) { adapter.name }
-          define_method(:execute) { |**args| adapter.call(args) }
-        end.new
-      end
-
-      # Library-neutral tool definition (JSON-Schema-ish), for completion
-      # middlewares that talk to an HTTP API directly.
+      # Library-neutral tool definition (JSON-Schema-ish). The inline `run`
+      # proc reshapes this into whatever its LLM library expects.
       def to_h
         return { name: @name, description: @description, parameters: @schema.deep_symbolize_keys } if @schema
 
@@ -194,16 +170,16 @@ end
 __END__
 
 describe "brute/tools/adapter" do
-  it "wraps a RubyLLM::Tool class" do
-    klass = Class.new(::RubyLLM::Tool) do
+  it "wraps a Brute::Tool class" do
+    klass = Class.new(::Brute::Tool) do
       description "test tool"
       param :input, type: "string", desc: "the input"
-      def name; "rl_tool"; end
+      def name; "brute_tool"; end
       def execute(input:); "got #{input}"; end
     end
 
     adapter = Brute::Tools::Adapter.wrap(klass)
-    adapter.name.should == "rl_tool"
+    adapter.name.should == "brute_tool"
     adapter.description.should == "test tool"
     adapter.params[:input][:type].should == "string"
     adapter.call("input" => "x").should == "got x"
@@ -255,29 +231,15 @@ describe "brute/tools/adapter" do
     tools[:a].should.be.kind_of?(Brute::Tools::Adapter)
   end
 
-  it "converts to a RubyLLM::Tool" do
-    adapter = Brute::Tools::Adapter.wrap(
-      name:        "echo",
-      description: "Echo",
-      params:      { msg: { type: "string", desc: "message", required: true } },
-      execute:     ->(msg:) { msg },
-    )
-
-    rl = adapter.to_ruby_llm
-    rl.should.be.kind_of?(::RubyLLM::Tool)
-    rl.name.should == "echo"
-    rl.call("msg" => "hello").should == "hello"
-  end
-
-  it "returns the original when it already is a RubyLLM::Tool" do
-    klass = Class.new(::RubyLLM::Tool) do
+  it "exposes the wrapped original" do
+    klass = Class.new(::Brute::Tool) do
       description "test tool"
       def name; "original"; end
       def execute; "ok"; end
     end
     instance = klass.new
 
-    Brute::Tools::Adapter.wrap(instance).to_ruby_llm.should == instance
+    Brute::Tools::Adapter.wrap(instance).original.should == instance
   end
 
   it "produces a neutral JSON-schema-ish definition" do

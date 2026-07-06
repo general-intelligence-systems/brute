@@ -39,8 +39,8 @@ module Brute
         #    }
         #    # Replace the message history with the summary
         #    env[:messages] = [
-        #      RubyLLM::Message.new(role: :system, content: @system_prompt),
-        #      RubyLLM::Message.new(role: :user, content: "[Previous conversation summary]\n\n#{summary_text}"),
+        #      Brute::Message.new(role: :system, content: @system_prompt),
+        #      Brute::Message.new(role: :user, content: "[Previous conversation summary]\n\n#{summary_text}"),
         #    ]
         #  end
         #end

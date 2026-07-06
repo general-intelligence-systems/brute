@@ -6,7 +6,7 @@ Gem::Specification.new do |spec|
   spec.name          = 'brute'
   spec.version       = Brute::VERSION
   spec.authors       = ['Brute Contributors']
-  spec.summary       = 'A coding agent built on ruby_llm'
+  spec.summary       = 'A framework-agnostic coding agent'
   spec.description   = 'Production-grade coding agent with tool execution, ' \
                         'middleware pipeline, context compaction, session persistence, ' \
                         'and multi-provider LLM support.'
@@ -23,7 +23,6 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency 'async', '~> 2.0'
   spec.add_dependency 'diff-lcs', '>= 1.5'
-  spec.add_dependency 'ruby_llm'
   spec.add_dependency 'activesupport'
   spec.add_dependency 'colorize-extended'
   spec.add_dependency 'rack', "~> 3.0"

@@ -21,7 +21,7 @@ module Brute
     # 5. Return a plain string instead of a Hash.
     # 6. Align output cap with universal truncation (2000 lines / 50 KB).
     #
-    class FSSearch < RubyLLM::Tool
+    class FSSearch < Brute::Tool
       description "Search file contents using ripgrep (regex), or find files by glob pattern. " \
                   "Returns matching lines with file paths and line numbers."
 

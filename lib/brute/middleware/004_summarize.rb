@@ -36,7 +36,7 @@ module Brute
         saved_tools = env[:tools]
         env[:tools] = []
         env[:current_iteration] = 1
-        env[:messages] << RubyLLM::Message.new(role: :user, content: @prompt)
+        env[:messages] << Brute::Message.new(role: :user, content: @prompt)
         @app.call(env)
         env[:tools] = saved_tools
 
@@ -59,9 +59,9 @@ describe "brute/middleware/004_summarize" do
     inner = ->(env) do
       call_count += 1
       if call_count == 1
-        env[:messages] << RubyLLM::Message.new(role: :tool, content: "some result", tool_call_id: "tc1")
+        env[:messages] << Brute::Message.new(role: :tool, content: "some result", tool_call_id: "tc1")
       else
-        env[:messages] << RubyLLM::Message.new(role: :assistant, content: "Here is my complete summary.")
+        env[:messages] << Brute::Message.new(role: :assistant, content: "Here is my complete summary.")
       end
     end
 
@@ -77,7 +77,7 @@ describe "brute/middleware/004_summarize" do
 
   it "restores tools after summary call" do
     inner = ->(env) {
-      env[:messages] << RubyLLM::Message.new(role: :assistant, content: "done")
+      env[:messages] << Brute::Message.new(role: :assistant, content: "done")
     }
 
     mw = Brute::Middleware::Summarize.new(inner)
@@ -93,7 +93,7 @@ describe "brute/middleware/004_summarize" do
     captured_iteration = nil
     inner = ->(env) {
       captured_iteration = env[:current_iteration]
-      env[:messages] << RubyLLM::Message.new(role: :assistant, content: "done")
+      env[:messages] << Brute::Message.new(role: :assistant, content: "done")
     }
 
     mw = Brute::Middleware::Summarize.new(inner)
@@ -111,7 +111,7 @@ describe "brute/middleware/004_summarize" do
     inner = ->(env) {
       call_count += 1
       messages_at_second_call = env[:messages].map(&:content) if call_count == 2
-      env[:messages] << RubyLLM::Message.new(role: :assistant, content: "done")
+      env[:messages] << Brute::Message.new(role: :assistant, content: "done")
     }
 
     mw = Brute::Middleware::Summarize.new(inner)
@@ -128,7 +128,7 @@ describe "brute/middleware/004_summarize" do
     inner = ->(env) {
       call_count += 1
       messages_at_second_call = env[:messages].map(&:content) if call_count == 2
-      env[:messages] << RubyLLM::Message.new(role: :assistant, content: "done")
+      env[:messages] << Brute::Message.new(role: :assistant, content: "done")
     }
 
     mw = Brute::Middleware::Summarize.new(inner, prompt: "Give me the TL;DR.")

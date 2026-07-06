@@ -22,7 +22,7 @@ module Brute
     #    the LLM (defaults to 5 minutes).
     # 5. Return a plain string instead of a Hash.
     #
-    class Shell < RubyLLM::Tool
+    class Shell < Brute::Tool
       description "Execute a shell command and return stdout, stderr, and exit code. " \
                   "Use for git operations, running tests, installing packages, etc."
 

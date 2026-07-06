@@ -108,9 +108,9 @@ describe "brute/middleware/006_loop" do
     inner = ->(env) do
       call_count += 1
       if call_count == 1
-        env[:messages] << RubyLLM::Message.new(role: :tool, content: "result", tool_call_id: "tc1")
+        env[:messages] << Brute::Message.new(role: :tool, content: "result", tool_call_id: "tc1")
       else
-        env[:messages] << RubyLLM::Message.new(role: :assistant, content: "done")
+        env[:messages] << Brute::Message.new(role: :assistant, content: "done")
       end
     end
 
@@ -128,7 +128,7 @@ describe "brute/middleware/006_loop" do
     call_count = 0
     inner = ->(env) do
       call_count += 1
-      env[:messages] << RubyLLM::Message.new(role: :tool, content: "result", tool_call_id: "tc#{call_count}")
+      env[:messages] << Brute::Message.new(role: :tool, content: "result", tool_call_id: "tc#{call_count}")
       env[:should_exit] = { reason: "max" } if call_count >= 2
     end
 
@@ -144,7 +144,7 @@ describe "brute/middleware/006_loop" do
     call_count = 0
     inner = ->(env) do
       call_count += 1
-      env[:messages] << RubyLLM::Message.new(role: :assistant, content: "hello")
+      env[:messages] << Brute::Message.new(role: :assistant, content: "hello")
     end
 
     mw = Brute::Middleware::Loop::ToolResult.new(inner)

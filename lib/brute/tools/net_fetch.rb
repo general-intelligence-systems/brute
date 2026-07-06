@@ -9,7 +9,7 @@ require "uri"
 
 module Brute
   module Tools
-    class NetFetch < RubyLLM::Tool
+    class NetFetch < Brute::Tool
       description "Fetch content from a URL. Returns the response body as text."
 
       param :url, type: 'string', desc: "The URL to fetch", required: true

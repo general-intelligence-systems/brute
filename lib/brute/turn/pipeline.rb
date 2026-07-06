@@ -14,7 +14,7 @@ module Brute
         #     .use(MaxProfit)
         #     .use(DontTellMom)
         #     .run -> (env) {
-        #       RubyLLM.chat.ask("How to make money?")
+        #       your_llm_library.complete("How to make money?")
         #     }
         #
         def use(...) = tap { super }

@@ -8,9 +8,10 @@ a tool call travels through the middleware pipeline and back.
 The key files:
 
 - `lib/brute/tools.rb` — the built-in tool registry (`Brute::Tools::ALL`)
-- `lib/brute/tools/*.rb` — the built-in tools (`RubyLLM::Tool` subclasses)
+- `lib/brute/tool.rb` — `Brute::Tool`, the framework-agnostic tool base class
+- `lib/brute/tools/*.rb` — the built-in tools (`Brute::Tool` subclasses)
 - `lib/brute/tools/adapter.rb` — normalizes any tool shape into one interface
-- `lib/brute/tool.rb` — `Brute::Tool`, a middleware-pipeline tool
+- `lib/brute/turn/tool_pipeline.rb` — `Brute::Turn::ToolPipeline`, a middleware-pipeline tool
 - `lib/brute/tools/sub_agent.rb` — an agent wearing a tool-shaped facade
 - `lib/brute/middleware/070_tool_call.rb` — executes pending tool calls
 - `lib/brute/middleware/003_tool_result_loop.rb` — re-runs the loop on tool results
@@ -21,10 +22,10 @@ Brute accepts tools in several shapes; you pick based on how much machinery you
 need. All of them are normalized by `Brute::Tools::Adapter` (see below), so the
 rest of the framework never cares which one you used.
 
-### 1. `RubyLLM::Tool` subclass — how the built-ins are written
+### 1. `Brute::Tool` subclass — how the built-ins are written
 
 ```ruby
-class FSRead < RubyLLM::Tool
+class FSRead < Brute::Tool
   description "Read the contents of a file..."
   param :file_path, type: 'string', desc: "Path to the file", required: true
   def name; "read"; end
@@ -32,7 +33,8 @@ class FSRead < RubyLLM::Tool
 end
 ```
 
-This gives you ruby_llm's param schema DSL and argument validation for free.
+`Brute::Tool` (`lib/brute/tool.rb`) is a tiny, dependency-free base class with
+the familiar description/param DSL (plus `params({...})` for raw JSON schemas).
 
 ### 2. Inline `Hash` — the quickest way to add a tool
 
@@ -48,14 +50,15 @@ This gives you ruby_llm's param schema DSL and argument validation for free.
 A plain hash with an `:execute` proc is a complete tool
 (`Adapter.from_hash`, `lib/brute/tools/adapter.rb:79`).
 
-### 3. `Brute::Tool` — when the tool itself needs middleware
+### 3. `Brute::Turn::ToolPipeline` — when the tool itself needs middleware
 
-`Brute::Tool` (`lib/brute/tool.rb`) is a `Pipeline` configured for tool execution:
-the terminal app does the work, and middleware wraps it with concerns like param
-validation, file-mutation queueing, snapshotting, or logging.
+`Brute::Turn::ToolPipeline` (`lib/brute/turn/tool_pipeline.rb`) is a `Pipeline`
+configured for tool execution: the terminal app does the work, and middleware
+wraps it with concerns like param validation, file-mutation queueing,
+snapshotting, or logging.
 
 ```ruby
-read = Brute::Tool.new(
+read = Brute::Turn::ToolPipeline.new(
   name:        "read",
   description: "Read a file's contents",
   params:      { file_path: { type: "string", required: true } },
@@ -66,7 +69,7 @@ end
 ```
 
 Arguments arrive in `env[:arguments]`; the result is whatever the terminal app puts
-in `env[:result]` (`lib/brute/tool.rb:43-53`).
+in `env[:result]` (`lib/brute/turn/tool_pipeline.rb`).
 
 ### 4. `Brute::Tools::SubAgent` — an agent as a tool
 
@@ -93,15 +96,12 @@ adapter.params      # { key => { type:, desc:, required: } }
 adapter.call(args)  # execute with a string- or symbol-keyed Hash
 ```
 
-`Adapter.wrap_all(tools)` turns an agent's tool list into the
-`{ name_sym => adapter }` lookup hash that the execution middleware works with.
-Adapters also convert outward in two directions, depending on how the completion
-middleware talks to the provider:
-
-- `#to_ruby_llm` — builds a `RubyLLM::Tool` so ruby_llm-backed completion can hand
-  the tool to its providers (`lib/brute/tools/adapter.rb:153`).
-- `#to_h` — a library-neutral JSON-Schema-ish definition for completion middlewares
-  that hit an HTTP API directly (`lib/brute/tools/adapter.rb:167`).
+`Adapter.wrap_all(tools)` (also exposed as `Brute.tools`) turns an agent's tool
+list into the `{ name_sym => adapter }` lookup hash that the execution middleware
+works with. For the outward direction, `#to_h` produces a library-neutral
+JSON-Schema-ish definition that the terminal `run` proc reshapes into whatever
+its LLM library expects (see the examples for ruby_llm, llm.rb, openai and
+anthropic conversions).
 
 Classes are instantiated automatically (`tool.new if tool.is_a?(Class)`), and
 wrapping is idempotent.
@@ -156,8 +156,8 @@ ToolResultLoop                        (outer loop)
             └─ Completion / LLMCall   (sends messages + tool defs to the provider)
 ```
 
-1. **Advertise.** The completion middleware converts the agent's tool list into
-   provider format (via `to_ruby_llm` or `to_h`) and sends it with the
+1. **Advertise.** The LLM-call proc converts the agent's tool list into
+   provider format (via `to_h`) and sends it with the
    conversation. The system prompt's tool-usage section
    (`lib/brute/prompts/text/tool_usage/*.txt`, selected per provider) tells the
    model *how* to use them — parallel calls, preferring `read`/`patch` over shell
@@ -202,7 +202,7 @@ ToolResultLoop                        (outer loop)
 tools list (any shape)
    │  Adapter.wrap_all
    ▼
-{ name => adapter } ──to_ruby_llm/to_h──▶ provider request
+{ name => adapter } ────────to_h────────▶ provider request
                                               │
                               assistant message + tool_calls
                                               │

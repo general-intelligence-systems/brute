@@ -6,7 +6,7 @@ require "brute/tools"
 
 module Brute
   module Tools
-    class Question < RubyLLM::Tool
+    class Question < Brute::Tool
       description "Ask the user questions during execution. Use this to gather preferences, " \
                   "clarify ambiguous instructions, get decisions on implementation choices, or " \
                   "offer choices about direction. Users can always select \"Other\" to provide " \

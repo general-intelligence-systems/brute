@@ -1,26 +1,65 @@
 # brute
 
-Production-grade coding agent framework for Ruby. Built on [llm.rb](https://rubygems.org/gems/llm.rb).
+A framework-agnostic coding agent for Ruby. Rack-style middleware pipelines for
+agent turns, a full set of coding tools, and session persistence — bring your
+own LLM library.
+
+Brute treats an agent turn the way Rack treats an HTTP request: an `env` hash
+flowing through a middleware stack toward a terminal app. The middleware handles
+the agentic machinery — the tool loop, session persistence, the system prompt,
+iteration guards. The terminal app is a proc **you** write with whatever LLM
+library you prefer ([ruby_llm](https://rubyllm.com),
+[llm.rb](https://github.com/llmrb/llm.rb), the official
+[openai](https://github.com/openai/openai-ruby) or
+[anthropic](https://github.com/anthropics/anthropic-sdk-ruby) gems, or raw
+HTTP). Brute depends on none of them.
 
 ## Usage
 
-Please see the [project documentation](https://general-intelligence-systems.github.io/brute/) for more details.
+See the [project documentation](https://general-intelligence-systems.github.io/brute/):
 
-  - [Getting Started](https://general-intelligence-systems.github.io/brute/guides/getting-started/index) - This guide walks you through installing Brute and running your first coding agent.
+- [Getting Started](https://general-intelligence-systems.github.io/brute/getting-started/) — install brute and build your first agent.
+- [The Agent Pipeline](https://general-intelligence-systems.github.io/brute/agents/) — `Brute.agent`, `.use`, `.run`, `.start`.
+- [Messages](https://general-intelligence-systems.github.io/brute/messages/) — the `Brute::Message` format.
+- [Message Transports](https://general-intelligence-systems.github.io/brute/message-transports/) — translate between Brute and any LLM library.
+- [Tools](https://general-intelligence-systems.github.io/brute/tools/) — four ways to define a tool; the built-in coding toolset.
+- [Middleware](https://general-intelligence-systems.github.io/brute/middleware/) — the built-in turn middleware catalog.
 
-  - [Tools](https://general-intelligence-systems.github.io/brute/guides/tools/index) - Brute ships with 12 built-in tools that give the agent full access to the filesystem, network, and task management.
+## Quick start
 
-  - [Skills](https://general-intelligence-systems.github.io/brute/guides/skills/index) - Brute implements the Agent Skills spec: specialized instruction sets the agent discovers and loads on demand via progressive disclosure.
+```ruby
+require "brute"
+require "ruby_llm"
 
-  - [Providers](https://general-intelligence-systems.github.io/brute/guides/providers/index) - Brute supports multiple LLM providers with automatic detection from environment variables.
+agent = Brute.agent
+  .use(Brute::Middleware::SessionLog, path: "tmp/session.jsonl")
+  .use(Brute::Middleware::SystemPrompt)
+  .use(Brute::Middleware::Loop::ToolResult)
+  .use(Brute::Middleware::MaxIterations)
+  .use(Brute::Middleware::ToolPipeline, tools: Brute::Tools::ALL)
+  .run do |env|
+    response = provider.complete(
+      Brute::MessageTransport::RubyLLM.dump_all(env[:messages]),
+      tools: rubyllm_tools(env[:tools]), model: model,
+    )
+    Brute::MessageTransport::RubyLLM.wrap_each(response) { |m| env[:messages] << m }
+  end
 
-  - [Middleware](https://general-intelligence-systems.github.io/brute/guides/middleware/index) - Brute uses a middleware pipeline to handle cross-cutting concerns like retries, token tracking, and session persistence.
+agent.start("What files are in the current directory?")
+```
 
-  - [Examples](https://general-intelligence-systems.github.io/brute/guides/examples/index) - Runnable examples demonstrating various Brute features.
+## Docs
+
+The documentation site is a [Just the Docs](https://just-the-docs.com/) Jekyll
+project under `docs/`. Serve it locally:
+
+```sh
+docs/bin/serve.sh          # http://localhost:4000/brute/
+```
 
 ## See Also
 
-- [Examples directory](https://github.com/general-intelligence-systems/brute/tree/main/examples)
+- [Examples directory](https://github.com/general-intelligence-systems/brute/tree/main/examples) — the same agent on four LLM libraries, plus sub-agents, sessions, and HTTP serving.
 
 ## License
 

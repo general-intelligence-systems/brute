@@ -2,7 +2,6 @@
 
 require "bundler/setup"
 
-require "ruby_llm"
 require "rack"
 require 'timeout'
 require 'logger'
@@ -22,16 +21,14 @@ module Brute
  `Y8bod8P' d888b     `V88V"V8P'   "888" `Y8bod8P' 
   LOGO
 
-  # NOTE: Brute owns no LLM configuration. Calling an LLM is just
-  # `RubyLLM.chat.ask "..."`, and all provider/model/credential config lives
-  # in the pipeline's terminal `run` proc — typically via `RubyLLM.context`:
-  #
-  #   run ->(env) do
-  #     context = RubyLLM.context { |c| c.ollama_api_base = ENV["OLLAMA_API_BASE"] }
-  #     ...
-  #   end
-  #
-  # See examples/agents/01_basic_agent.rb.
+  # NOTE: Brute owns no LLM configuration and no LLM library. All
+  # provider/model/credential config lives in the pipeline's terminal `run`
+  # proc, which the user writes with whatever LLM library they prefer
+  # (ruby_llm, llm.rb, openai, anthropic, raw HTTP, ...). The proc converts
+  # env[:messages] (Brute::Message values — see Brute.log) to the library's
+  # format, makes the call, and appends the response back as Brute::Message
+  # values — the MessageTransport pattern. See examples/ruby_llm.rb,
+  # examples/llm.rb, examples/openai.rb and examples/anthropic.rb.
 
   def self.provider
     @provider ||= :anthropic
@@ -60,19 +57,21 @@ module Brute
     Brute::Turn::AgentPipeline.new(&block)
   end
 
-  # Adapt any Brute tools (hashes, Brute::Turn::ToolPipeline, SubAgent, RubyLLM::Tool …)
-  # into a { name_sym => RubyLLM::Tool } hash — the shape an inline `run`
-  # proc hands to RubyLLM.chat.with_tools or a provider #complete call.
-  def self.rubyllm_tools(tools)
-    Brute::Tools::Adapter.wrap_all(tools || []).transform_values(&:to_ruby_llm)
+  # Adapt any Brute tools (hashes, Brute::Tool, Brute::Turn::ToolPipeline,
+  # SubAgent …) into a { name_sym => Brute::Tools::Adapter } hash. Each
+  # adapter exposes #to_h — a neutral JSON-Schema-ish definition the inline
+  # `run` proc converts to whatever its LLM library expects.
+  def self.tools(tools)
+    Brute::Tools::Adapter.wrap_all(tools || [])
   end
-  
+
+
   def self.provider=(p)
     @provider = p.to_sym
   end
 end
 
-Dir.glob("#{__dir__}/{brute,ruby_llm}/**/*.rb").sort.each do |path|
+Dir.glob("#{__dir__}/brute/**/*.rb").sort.each do |path|
   require path
 end
 

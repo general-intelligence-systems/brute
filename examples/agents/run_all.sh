@@ -19,6 +19,3 @@ bundle exec ruby 06_read_only_agent.rb
 
 # Example 07 spawns parallel sub-agents — slower (more model calls).
 bundle exec ruby 07_subagent_exploration.rb
-
-# Example 08 runs twice to demonstrate session resume (Lifecycle + State).
-bundle exec ruby 08_harness_agent.rb

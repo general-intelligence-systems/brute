@@ -7,7 +7,7 @@ require 'fileutils'
 
 module Brute
   module Tools
-    class FSWrite < RubyLLM::Tool
+    class FSWrite < Brute::Tool
       description "Write content to a file. Creates parent directories if they don't exist. " \
                   'Use this for creating new files or completely replacing file contents.'
 

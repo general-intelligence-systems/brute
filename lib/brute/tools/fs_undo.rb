@@ -6,7 +6,7 @@ require "brute/tools"
 
 module Brute
   module Tools
-    class FSUndo < RubyLLM::Tool
+    class FSUndo < Brute::Tool
       description "Undo the last write or patch operation on a file, restoring it to " \
                   "its previous state."
 

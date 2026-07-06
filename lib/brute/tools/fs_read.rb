@@ -28,7 +28,7 @@ module Brute
     # 8. Return a plain string instead of a Hash — avoids the .to_s repr
     #    bloat when ToolPipeline coerces the result for the LLM message.
     #
-    class FSRead < RubyLLM::Tool
+    class FSRead < Brute::Tool
       description "Read the contents of a file. Returns file content with line numbers. " \
                   "Use start_line/end_line for partial reads of large files."
 

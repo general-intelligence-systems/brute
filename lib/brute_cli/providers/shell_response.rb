@@ -28,15 +28,15 @@ module BruteCLI
         return [empty_assistant] if @command.nil?
 
         call_id = "shell_#{SecureRandom.hex(8)}"
-        tool_calls = {
-          call_id => RubyLLM::ToolCall.new(
+        tool_calls = [
+          Brute::ToolCall.new(
             id: call_id,
             name: "shell",
             arguments: { "command" => @command },
           )
-        }
+        ]
 
-        [RubyLLM::Message.new(
+        [Brute::Message.new(
           role: :assistant,
           content: "",
           tool_calls: tool_calls,
@@ -78,17 +78,13 @@ module BruteCLI
       end
 
       def usage
-        RubyLLM::Tokens.new(
-          input: 0,
-          output: 0,
-          reasoning: 0,
-        )
+        { input: 0, output: 0, reasoning: 0 }
       end
 
       private
 
       def empty_assistant
-        RubyLLM::Message.new(role: :assistant, content: "")
+        Brute::Message.new(role: :assistant, content: "")
       end
     end
   end

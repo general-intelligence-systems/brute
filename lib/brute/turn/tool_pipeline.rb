@@ -13,8 +13,8 @@ module Brute
     # the work; middleware wraps it with concerns like file mutation queueing,
     # validation, logging.
     #
-    # Coexists with Brute::Tools::* (which inherit from RubyLLM::Tool). Use a
-    # ToolPipeline when you want middleware; use RubyLLM::Tool subclasses for
+    # Coexists with Brute::Tools::* (which inherit from Brute::Tool). Use a
+    # ToolPipeline when you want middleware; use Brute::Tool subclasses for
     # simple cases.
     #
     #   read = Brute::Turn::ToolPipeline.new(
@@ -53,16 +53,6 @@ module Brute
         env[:result]
       end
 
-      # Adapter so the LLM can call this tool through ruby_llm.
-      def to_ruby_llm
-        tool = self
-        Class.new(RubyLLM::Tool) do
-          description tool.description
-          tool.params.each { |k, opts| param k, **opts }
-          define_method(:name) { tool.name }
-          define_method(:execute) { |**args| tool.call(**args) }
-        end.new
-      end
     end
   end
 end

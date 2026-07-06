@@ -57,7 +57,8 @@ module Brute
           case input
           when nil                 then Brute.log
           when ::String            then Brute.log.tap { |log| log.user(input) }
-          when ::RubyLLM::Message  then Brute.log(input)
+          when ::Brute::Message    then Brute.log(input)
+          when ::Hash              then Brute.log(Brute::Message.new(**input.transform_keys(&:to_sym)))
           when ::Array             then input.extend(Brute::Messages)
           else Brute.log(input)
           end

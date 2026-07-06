@@ -10,7 +10,6 @@ PATH
       json_schemer (~> 2.5)
       net-http-persistent
       rack (~> 3.0)
-      ruby_llm
 
 GEM
   remote: https://rubygems.org/
@@ -30,6 +29,10 @@ GEM
       uri (>= 0.13.1)
     addressable (2.9.0)
       public_suffix (>= 2.0.2, < 8.0)
+    anthropic (1.55.0)
+      cgi
+      connection_pool
+      standardwebhooks
     async (2.39.0)
       console (~> 1.29)
       fiber-annotation
@@ -84,6 +87,7 @@ GEM
     base64 (0.3.0)
     bigdecimal (4.1.2)
     build-files (1.10.2)
+    cgi (0.5.2)
     colorize (1.1.0)
     colorize-extended (0.1.0)
       colorize (~> 1.1)
@@ -212,6 +216,10 @@ GEM
       dotenv (>= 2)
       faraday (>= 1)
       faraday-multipart (>= 1)
+    openai (0.68.0)
+      base64
+      cgi
+      connection_pool
     openssl (4.0.1)
     pp (0.6.3)
       prettyprint
@@ -269,6 +277,7 @@ GEM
     scampi (1.0.0)
     securerandom (0.4.1)
     simpleidn (0.2.3)
+    standardwebhooks (1.1.0)
     string-format (0.2.0)
     stringio (3.2.0)
     thread-local (1.1.0)
@@ -316,6 +325,7 @@ PLATFORMS
   x86_64-linux
 
 DEPENDENCIES
+  anthropic
   bake-gem
   bake-modernize
   bake-releases
@@ -324,7 +334,9 @@ DEPENDENCIES
   langchainrb
   llm.rb
   open_router
+  openai
   rake (~> 13.0)
+  ruby_llm
   scampi (~> 1.0)
   utopia-project
 

@@ -23,14 +23,10 @@ module Brute
     #     use Brute::Middleware::MaxIterations, max_iterations: 10
     #     use Brute::Middleware::ToolPipeline, tools: [Brute::Tools::FSRead, Brute::Tools::FSSearch]
     #     run ->(env) do
-    #       ctx = RubyLLM.context { |c| c.ollama_api_base = ENV["OLLAMA_API_BASE"] }
-    #       model, provider = RubyLLM::Models.resolve(
-    #         "llama3.2", provider: :ollama, assume_exists: true, config: ctx.config)
-    #       response = provider.complete(env[:messages],
-    #                                    tools:       Brute.rubyllm_tools(env[:tools]),
-    #                                    temperature: 0.7,
-    #                                    model:       model)
-    #       RubyLLM::MessageTransport.new(response).wrap_each { |m| env[:messages] << m }
+    #       # The LLM call, written with your library of choice. Convert
+    #       # env[:messages] to its format, call it, and append the response
+    #       # back as Brute::Message values (the MessageTransport pattern —
+    #       # see examples/ruby_llm.rb, examples/openai.rb, ...).
     #     end
     #   end
     #
@@ -63,20 +59,7 @@ module Brute
         extract_result(session)
       end
 
-      # Adapter so the parent agent's completion middleware (and ruby_llm)
-      # sees this as a regular tool. ToolPipeline middleware should call
-      # `to_ruby_llm` when building the tools hash if a tool responds to it.
-      def to_ruby_llm
-        sub = self
-        Class.new(::RubyLLM::Tool) do
-          description sub.description
-          sub.params.each { |k, opts| param k, **opts }
-          define_method(:name) { sub.sub_agent_name }
-          define_method(:execute) { |**args| sub.execute(args) }
-        end.new
-      end
-
-      # Lets ToolPipeline treat SubAgents the same as RubyLLM::Tool instances
+      # Lets ToolPipeline treat SubAgents the same as any other tool
       # without checking respond_to? everywhere.
       def name
         @sub_agent_name

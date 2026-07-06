@@ -6,7 +6,7 @@ require "brute/tools"
 
 module Brute
   module Tools
-    class TodoWrite < RubyLLM::Tool
+    class TodoWrite < Brute::Tool
       description "Create or update the todo list. Send the complete list each time — " \
                   "this replaces the existing list entirely."
 

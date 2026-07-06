@@ -7,7 +7,7 @@ require "fileutils"
 
 module Brute
   module Tools
-    class FSRemove < RubyLLM::Tool
+    class FSRemove < Brute::Tool
       description "Remove a file or empty directory."
 
       param :path, type: 'string', desc: "Path to the file or directory to remove", required: true

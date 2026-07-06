@@ -42,7 +42,7 @@ module Brute
           loaded = []
           File.foreach(@path) do |line|
             line = line.strip
-            loaded << ::RubyLLM::Message.new(**JSON.parse(line, symbolize_names: true)) unless line.empty?
+            loaded << Brute::Message.new(**JSON.parse(line, symbolize_names: true)) unless line.empty?
           end
           messages.unshift(*loaded)
         end

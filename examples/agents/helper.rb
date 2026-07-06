@@ -12,14 +12,11 @@
 #     .use(Brute::Middleware::MaxIterations)
 #     .use(Brute::Middleware::ToolPipeline, tools: Brute::Tools::ALL)
 #     .run do |env|
-#       ctx = RubyLLM.context { |c| c.ollama_api_base = ENV["OLLAMA_API_BASE"] }
-#       model, provider = RubyLLM::Models.resolve(
-#         "llama3.2", provider: :ollama, assume_exists: true, config: ctx.config)
-#       response = provider.complete(env[:messages],
-#                                    tools:       Brute.rubyllm_tools(env[:tools]),
-#                                    temperature: 0.7,
-#                                    model:       model)
-#       RubyLLM::MessageTransport.new(response).wrap_each { |m| env[:messages] << m }
+#       # The LLM call, written with your library of choice. Convert
+#       # env[:messages] to the library's format with a MessageTransport,
+#       # make the call, and append the response back as Brute::Message
+#       # values. See examples/ruby_llm.rb, examples/llm.rb,
+#       # examples/openai.rb and examples/anthropic.rb.
 #     end
 #
 #   env = agent.start("What files are here?")

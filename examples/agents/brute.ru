@@ -7,8 +7,25 @@
 #   env = agent.start("What files are in the current directory?")
 #
 # Brute manages the turn here: ToolPipeline advertises + runs the tools, and the
-# terminal `run` proc makes one LLM call and owns all LLM config. Defaults to a
-# local Ollama; override with BRUTE_PROVIDER / BRUTE_MODEL / OLLAMA_API_BASE.
+# terminal `run` proc makes one LLM call and owns all LLM config. This example
+# uses ruby_llm; a MessageTransport translates between Brute's message format
+# and the library's. Defaults to a local Ollama; override with BRUTE_PROVIDER /
+# BRUTE_MODEL / OLLAMA_API_BASE.
+
+require "ruby_llm"
+
+# Advertise Brute's tools to ruby_llm: each neutral adapter becomes a RubyLLM::Tool.
+def brute_ru_rubyllm_tools(tools)
+  Brute.tools(tools).transform_values do |adapter|
+    schema = adapter.to_h[:parameters]
+    Class.new(RubyLLM::Tool) do
+      description adapter.description
+      params schema
+      define_method(:name) { adapter.name }
+      define_method(:execute) { |**args| adapter.call(args) }
+    end.new
+  end
+end
 
 use Brute::Middleware::EventHandler, handler_class: Brute::Events::TerminalOutput
 use Brute::Middleware::SystemPrompt
@@ -31,11 +48,11 @@ run ->(env) do
   )
 
   response = provider.complete(
-    env[:messages],
-    tools:       Brute.rubyllm_tools(env[:tools]),
+    Brute::MessageTransport::RubyLLM.dump_all(env[:messages]),
+    tools:       brute_ru_rubyllm_tools(env[:tools]),
     temperature: 0.7,
     model:       model,
   )
 
-  RubyLLM::MessageTransport.new(response).wrap_each { |message| env[:messages] << message }
+  Brute::MessageTransport::RubyLLM.wrap_each(response) { |message| env[:messages] << message }
 end

@@ -81,13 +81,13 @@ module Brute
           Sync do
             barrier = Async::Barrier.new
 
-            tools_to_run.each do |id, tool_call|
+            tools_to_run.each do |tool_call|
               barrier.async do
                 tool = available_tools[tool_call.name.to_sym]
                 result = tool.call(tool_call.arguments)
 
-                # Coerce to String so RubyLLM::Message doesn't treat Hash results
-                # (e.g. Shell's {stdout:, stderr:, exit_code:}) as attachments.
+                # Coerce to String so Hash results (e.g. Shell's
+                # {stdout:, stderr:, exit_code:}) serialize predictably.
                 content = result.is_a?(String) ? result : result.to_s
 
                 # Universal truncation safety net — skip if already truncated
@@ -95,13 +95,13 @@ module Brute
                   content = Brute::Truncation.truncate(content)
                 end
 
-                results << [id, tool_call, content]
+                results << [tool_call, content]
               rescue => e
                 # Capture the error as a tool result so the LLM can see it
                 # and reason about the failure, rather than crashing the
                 # entire middleware chain.
                 env[:events] << { type: :error, data: { error: e, message: e.message } }
-                results << [id, tool_call, "Error: #{e.class}: #{e.message}"]
+                results << [tool_call, "Error: #{e.class}: #{e.message}"]
               end
             end
 
@@ -112,12 +112,11 @@ module Brute
 
           # Append events and messages in the original tool_call order so the
           # LLM sees a deterministic sequence regardless of completion order.
-          order = tools_to_run.keys
-          results.sort_by! { |id, _, _| order.index(id) }
+          results.sort_by! { |tool_call, _| tools_to_run.index(tool_call) }
 
-          results.each do |_id, tool_call, content|
+          results.each do |tool_call, content|
             env[:events] << { type: :tool_result, data: { name: tool_call.name, content: content } }
-            env[:messages] << RubyLLM::Message.new(role: :tool, content: content, tool_call_id: tool_call.id)
+            env[:messages] << Brute::Message.new(role: :tool, content: content, tool_call_id: tool_call.id)
           end
         end
 
@@ -126,8 +125,14 @@ module Brute
 
       private
 
+        # The last message's pending tool calls as a flat list. Duck-typed:
+        # tool_calls may be an Array (Brute::ToolCall) or an id-keyed Hash
+        # (some libraries' native shape); each entry needs #id, #name and
+        # #arguments.
         def pending_tool_calls(message)
-          message.tool_calls.to_h.reject { |_id, tc| tc.name == "question" }
+          calls = message.respond_to?(:tool_calls) ? message.tool_calls : nil
+          calls = calls.values if calls.respond_to?(:values)
+          Array(calls).reject { |tc| tc.name == "question" }
         end
 
         def resolve_tools(tools)
@@ -137,7 +142,7 @@ module Brute
         def on_tool_call_start_event(pending_tools)
           {
             type: :tool_call_start,
-            data: pending_tools.map { |_id, tc|
+            data: pending_tools.map { |tc|
               {
                 name: tc.name,
                 call_id: tc.id,
@@ -158,7 +163,7 @@ describe "brute/middleware/070_tool_pipeline" do
 
   it "passes through when no tool calls pending" do
     inner = ->(env) {
-      env[:messages] << RubyLLM::Message.new(role: :assistant, content: "hi")
+      env[:messages] << Brute::Message.new(role: :assistant, content: "hi")
     }
     mw = Brute::Middleware::ToolPipeline.new(inner, tools: [])
     env = {
@@ -185,7 +190,7 @@ describe "brute/middleware/070_tool_pipeline" do
 
   it "truncates large tool results via Truncation" do
     # A fake tool that returns a huge string
-    big_tool = Class.new(RubyLLM::Tool) do
+    big_tool = Class.new(Brute::Tool) do
       description "test tool"
       param :input, type: "string", desc: "input"
       def name; "big_tool"; end
@@ -194,17 +199,16 @@ describe "brute/middleware/070_tool_pipeline" do
       end
     end
 
-    call_id = "tc_1"
-    tool_calls = {
-      call_id => RubyLLM::ToolCall.new(
-        id: call_id,
+    tool_calls = [
+      Brute::ToolCall.new(
+        id: "tc_1",
         name: "big_tool",
         arguments: { "input" => "go" },
       )
-    }
+    ]
 
     inner = ->(env) {
-      env[:messages] << RubyLLM::Message.new(role: :assistant, content: "", tool_calls: tool_calls)
+      env[:messages] << Brute::Message.new(role: :assistant, content: "", tool_calls: tool_calls)
     }
     mw = Brute::Middleware::ToolPipeline.new(inner, tools: [big_tool])
     env = {
@@ -223,7 +227,7 @@ describe "brute/middleware/070_tool_pipeline" do
 
   it "does not double-truncate already-truncated output" do
     # A fake tool that returns output already containing the truncation marker
-    pre_truncated_tool = Class.new(RubyLLM::Tool) do
+    pre_truncated_tool = Class.new(Brute::Tool) do
       description "test tool"
       param :input, type: "string", desc: "input"
       def name; "pre_truncated_tool"; end
@@ -232,17 +236,16 @@ describe "brute/middleware/070_tool_pipeline" do
       end
     end
 
-    call_id = "tc_2"
-    tool_calls = {
-      call_id => RubyLLM::ToolCall.new(
-        id: call_id,
+    tool_calls = [
+      Brute::ToolCall.new(
+        id: "tc_2",
         name: "pre_truncated_tool",
         arguments: { "input" => "go" },
       )
-    }
+    ]
 
     inner = ->(env) {
-      env[:messages] << RubyLLM::Message.new(role: :assistant, content: "", tool_calls: tool_calls)
+      env[:messages] << Brute::Message.new(role: :assistant, content: "", tool_calls: tool_calls)
     }
     mw = Brute::Middleware::ToolPipeline.new(inner, tools: [pre_truncated_tool])
     env = {

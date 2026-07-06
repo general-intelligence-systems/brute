@@ -28,7 +28,7 @@ module Brute
     # tool with the matching cwd: Brute::Tools::SkillLoad.new(cwd: __dir__).
     #
     # Reference: opencode's tool/skill.ts.
-    class SkillLoad < RubyLLM::Tool
+    class SkillLoad < Brute::Tool
       description "Load a specialized skill when the task at hand matches one of the " \
                   "available skills listed in the system context. This injects the skill's " \
                   "full instructions into the conversation, plus the skill's base directory " \

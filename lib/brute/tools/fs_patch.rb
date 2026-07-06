@@ -6,7 +6,7 @@ require "brute/tools"
 
 module Brute
   module Tools
-    class FSPatch < RubyLLM::Tool
+    class FSPatch < Brute::Tool
       description 'Replace a specific string in a file. The old_string must match exactly ' \
                   '(including whitespace and indentation). Always read a file before patching it.'
 

@@ -4,10 +4,14 @@ source "https://rubygems.org"
 
 gemspec
 
-# Alternative LLM backends for Brute::Middleware::Completion::*.
-# Only needed when you use the matching completion middleware.
+# LLM libraries for the examples. Brute itself depends on none of them —
+# the terminal `run` proc of an agent pipeline is written by the user with
+# whichever library they prefer. Only needed to run the matching example.
 group :completions, optional: true do
-	gem "llm.rb"
+	gem "ruby_llm"       # examples/ruby_llm.rb
+	gem "llm.rb"         # examples/llm.rb
+	gem "openai"         # examples/openai.rb
+	gem "anthropic"      # examples/anthropic.rb
 	gem "open_router"
 	gem "langchainrb"
 end
@@ -17,9 +21,5 @@ group :browser, optional: true do
 	gem "ferrum"
 end
 
-group :maintenance, optional: true do
-	gem "utopia-project"
-	gem "bake-gem"
-	gem "bake-modernize"
-	gem "bake-releases"
-end
+# Docs live under docs/ as a standalone Just the Docs (Jekyll) project with its
+# own Gemfile; run docs/bin/serve.sh. Nothing here builds them.
