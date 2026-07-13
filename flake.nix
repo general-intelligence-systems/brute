@@ -14,6 +14,7 @@
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = [ pkgs.pkg-config ];
           buildInputs = with pkgs; [
+            pkgs.trufflehog
             ruby
             libyaml 
             openssl
