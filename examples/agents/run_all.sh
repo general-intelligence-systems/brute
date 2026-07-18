@@ -19,3 +19,8 @@ bundle exec ruby 06_read_only_agent.rb
 
 # Example 07 spawns parallel sub-agents — slower (more model calls).
 bundle exec ruby 07_subagent_exploration.rb
+
+# Example 08 checkpoints every iteration; run twice to see resume.
+rm -f tmp/checkpoints_08.jsonl
+bundle exec ruby 08_checkpoints.rb
+BRUTE_CHECKPOINT=latest bundle exec ruby 08_checkpoints.rb

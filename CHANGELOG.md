@@ -1,6 +1,25 @@
 # Changelog
 
-All notable changes to Brute are documented in this file.
+All notable changes to Brute are documented in this file. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## [3.1.0] - 2026-07-18
+
+### Added
+
+- `Brute::Middleware::Checkpoint` — durable execution for the tool loop.
+  Sits just inside `Loop::ToolResult` and snapshots the conversation to an
+  append-only JSONL chain after every pass (one checkpoint per LLM call +
+  tool batch). Each record carries its parent checkpoint's id, so the chain
+  supports:
+  - **resume** (`resume: :latest`) — a crash mid-turn costs at most one
+    iteration instead of the whole turn
+  - **time travel** (`resume: "<checkpoint id>"`) — restart from any snapshot
+  - **forking** — checkpoints written after a time-travel resume carry the
+    resumed id as `parent_id`, branching the chain in place
+- `examples/agents/08_checkpoints.rb` — runnable checkpoint demo: fresh turn,
+  `BRUTE_CHECKPOINT=latest` to resume, `BRUTE_CHECKPOINT=<id>` to fork.
+- `Checkpoint` entry in the middleware catalog docs.
 
 ## [3.0.1] - 2026-07-18
 

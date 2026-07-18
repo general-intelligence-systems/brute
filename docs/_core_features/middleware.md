@@ -32,6 +32,7 @@ Files are numeric-prefixed by stack position (`002_session_log.rb`, `070_tool_pi
 | `SessionLog` | Loads conversation history from a JSONL file on the way in; persists the whole turn on the way out. Outermost. See [Sessions]({% link _advanced/sessions.md %}). |
 | `SystemPrompt` | Prepends a `:system` message (unless one already exists). Defaults to `Brute::SystemPrompt.default`; pass a custom one for specialized agents. |
 | `Loop::ToolResult` | The agentic loop. Re-invokes the inner stack while the last message is a `:tool` result, bumping `current_iteration`. Stops on a text answer or `should_exit`. |
+| `Checkpoint` | Durable execution. Snapshots the conversation to an append-only JSONL chain after every pass through the loop (one checkpoint per LLM call + tool batch). `resume: :latest` resumes a crashed turn; `resume: "<id>"` time-travels to (and forks from) any snapshot. Sits just inside `Loop::ToolResult`. |
 | `MaxIterations` | Guards against runaway loops. When `current_iteration` exceeds the cap (default 100), injects a "Maximum iterations reached" user message so the loop exits naturally. |
 | `ToolPipeline` | Advertises tools on `env[:tools]` going in; executes the model's tool calls coming out. See [Tools]({% link _core_features/tools.md %}). |
 | `Summarize` | Runs one final tool-free completion after the loop, so the agent ends on a clean text answer. |
