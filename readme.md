@@ -1,5 +1,13 @@
 # brute
 
+> ⚠️ **Upgrading to v3?** Brute 3.0.1 removes the hard dependency on `ruby_llm`
+> and replaces the old `Brute.rubyllm_tools` helper with a library-agnostic
+> `Brute.tools` + `Brute::MessageTransport` API. **This is a breaking change
+> relative to the 3.0.0 gem** — the 3.0.0 release accidentally shipped without
+> the transport refactor. See [CHANGELOG.md](./CHANGELOG.md) for the migration
+> steps and pick a transport under `Brute::MessageTransport::*` that matches
+> your LLM library.
+
 A framework-agnostic coding agent for Ruby. Rack-style middleware pipelines for
 agent turns, a full set of coding tools, and session persistence — bring your
 own LLM library.
