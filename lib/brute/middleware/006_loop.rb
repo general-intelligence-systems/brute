@@ -25,6 +25,7 @@ module Brute
       def initialize(app, condition = nil, &block)
         @app       = app
         @condition = condition || block
+
         unless @condition.respond_to?(:call)
           raise ArgumentError, "Brute::Middleware::Loop requires a proc or block condition"
         end
@@ -33,8 +34,12 @@ module Brute
       def call(env)
         loop do
           @app.call(env)
-          break unless @condition.call(env)
+
+          unless @condition.call(env)
+            break
+          end
         end
+
         env
       end
 
@@ -49,10 +54,16 @@ module Brute
       #
       class ToolResult < Loop
         CONDITION = lambda do |env|
-          next false if env[:should_exit]
-          next false unless env[:messages].last&.role == :tool
+          if env[:should_exit]
+            next false
+          end
+
+          unless env[:messages].last&.role == :tool
+            next false
+          end
 
           env[:current_iteration] += 1
+
           true
         end
 

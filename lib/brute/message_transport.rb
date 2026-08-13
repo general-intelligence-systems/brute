@@ -4,38 +4,14 @@ require "bundler/setup"
 require "brute"
 
 module Brute
-  # Transports messages between an LLM library's format and Brute's format
-  # (Brute::Message). This is the seam that keeps Brute framework-agnostic:
-  # calling an LLM is trivial with any library, so Brute has no "completion
-  # middleware" — the terminal `run` proc of an agent pipeline makes the LLM
-  # call itself, and a MessageTransport translates at the boundary.
-  #
-  # Inbound (library response -> Brute), the transport wraps whatever the
-  # proc got back and yields each message as a Brute::Message; the proc
-  # appends:
-  #
-  #   response = client.complete(...)
-  #   Brute::MessageTransport::RubyLLM.new(response).wrap_each do |message|
-  #     env[:messages] << message
-  #   end
-  #
-  # Outbound (Brute -> library), `dump_all` converts env[:messages] into the
-  # shape the library's completion call expects:
-  #
-  #   client.complete(Brute::MessageTransport::RubyLLM.dump_all(env[:messages]), ...)
-  #
-  # This base class is the identity transport: it flattens the result into a
-  # list of messages and yields them untouched. Library-specific subclasses
-  # (see message_transport/*.rb) override #wrap and .dump. They reference
-  # their library lazily, so requiring the library is your job — Brute
-  # depends on none of them.
   class MessageTransport
+
     # Convenience: Brute::MessageTransport.wrap_each(result) { |m| ... }
     def self.wrap_each(result, &block)
       new(result).wrap_each(&block)
     end
 
-    # Outbound: one Brute::Message in the library's format. Identity here.
+    #  Outbound: one Brute::Message in the library's format. Identity here.
     def self.dump(message)
       message
     end
@@ -49,22 +25,27 @@ module Brute
       @result = result
     end
 
-    # Yield each result message as a Brute::Message. Without a block, returns
-    # an Enumerator. The caller decides what to do with each (typically
-    # append to env[:messages]).
     def wrap_each
-      return enum_for(:wrap_each) unless block_given?
-
-      messages.each { |message| yield wrap(message) }
+      if block_given?
+        messages.each { |message| yield wrap(message) }
+      else
+        # https://docs.ruby-lang.org/en/4.0/Object.html#method-i-enum_for
+        enum_for(:wrap_each)
+      end
     end
 
     # The result normalized to a flat list of the library's messages. A
     # single message, an array, or anything transcript-shaped (responds to
     # #messages).
     def messages
-      case @result
-      when Array then @result.compact
-      else @result.respond_to?(:messages) ? @result.messages : [@result].compact
+      if @result.is_a?(Array)
+        @result.compact
+      else
+        if @result.respond_to?(:messages)
+          @result.messages
+        else
+          [@result].compact
+        end
       end
     end
 

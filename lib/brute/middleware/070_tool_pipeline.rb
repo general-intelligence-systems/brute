@@ -8,94 +8,63 @@ require "async/barrier"
 
 module Brute
   module Middleware
-    # Executes pending tool calls from the LLM response.
-    #
-    # Existing features (ref: opencode tool.ts wrap / truncate.ts):
-    #
-    # 1. Universal output truncation — after every tool.call(), pass the
-    #    result string through Brute::Truncation.truncate() which enforces
-    #    a 2000-line / 50 KB cap. This is a safety net so no single tool
-    #    result can blow up the context window, regardless of whether the
-    #    tool itself has internal limits.
-    # 2. Overflow to disk — when truncating, the full output is saved to
-    #    a temp file under the truncation directory. The path is included
-    #    in the truncated result with a hint.
-    # 3. Configurable limits — MAX_LINES / MAX_BYTES default to 2000 / 50 KB.
-    # 4. Skip truncation when tool already truncated — if the tool result
-    #    already contains the truncation marker (e.g. Shell or FSSearch
-    #    truncated internally), don't double-truncate.
-    #
-    # == Concurrency model (Async)
-    #
-    # Tool calls are executed concurrently using the `async` gem's fiber-based
-    # scheduler. Each tool call is dispatched as an Async::Task inside an
-    # Async::Barrier, so all tools run in parallel and we wait for every task
-    # to complete before moving on.
-    #
-    # Key design decisions:
-    #
-    # - Sync {} (not Async{}.wait) — reuses an existing event loop if one is
-    #   already running, or creates one on demand. Blocks the caller until all
-    #   inner work completes, which is what the middleware stack requires.
-    #
-    # - Async::Barrier — the idiomatic fan-out / join primitive. Each tool call
-    #   becomes a child task via barrier.async; barrier.wait blocks until every
-    #   task finishes. This is preferable to Async::Queue for a fixed batch of
-    #   work with no producer/consumer relationship.
-    #
-    # - Deterministic result ordering — tool results are collected into an array
-    #   during concurrent execution, then sorted back into the original
-    #   tools_to_run key order before appending to env[:messages]. This ensures
-    #   the LLM always sees results in a stable order regardless of which tool
-    #   finishes first.
-    #
-    # - Fiber-safe shared state — appending to the results array from multiple
-    #   fibers is safe because Async fibers are cooperatively scheduled (only
-    #   one fiber runs at a time within a Sync block). No mutex needed.
-    #
-    # - FileMutationQueue compatibility — tools that mutate files use
-    #   Brute::Tools::FS::FileMutationQueue.serialize, which uses Ruby 3.4's
-    #   fiber-scheduler-aware Mutex. Operations on the same file are serialized;
-    #   operations on different files proceed in parallel.
-    #
     class ToolPipeline
       def initialize(app, tools: [])
         @app   = app
         @tools = tools
       end
 
-      # in  -> advertise the tools to the turn (env[:tools], which the LLM-call
-      #        proc reads to tell the model what it can call)
-      # out <- execute the tool calls the model made and append :tool results
       def call(env)
         env[:tools] = @tools
         @app.call(env)
 
-        tools_to_run = pending_tool_calls(env[:messages].last)
-        if tools_to_run.any?
-          available_tools = resolve_tools(env[:tools])
+        response = env[:messages].last
+
+        if response.respond_to?(:tool_calls) && response.tool_calls.present?
+          tools_to_run = response.tool_calls
+
+          # tool_to_run may be an Array (Brute::ToolCall) or an id-keyed Hash (some libraries' native shape)
+          if tools_to_run.respond_to?(:values)
+            tools_to_run = tools_to_run.values
+          end
+
+          # No idea why we use Array() here... probably in case it's a hash or something...
+          # because reject would work on the hash...
+          tools_to_run = Array(tools_to_run).reject { |tc| tc.name == "question" }
+
+          available_tools = Brute::Tools::Adapter.wrap_all(env[:tools])
           env[:events] << on_tool_call_start_event(tools_to_run)
 
           results = []
 
+          # Async::Barrier blocks until all tasks are complete.
+          # Tasks run in parrallel.
+          #
           Sync do
             barrier = Async::Barrier.new
 
             tools_to_run.each do |tool_call|
-              barrier.async do
-                tool = available_tools[tool_call.name.to_sym]
-                result = tool.call(tool_call.arguments)
+              barrier.async do 
+                name = tool_call.name.to_sym
+                args = tool_call.arguments
 
-                # Coerce to String so Hash results (e.g. Shell's
-                # {stdout:, stderr:, exit_code:}) serialize predictably.
-                content = result.is_a?(String) ? result : result.to_s
+                available_tools[name].call(args).then do |result|
 
-                # Universal truncation safety net — skip if already truncated
-                unless Brute::Truncation.already_truncated?(content)
-                  content = Brute::Truncation.truncate(content)
+                  # Coerce to String so Hash results (e.g. Shell's
+                  # {stdout:, stderr:, exit_code:}) serialize predictably.
+                  if result.is_a?(String)
+                    content = result
+                  else
+                    content = result.to_s
+                  end
+
+                  # Universal truncation safety net — skip if already truncated
+                  unless Brute::Truncation.already_truncated?(content)
+                    content = Brute::Truncation.truncate(content)
+                  end
+
+                  results << [tool_call, content]
                 end
-
-                results << [tool_call, content]
               rescue => e
                 # Capture the error as a tool result so the LLM can see it
                 # and reason about the failure, rather than crashing the
@@ -120,24 +89,10 @@ module Brute
           end
         end
 
-        return env
+        env
       end
 
       private
-
-        # The last message's pending tool calls as a flat list. Duck-typed:
-        # tool_calls may be an Array (Brute::ToolCall) or an id-keyed Hash
-        # (some libraries' native shape); each entry needs #id, #name and
-        # #arguments.
-        def pending_tool_calls(message)
-          calls = message.respond_to?(:tool_calls) ? message.tool_calls : nil
-          calls = calls.values if calls.respond_to?(:values)
-          Array(calls).reject { |tc| tc.name == "question" }
-        end
-
-        def resolve_tools(tools)
-          Brute::Tools::Adapter.wrap_all(tools)
-        end
 
         def on_tool_call_start_event(pending_tools)
           {

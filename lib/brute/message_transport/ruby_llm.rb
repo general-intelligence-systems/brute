@@ -6,47 +6,44 @@ require "brute/message_transport"
 
 module Brute
   class MessageTransport
-    # MessageTransport for the ruby_llm gem (https://rubyllm.com).
-    # Brute does not require ruby_llm — you do:
-    #
-    #   require "ruby_llm"
-    #
-    #   response = provider.complete(
-    #     Brute::MessageTransport::RubyLLM.dump_all(env[:messages]),
-    #     tools: ..., model: model,
-    #   )
-    #   Brute::MessageTransport::RubyLLM.wrap_each(response) { |m| env[:messages] << m }
     class RubyLLM < MessageTransport
-      # Brute::Message -> RubyLLM::Message (tool calls as ruby_llm's
-      # id-keyed hash).
+
+      # Brute::Message -> RubyLLM::Message (tool calls as ruby_llm's id-keyed hash).
       def self.dump(message)
-        tool_calls = message.tool_calls&.each_with_object({}) do |tc, hash|
-          hash[tc.id] = ::RubyLLM::ToolCall.new(id: tc.id, name: tc.name, arguments: tc.arguments)
+        tool_calls = message.tool_calls&.to_h do |tc|
+          [tc.id, ::RubyLLM::ToolCall.new(id: tc.id, name: tc.name, arguments: tc.arguments)]
         end
 
         ::RubyLLM::Message.new(
           role:         message.role,
           content:      message.content,
           tool_calls:   tool_calls,
-          tool_call_id: message.tool_call_id,
+          tool_call_id: message.tool_call_id
         )
       end
 
       private
 
-        # RubyLLM::Message -> Brute::Message.
-        def wrap(message)
-          tool_calls = message.tool_calls&.values&.map do |tc|
-            Brute::ToolCall.new(id: tc.id, name: tc.name, arguments: tc.arguments)
-          end
+      # RubyLLM::Message -> Brute::Message.
+      def wrap(message)
+        raw_calls = message.tool_calls
+        calls_list = raw_calls.respond_to?(:values) ? raw_calls.values : raw_calls
 
-          Brute::Message.new(
-            role:         message.role,
-            content:      message.content.to_s,
-            tool_calls:   tool_calls,
-            tool_call_id: message.tool_call_id,
+        tool_calls = calls_list&.map do |tc|
+          Brute::ToolCall.new(
+            id:        tc.id,
+            name:      tc.name,
+            arguments: tc.arguments
           )
         end
+
+        Brute::Message.new(
+          role:         message.role,
+          content:      message.content&.to_s, # Preserves nil safely
+          tool_calls:   tool_calls,
+          tool_call_id: message.tool_call_id
+        )
+      end
     end
   end
 end
