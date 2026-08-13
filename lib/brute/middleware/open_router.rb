@@ -6,14 +6,14 @@ module Brute
       class Completion
         def initialize(app, config: {}, **options)
           @app = app
-          @config = OpenRouter::Configuration.new(config)
-          @options = OpenRouter::CompletionOptions.new(options)
+          @config = ::OpenRouter::Configuration.new(config)
+          @options = ::OpenRouter::CompletionOptions.new(options)
         end
 
         def call(env)
           messages = Brute::MessageTransport::OpenRouter.dump_all(env[:messages])
 
-          OpenRouter::Client.new(@config).then do |client|
+          ::OpenRouter::Client.new(@config).then do |client|
             client.complete(messages, @options).then do |response|
 
               # OpenRouter in fact only returns a single message...
