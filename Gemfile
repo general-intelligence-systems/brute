@@ -12,7 +12,7 @@ group :completions, optional: true do
 	gem "llm.rb"         # examples/llm.rb
 	gem "openai"         # examples/openai.rb
 	gem "anthropic"      # examples/anthropic.rb
-	gem "open_router"
+	gem "open_router_enhanced"
 	gem "langchainrb"
 end
 
