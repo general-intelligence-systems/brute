@@ -4,3 +4,9 @@ source "https://rubygems.org"
 
 gem "brute", "~> 3.2.2"
 gem "open_router_enhanced"
+
+# Stage 1 — the persistent kernel: IRuby (Ruby Jupyter kernel) + omq, the
+# pure-Ruby ZMTP stack the host uses to speak the Jupyter wire protocol to
+# it (no libzmq on the host side; the kernel pulls in its own ffi-rzmq).
+gem "iruby"
+gem "omq"

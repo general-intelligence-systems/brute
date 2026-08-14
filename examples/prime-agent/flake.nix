@@ -99,7 +99,13 @@
             bundix
             libyaml
             openssl
+            zeromq
           ];
+
+          # ffi-rzmq dlopen()s libzmq — make the nix build findable.
+          shellHook = ''
+            export LD_LIBRARY_PATH="${pkgs.lib.getLib pkgs.zeromq}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          '';
         };
 
         apps.default = {
