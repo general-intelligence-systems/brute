@@ -14,17 +14,22 @@ require "fileutils"
 require "json"
 require "tmpdir"
 
+# Prefer the repo checkout — Brute::PromptTemplate predates the next release.
+repo_lib = File.expand_path("../../../lib", __dir__)
+$LOAD_PATH.unshift(repo_lib) if File.directory?(File.join(repo_lib, "brute"))
+
 require "brute"
 
 require_relative "../lib/prime_agent/kernel_manager"
 require_relative "../lib/prime_agent/kernel_provisioner"
 require_relative "../lib/prime_agent/kernel_runtime"
 require_relative "../lib/prime_agent/harness_store"
+require_relative "../lib/prime_agent/harness_format"
 require_relative "../lib/prime_agent/refinement"
 require_relative "../lib/prime_agent/refiner"
 require_relative "../lib/prime_agent/iruby_tool"
 require_relative "../lib/prime_agent/middleware/kernel_lifecycle"
-require_relative "../lib/prime_agent/middleware/harness_prompt"
+require_relative "../lib/prime_agent/middleware/prompt_template"
 require_relative "../lib/prime_agent/middleware/auto_refine"
 require_relative "../lib/prime_agent/middleware/refine_on_exit"
 
@@ -243,14 +248,16 @@ Dir.mktmpdir do |work|
     env
   end
 
-  system_prompt = Brute::SystemPrompt.build { |prompt, _ctx| prompt << "You are a test agent." }
+  system_prompt = Brute::PromptTemplate.new(
+    "You are a test agent.\n\n<%= harness_state %>",
+    harness_state: -> { PrimeAgent::HarnessFormat.format_harness_state_for_prompt(harness.merged_state) },
+  )
 
   agent = Brute.agent
     .use(PrimeAgent::Middleware::KernelLifecycle, provisioner: provisioner)
     .use(PrimeAgent::Middleware::RefineOnExit, refiner: refiner)
-    .use(Brute::Middleware::SystemPrompt, system_prompt: system_prompt)
     .use(Brute::Middleware::Loop::ToolResult)
-    .use(PrimeAgent::Middleware::HarnessPrompt, harness: harness)
+    .use(PrimeAgent::Middleware::PromptTemplate, prompt: system_prompt)
     .use(Brute::Middleware::MaxIterations)
     .use(PrimeAgent::Middleware::AutoRefine, refiner: refiner)
     .use(Brute::Middleware::ToolPipeline, tools: [PrimeAgent::IrubyTool.new(provisioner: provisioner)])

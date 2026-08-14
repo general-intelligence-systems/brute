@@ -3,6 +3,8 @@
 require "stringio"
 require "time"
 
+require_relative "prompts"
+
 module PrimeAgent
   # KernelAgents — recursive child agents that run INSIDE the IRuby kernel.
   #
@@ -110,13 +112,7 @@ module PrimeAgent
       end
 
       def child_prompt
-        <<~TXT
-          You are a KernelAgent (recursive agent depth #{@depth}) — a child agent running inside the shared IRuby kernel of a prime-agent session.
-
-          You solve the delegated task step by step with the iruby tool: Ruby code runs in your own binding inside the kernel. Parent variables are not visible in your binding; the continual harness (`harness.create_memory(...)` and friends) and `refine.run` are available. You may spawn further KernelAgents with `KernelAgent.spawn("sub-task", name: "...")` while under the depth limit.
-
-          When the task is done, stop calling tools and state your final answer — your final message is delivered to the parent as your reply. Write files for anything large.
-        TXT
+        Prompts.load("kernel_agent", depth: @depth)
       end
     end
 

@@ -3,6 +3,7 @@
 require "json"
 
 require_relative "harness_store"
+require_relative "prompts"
 
 module PrimeAgent
   # Renders harness state for the system prompt — a Ruby port of
@@ -21,26 +22,9 @@ module PrimeAgent
     DEFAULT_REFINEMENT_LIMIT = 5
     DEFAULT_CONTENT_LIMIT = 180
 
-    WHEN_TO_REFINE = <<~TXT.tr("\n", " ").squeeze(" ").freeze
-      When to call `refine.run()`: after a repeated failure, a reusable
-      tactic emerges, a repeated delegation role should become a subagent
-      spec, a repeated procedure should become a skill, a durable
-      fact/preference should become a memory, a narrow behavioral policy
-      should become a prompt addendum, a user corrects behavior that should
-      persist locally or globally, validation shows a continual harness entry
-      is wrong, or a skill/subagent/memory/prompt note should be created,
-      updated, deleted, or rolled back. Keep `refine.run()` continual harness
-      edits small and evidence-backed.
-    TXT
+    WHEN_TO_REFINE = Prompts.load("when_to_refine").freeze
 
-    HEADER = <<~TXT.strip.freeze
-      # Continual Harness State
-
-      Local continual harness entries belong to this Prime Agent session. Global continual harness entries persist across Prime Agent sessions.
-      The continual harness entries below are compact summaries, not full descriptions. Use them as routing/context hints; inspect or refine the underlying continual harness entry only when detail matters.
-      Default to local continual harness refinement for current task progress, temporary blockers, and session coordination. Use global continual harness refinement only for stable cross-session lessons, durable user preferences, reusable skills/subagents, or explicitly project-qualified facts.
-      Use these continual harness prompt notes, memories, skills, and subagent specs when they are relevant. The base system prompt is immutable; prompt entries below are supplemental notes only.
-    TXT
+    HEADER = Prompts.load("harness_header").freeze
 
     module_function
 

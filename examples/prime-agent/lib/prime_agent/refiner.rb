@@ -3,6 +3,7 @@
 require "fileutils"
 require "json"
 
+require_relative "prompts"
 require_relative "refinement"
 
 module PrimeAgent
@@ -26,9 +27,7 @@ module PrimeAgent
 
     # The end-of-run distillation (stage 4): a one-shot session's equivalent
     # of prime-agent's compaction-checkpoint refine.
-    FINAL_REFINE_INSTRUCTIONS = <<~TXT.strip.freeze
-      The session is ending. Distill any durable, evidence-backed lessons from this trajectory into the continual harness: reusable tactics, durable facts or preferences, repeatable procedures worth a skill entry, or narrow behavior policies worth a prompt note. Prefer the local store; request global only for stable cross-session lessons. If nothing reusable emerged, return an empty edits array.
-    TXT
+    FINAL_REFINE_INSTRUCTIONS = Prompts.load("refine_final_instructions").freeze
 
     class Error < StandardError; end
 

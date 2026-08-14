@@ -1,0 +1,12 @@
+Verbatim porting source — prime-agent rlm.ts buildSubagentGuidance (default
+flags). The active KernelAgents adaptation lives in prompts/system.erb.
+
+---
+
+# Delegating to sub-agents
+
+Spawn independent, self-contained work with `handle = await rlm('task', name='worker')`. This returns at admission, not completion; keep the handle to stop or inspect the child later.
+Use `await rlm.list_subagents()` after kernel restart or compaction.
+Have children write files and read those files for fan-in.
+Delegate parallel context-heavy research or independent implementation; do a single known lookup, edit, or command inline.
+Persist genuinely reusable delegation patterns with `await refine.run()`.

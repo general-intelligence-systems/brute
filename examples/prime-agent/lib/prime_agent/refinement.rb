@@ -4,6 +4,7 @@ require "json"
 require "time"
 
 require_relative "harness_store"
+require_relative "prompts"
 
 module PrimeAgent
   # The /refine machinery — a Ruby port of prime-agent's refinement engine
@@ -34,82 +35,14 @@ module PrimeAgent
     class ParseError < StandardError; end
 
     # Adapted from REFINEMENT_SYSTEM_PROMPT (refinement.ts:123-173).
-    REFINEMENT_SYSTEM_PROMPT = <<~TXT
-      You are the /refine continual harness subsystem of this agent (a brute/Ruby port of Prime Agent).
-
-      Your job is to improve the editable continual harness state from the current trajectory.
-      This is similar in spirit to context compaction, but instead of summarizing the
-      conversation you emit precise Create, Update, or Delete edits to reusable state.
-      The continual harness is the persistent, editable set of prompt notes, memories,
-      skills, and subagent specs that lets the agent improve reusable behavior
-      outside the token history.
-      Use "continual harness" for that persistent artifact layer; keep "kernel runtime" for the
-      IRuby kernel and native call interface that executes those artifacts.
-
-      Continual harness components:
-      - prompt: supplemental prompt notes only. The base system prompt is immutable and MUST NOT be rewritten.
-      - memory: durable facts, decisions, failures, preferences, and outcomes.
-      - skill: Ruby REPL skill. Skill create/update edits MUST include a `reference` object with `{"type":"ruby"}`, a Ruby require-able `import` (or a file path to `load`), and a `callable` or `call_pattern`; they also MUST include an `arguments` object describing accepted inputs, required fields, defaults, and constraints. Use `{}` for `arguments` only when the Ruby callable truly needs no external inputs. Include the native call form `require "<import>"; <callable>(...)`.
-      - subagent: reusable delegation specs, including purpose, instructions, and when to invoke. Include the native call form: compose a concise task prompt and spawn with `KernelAgent.spawn("<task>")`; admission returns a handle immediately, never the child's answer. Results arrive via `KernelAgent.finished` on a later turn or via files. Do not invent wrappers like `run_subagent(...)`.
-
-      Scope and persistence policy:
-      - The default editable continual harness store is local to the current session. Use it for session-specific progress, active task state, current-run coordination notes, temporary blockers, and project facts that should not affect other sessions.
-      - A caller may explicitly request global refinement. Global edits must be stable cross-session lessons, durable user preferences, reusable skills/subagents, or tool/environment facts that should affect future sessions.
-      - Entry ids in the harness overview may carry a display-only `local:` or `global:` prefix. Always use the bare id (no prefix) in edits.
-      - All edits in one refinement apply only to the requested scope's store. During a local refinement, global entries are read-only context: never propose update or delete edits for them; create a local entry instead when a session-specific override is genuinely needed.
-      - Project/workspace-specific lessons may be persisted globally only when the title, path, or content explicitly names the project/workspace and the lesson is likely to be reused in future sessions for that project. Prefer local edits when the lesson only belongs in the current conversation.
-      - Use memory for declarative facts and preferences, skill for repeatable procedures exposed as Ruby calls, prompt for narrow behavioral policy addendums, and subagent for reusable delegation roles.
-      - Create or update the smallest relevant component: repeated delegation roles should become subagent specs, repeated procedures should become skills, durable facts/preferences should become memories, and narrow behavioral policies should become prompt addendums.
-      - When an edit is persisted, include metadata such as `{"scope":"local"}` or `{"scope":"global"}` when that helps future review understand the intended blast radius.
-
-      Use the trajectory, current continual harness state, and prior refinement history. Prefer
-      small evidence-backed edits. If prior refinements caused issues, rollback or
-      replace the faulty editable entries. Never edit source files directly. Output
-      JSON only with this exact shape:
-
-      {
-        "summary": "one sentence",
-        "rationale": "why these edits are justified by trajectory evidence",
-        "expectedOutcome": "what should improve and how to validate it",
-        "edits": [
-          {
-            "action": "create|update|delete",
-            "kind": "prompt|memory|skill|subagent",
-            "id": "stable id for update/delete, optional for create",
-            "title": "required for create/update except delete",
-            "content": "required for create/update except delete",
-            "path": "optional grouping path",
-            "reference": {"type": "ruby", "import": "some_feature", "callable": "SomeModule.call", "call_pattern": "SomeModule.call(x)"},
-            "arguments": {"name": {"type": "string", "required": true, "description": "accepted input"}},
-            "metadata": {},
-            "reason": "why this edit is useful"
-          }
-        ]
-      }
-    TXT
+    REFINEMENT_SYSTEM_PROMPT = Prompts.load("refine_system").freeze
 
     # Verbatim port of AUTO_REFINE_REVIEW_SYSTEM_PROMPT (refinement.ts:175-185).
-    AUTO_REFINE_REVIEW_SYSTEM_PROMPT = <<~TXT
-      You are Prime Agent's automatic /refine review gate.
+    AUTO_REFINE_REVIEW_SYSTEM_PROMPT = Prompts.load("auto_refine_review_system").freeze
 
-      Decide whether this checkpoint should run /refine. Auto /refine writes local continual harness state by default, so approve when the trajectory contains evidence useful to this session's future turns.
-      Reject one-off noise, unsupported hypotheses, and transient tool outputs. Ask for global refinement only for durable cross-session lessons or explicitly project-qualified lessons likely to be reused in future sessions.
+    LOCAL_SCOPE_INSTRUCTION = Prompts.load("refine_scope_local").freeze
 
-      Return JSON only:
-      {
-        "shouldRefine": true|false,
-        "rationale": "short reason",
-        "instructions": "optional concise instructions for /refine if shouldRefine is true"
-      }
-    TXT
-
-    LOCAL_SCOPE_INSTRUCTION = <<~TXT.strip.freeze
-      Requested refinement scope: local. Prefer local continual harness edits for current task progress, temporary blockers, current-run coordination, and project facts that are not clearly reusable across Prime Agent sessions. Global entries in the overview are read-only context: do not propose update or delete edits for them; create a local entry instead if an override is needed.
-    TXT
-
-    GLOBAL_SCOPE_INSTRUCTION = <<~TXT.strip.freeze
-      Requested refinement scope: global. Only propose stable cross-session continual harness edits, durable user preferences, reusable skills/subagents, or explicitly project-qualified facts that should affect future Prime Agent sessions. Do not persist session-only progress, temporary blockers, or current-run coordination globally.
-    TXT
+    GLOBAL_SCOPE_INSTRUCTION = Prompts.load("refine_scope_global").freeze
 
     module_function
 

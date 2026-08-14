@@ -5,6 +5,8 @@ require "json"
 require "securerandom"
 require "time"
 
+require_relative "prompts"
+
 module PrimeAgent
   # File-backed continual harness store — the self-learning state ledger.
   #
@@ -47,22 +49,8 @@ module PrimeAgent
     ].freeze
 
     # Adapted from prime-agent's Python overview call contract for the IRuby
-    # kernel: no `await`, no rlm subagent spawning (not wired in this port).
-    CALL_CONTRACT = <<~TXT.tr("\n", " ").squeeze(" ").freeze
-      Ruby REPL skills are invoked by requiring their `import` feature (skill
-      lib directories under .brute/skills/*/lib are on the kernel load path) or
-      loading their file, then calling the documented callable, e.g.
-      `require "json_repair"; JsonRepair.call(...)`. Continual harness skill
-      entries are Ruby REPL skills and must include a Ruby `reference` object
-      (`{"type" => "ruby", "import" => ..., "callable" => ...}` or a
-      `call_pattern`) plus an `arguments` contract. Continual harness subagent
-      specs are reusable delegation specs for KernelAgents: invoke one by
-      turning it into a concise task prompt and spawning
-      `KernelAgent.spawn("<task>")`; admission returns a handle immediately,
-      never the child's answer — results arrive via `KernelAgent.finished` on
-      a later turn or via files. Do not invent wrappers such as
-      `call_skill(...)` or `run_subagent(...)`.
-    TXT
+    # kernel: no `await`; KernelAgents instead of `rlm(...)`.
+    CALL_CONTRACT = Prompts.load("harness_call_contract").freeze
 
     class Error < StandardError; end
 

@@ -1,0 +1,12 @@
+Verbatim porting source — prime-agent rlm.ts buildRlmPrompt recursion block
+(depth-0, no agent_message/agent_observe variant). The active KernelAgents
+adaptation lives in prompts/system.erb.
+
+---
+
+A callable `rlm` is already in your global namespace. `await rlm('sub-task')` spawns a child and returns immediately after task admission with `rlm_child_id`, `name`, `session_dir`, and `model`; it never waits for or returns the child's answer.
+Choose a stable child name with `await rlm('sub-task', name='api-reviewer')`; names must be unique among siblings. If omitted, the host generates a readable unique name.
+A child inherits your model. If a different model is explicitly requested, use `await rlm.find_models(...)` and an exact returned selector. An unavailable requested model fails spawn; decide whether to retry or omit `model`.
+Use `await rlm.list_subagents()` to recover direct child handles after admission.
+Inspect files a child wrote when you need to collect its work without an observation capability.
+Spawn independent children in separate calls and end your turn instead of awaiting completion. Multiple replies may arrive over multiple turns. Delete a direct child explicitly with `await rlm.delete_subagent(child)` when it is no longer needed.

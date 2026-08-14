@@ -17,10 +17,14 @@ middleware:
   state ledger. `harness_store.rb` is an exact port of prime-agent's
   `harness_state.json` store (entries: `prompt` notes, `memory`, `skill`,
   `subagent` specs; local + global scope; atomic dual-writer file access).
-  `middleware/harness_prompt.rb` refreshes the `# Continual Harness State`
-  block in the system prompt every turn. Local state lives in
-  `<cwd>/.brute/harness/`, global in `~/.brute/harness/`
-  (override: `BRUTE_GLOBAL_HARNESS_DIR`).
+  All prompt text lives in `prompts/*.erb`: the system prompt is
+  `prompts/system.erb`, driven by a `Brute::PromptTemplate` whose dynamic
+  sections (`cwd`, `harness_state`, `skills`) are procs;
+  `middleware/prompt_template.rb` re-renders it every turn, so harness
+  writes and new skills appear mid-run and the template hot-reloads from
+  disk. prime-agent's original prompt text is kept verbatim under
+  `prompts/upstream/`. Local state lives in `<cwd>/.brute/harness/`, global
+  in `~/.brute/harness/` (override: `BRUTE_GLOBAL_HARNESS_DIR`).
 - **stage 3 — the self-learning loop** (wired): the bootstrap cell loads
   `kernel_runtime.rb` into the kernel, so the model can call
   `harness.create_memory(...)`, `harness.create_skill(...)`, `harness.overview()`
