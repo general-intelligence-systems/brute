@@ -7,10 +7,12 @@ filesystem and surfaced to the model so it can pull in detailed guidance when a 
 matches.
 
 Brute implements the [Agent Skills specification](https://agentskills.io/specification)
-and its three-stage progressive-disclosure lifecycle. The mechanism lives in three files:
+and its three-stage progressive-disclosure lifecycle. The mechanism lives in five files:
 
-- `lib/brute/skill.rb` — discovery, validation, parsing, formatting (`Brute::Skill`)
+- `lib/brute/skill.rb` — the skill object plus discovery, validation, parsing (`Brute::Skill`)
+- `lib/brute/middleware/025_skills.rb` — loads skill objects into the agent context (`Brute::Middleware::Skills`)
 - `lib/brute/prompts/skills.rb` — the system-prompt section (`Brute::Prompts::Skills`)
+- `lib/brute/prompts/text/skills/default.erb` — the ERB template the section renders
 - `lib/brute/tools/skill_load.rb` — the `skill` tool (`Brute::Tools::SkillLoad`)
 
 For the full reference (frontmatter rules, the three stages, cwd syncing), see
@@ -43,20 +45,24 @@ Parsing and validation (`Brute::Skill.load`) mirror the spec's reference validat
   the skill still loads (a deliberate deviation from the reference validator, which
   hard-fails, so brute tolerates the vendor extensions real skills carry).
 
-Each loaded skill becomes a `Skill::Info` struct: `name`, `description`, `location`
-(the file path), `content` (the body), `license`, `compatibility`, `metadata`, and
-`allowed_tools`.
+Each loaded skill becomes a `Brute::Skill` object: `name`, `description`,
+`file_path` (with a `location` alias), `base_dir`, `content`, `source`
+(`:project` / `:user` / `:path`), `license`, `compatibility`, `metadata`,
+`allowed_tools`, and `disable_model_invocation?` (from the
+`disable-model-invocation` frontmatter flag: loaded and handed to the agent,
+but hidden from the prompt listing).
 
 ## Discovery
 
-`Brute::Skill.all(cwd:)` scans two locations, in priority order
-(`lib/brute/skill.rb:91-103`):
+`Brute::Skill.all(cwd:, paths: [])` scans two locations, in priority order:
 
-1. `<cwd>/.brute/skills/**/SKILL.md` — project-local
-2. `~/.config/brute/skills/**/SKILL.md` — global (per-user)
+1. `<cwd>/.brute/skills/**/SKILL.md` — project-local (`source: :project`)
+2. `~/.config/brute/skills/**/SKILL.md` — global, per-user (`source: :user`)
 
-The glob is recursive, so skills can be nested arbitrarily deep under either root —
-the convention is one directory per skill:
+then any explicit `paths` (directories scanned recursively, or loose `.md`
+files, with `~` expanded; `source: :path`). The glob is recursive, so skills
+can be nested arbitrarily deep under either root — the convention is one
+directory per skill:
 
 ```
 .brute/skills/
@@ -64,9 +70,10 @@ the convention is one directory per skill:
   release-checklist/SKILL.md
 ```
 
-When two skills share a name, **first found wins** (`lib/brute/skill.rb:41`), so a
-project-local skill overrides a same-named global one. Results are deduplicated by
-name and returned sorted alphabetically.
+When two skills share a name, **first found wins** and a stderr warning names
+the winner and loser, so a project-local skill overrides a same-named global
+one. The same file reached twice via symlinks is loaded only once. Results are
+returned sorted alphabetically.
 
 `Brute::Skill.get(name, cwd:)` fetches a single skill by name through the same scan.
 

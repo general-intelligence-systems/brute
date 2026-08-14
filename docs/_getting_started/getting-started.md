@@ -38,7 +38,7 @@ There is no agent-level configuration. Tools go to the `ToolPipeline` middleware
 
 ## A complete agent
 
-This is `examples/ruby_llm.rb`, trimmed. It defaults to a local [Ollama](https://ollama.com); set `BRUTE_PROVIDER` / `BRUTE_MODEL` / an API key to use a hosted model.
+This is `examples/ruby-llm/main.rb`, trimmed. It defaults to a local [Ollama](https://ollama.com); set `BRUTE_PROVIDER` / `BRUTE_MODEL` / an API key to use a hosted model.
 
 ```ruby
 require "brute"
@@ -96,10 +96,10 @@ puts env[:messages].last.content
 Run it:
 
 ```sh
-ruby examples/ruby_llm.rb
+nix run ./examples/ruby-llm
 
 # or against Anthropic:
-BRUTE_PROVIDER=anthropic BRUTE_MODEL=claude-opus-4-8 ANTHROPIC_API_KEY=sk-... ruby examples/ruby_llm.rb
+BRUTE_PROVIDER=anthropic BRUTE_MODEL=claude-opus-4-8 ANTHROPIC_API_KEY=sk-... nix run ./examples/ruby-llm
 ```
 
 ## What happens in a turn
@@ -115,4 +115,4 @@ Every message in `env[:messages]` is a [`Brute::Message`]({% link _core_features
 
 ## Not a ruby_llm shop?
 
-The identical agent runs on [llm.rb, the openai gem, or the anthropic gem]({% link _core_features/message-transports.md %}) — only the `run` proc changes. See `examples/llm.rb`, `examples/openai.rb`, and `examples/anthropic.rb` in the repo, or the [examples overview]({% link _examples/examples.md %}).
+The identical agent runs on [llm.rb, the openai gem, or the anthropic gem]({% link _core_features/message-transports.md %}) — only the `run` proc changes. See `examples/llm-rb/`, `examples/openai/`, and `examples/anthropic/` in the repo, or the [examples overview]({% link _examples/examples.md %}).

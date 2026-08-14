@@ -18,7 +18,7 @@ Gem::Specification.new do |spec|
     "documentation_uri" => "https://general-intelligence-systems.github.io/brute/",
   }
 
-  spec.files         = Dir['lib/**/*.rb', 'lib/**/*.txt']
+  spec.files         = Dir['lib/**/*.rb', 'lib/**/*.txt', 'lib/**/*.erb']
   spec.require_paths = ['lib']
 
   spec.add_dependency 'async', '~> 2.0'

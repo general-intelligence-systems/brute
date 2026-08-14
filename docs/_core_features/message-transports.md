@@ -36,7 +36,7 @@ Four transports ship with the gem. Each references its library lazily — you `r
 | `MessageTransport::OpenAI` | [openai](https://github.com/openai/openai-ruby) | choice unpacking; JSON-string tool arguments |
 | `MessageTransport::Anthropic` | [anthropic](https://github.com/anthropics/anthropic-sdk-ruby) | top-level `system_:`; `tool_use`/`tool_result` content blocks; alternating roles |
 
-Each has a matching runnable agent in the repo: `examples/ruby_llm.rb`, `examples/llm.rb`, `examples/openai.rb`, `examples/anthropic.rb`. Only the `run` proc differs between them.
+Each has a matching runnable agent in the repo: `examples/ruby-llm/`, `examples/llm-rb/`, `examples/openai/`, `examples/anthropic/`. Only the `run` proc differs between them.
 
 ## The API
 

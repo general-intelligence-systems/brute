@@ -1,0 +1,14 @@
+Skills provide specialized instructions and workflows for specific tasks.
+When a task matches a skill's description, read the file at its location for the
+full instructions. Relative paths in a skill resolve against its directory (the
+parent of its SKILL.md).
+
+<available_skills>
+<% skills.each do |skill| -%>
+  <skill>
+    <name><%= h skill.name %></name>
+    <description><%= h skill.description %></description>
+    <location><%= h skill.file_path %></location>
+  </skill>
+<% end -%>
+</available_skills>

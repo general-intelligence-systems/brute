@@ -13,7 +13,7 @@ An `AgentPipeline` is a builder, not a Rack app — you `.start` it. `Brute::Rac
 # config.ru
 require "brute"
 
-agent = Brute::Turn::AgentPipeline.parse_file("examples/agents/brute.ru")
+agent = Brute::Turn::AgentPipeline.parse_file("examples/01c-brute-ru/brute.ru")
 run Brute::Rack::Adapter.for(agent)
 ```
 
@@ -50,7 +50,7 @@ The agent's answer is the last message it appended to the log. Anything that res
 `parse_file` reads an agent defined in rackup syntax, so the HTTP entry point and the agent definition can live in one versioned file:
 
 ```ruby
-# examples/agents/brute.ru
+# examples/01c-brute-ru/brute.ru
 use Brute::Middleware::SystemPrompt
 use Brute::Middleware::Loop::ToolResult
 use Brute::Middleware::MaxIterations
@@ -58,6 +58,6 @@ use Brute::Middleware::ToolPipeline, tools: Brute::Tools::ALL
 run ->(env) { ... }   # your LLM call
 ```
 
-The repo ships `examples/agents/brute.ru` (the agent) and `examples/agents/config.ru` (the `Brute::Rack::Adapter.for(agent)` wrapper) as a working pair — run it with `rackup examples/agents/config.ru` or `falcon serve -c config.ru`.
+The repo ships `examples/01c-brute-ru/brute.ru` (the agent) and `examples/01c-brute-ru/config.ru` (the `Brute::Rack::Adapter.for(agent)` wrapper) as a working pair — run it with `rackup examples/01c-brute-ru/config.ru` or `falcon serve -c config.ru`.
 
 This is the same builder covered in [The Agent Pipeline]({% link _core_features/agents.md %}) — serving it over HTTP adds no new concepts, just a Rack wrapper.

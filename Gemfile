@@ -8,10 +8,10 @@ gemspec
 # the terminal `run` proc of an agent pipeline is written by the user with
 # whichever library they prefer. Only needed to run the matching example.
 group :completions, optional: true do
-	gem "ruby_llm"       # examples/ruby_llm.rb
-	gem "llm.rb"         # examples/llm.rb
-	gem "openai"         # examples/openai.rb
-	gem "anthropic"      # examples/anthropic.rb
+	gem "ruby_llm"       # examples/ruby-llm/
+	gem "llm.rb"         # examples/llm-rb/
+	gem "openai"         # examples/openai/
+	gem "anthropic"      # examples/anthropic/
 	gem "open_router_enhanced"
 	gem "langchainrb"
 end
