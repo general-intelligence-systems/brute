@@ -91,10 +91,10 @@ describe "prime_agent/kernel_provisioner" do
       @executed << code
       if @fail_bootstrap
         Result.new(stdout: "", stderr: "LoadError: nope", result: nil,
-                   status: "error", error: { "traceback" => ["tb"] }, duration_ms: 1)
+                   status: "error", error: { "traceback" => ["tb"] }, duration_ms: 1, diffs: [])
       else
         Result.new(stdout: "ok", stderr: "", result: nil,
-                   status: "ok", error: nil, duration_ms: 1)
+                   status: "ok", error: nil, duration_ms: 1, diffs: [])
       end
     end
 

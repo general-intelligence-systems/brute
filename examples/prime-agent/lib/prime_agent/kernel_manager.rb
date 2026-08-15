@@ -40,9 +40,15 @@ module PrimeAgent
 
     class Error < StandardError; end
 
+    # Keep in sync with DIFF_DISPLAY_MIME in work/.brute/skills/edit/lib/edit.rb
+    # (mirrors prime-agent's kernel/index.ts <-> skills/edit pair).
+    DIFF_DISPLAY_MIME = "application/vnd.prime-agent.diff+json"
+
     # One execution's outcome. `status` is "ok" or "error"; `error` carries
-    # { "ename", "evalue", "traceback" } when the cell raised.
-    Result = Data.define(:stdout, :stderr, :result, :status, :error, :duration_ms)
+    # { "ename", "evalue", "traceback" } when the cell raised; `diffs` carries
+    # the edit skill's diff displays (DIFF_DISPLAY_MIME) in emission order —
+    # prime-agent's KernelDiffDisplay { path, old_str, new_str, start_line }.
+    Result = Data.define(:stdout, :stderr, :result, :status, :error, :duration_ms, :diffs)
 
     # Collects one cell's streamed output with prime-agent's cap semantics
     # (kernel/index.ts:1055-1119, 1139-1161): a stream buffer stops growing
@@ -61,6 +67,7 @@ module PrimeAgent
         @stderr_truncated = false
         @result = nil
         @error = nil
+        @diffs = []
       end
 
       def add_stream(name, text)
@@ -84,6 +91,30 @@ module PrimeAgent
         }
       end
 
+      # Collect one display_data/update_display_data payload. Only the edit
+      # skill's diff MIME is parsed; malformed payloads are dropped, mirroring
+      # prime-agent's parseDiffDisplay (kernel/index.ts:248-260): path/old_str/
+      # new_str must be strings, start_line is kept only when numeric.
+      def add_display(data)
+        return unless data.is_a?(Hash)
+
+        payload = data[DIFF_DISPLAY_MIME]
+        return unless payload.is_a?(Hash)
+
+        path = payload["path"]
+        old_str = payload["old_str"]
+        new_str = payload["new_str"]
+        return unless path.is_a?(String) && old_str.is_a?(String) && new_str.is_a?(String)
+
+        start_line = payload["start_line"]
+        @diffs << {
+          "path" => path,
+          "old_str" => old_str,
+          "new_str" => new_str,
+          "start_line" => start_line.is_a?(Numeric) ? start_line.to_i : nil,
+        }
+      end
+
       def finish(status:, duration_ms:)
         stdout = @stdout.dup
         stderr = @stderr.dup
@@ -100,6 +131,7 @@ module PrimeAgent
           status: @error ? "error" : status,
           error: @error,
           duration_ms: duration_ms,
+          diffs: @diffs,
         )
       end
     end
@@ -283,6 +315,8 @@ module PrimeAgent
         when "execute_result"
           data = incoming["content"]["data"] || {}
           output.result = data["text/plain"] if data["text/plain"]
+        when "display_data", "update_display_data"
+          output.add_display(incoming["content"]["data"] || {})
         when "error"
           content = incoming["content"]
           output.set_error(content["ename"], content["evalue"], content["traceback"])
@@ -480,6 +514,27 @@ describe "prime_agent/kernel_manager" do
       result.status.should == "error"
       result.error["ename"].should == "RuntimeError"
       result.error["traceback"].should == ["line1"]
+    end
+
+    it "collects edit-skill diff displays in emission order" do
+      out = output(100)
+      mime = PrimeAgent::KernelManager::DIFF_DISPLAY_MIME
+      out.add_display(mime => { "path" => "/a.rb", "old_str" => "x", "new_str" => "y", "start_line" => 3 })
+      out.add_display(mime => { "path" => "/b.rb", "old_str" => "1", "new_str" => "2" })
+      result = out.finish(status: "ok", duration_ms: 0)
+      result.diffs.length.should == 2
+      result.diffs.first.should == { "path" => "/a.rb", "old_str" => "x", "new_str" => "y", "start_line" => 3 }
+      result.diffs.last["start_line"].should.be.nil # kept only when numeric
+    end
+
+    it "drops malformed and foreign display payloads" do
+      out = output(100)
+      mime = PrimeAgent::KernelManager::DIFF_DISPLAY_MIME
+      out.add_display("text/plain" => "not a diff")
+      out.add_display(mime => { "path" => 42, "old_str" => "x", "new_str" => "y" }) # non-string path
+      out.add_display(mime => "not a hash")
+      out.add_display("not a hash")
+      out.finish(status: "ok", duration_ms: 0).diffs.should == []
     end
   end
 end

@@ -1,0 +1,19 @@
+# frozen_string_literal: true
+
+require "json"
+
+# browser_cdp — hermes toolset: browser-cdp
+# Port of hermes-agent `tools/browser_cdp_tool.py:670` (registry.register).
+# Scaffold: no-op handler, returns a JSON error string (hermes tool_error convention).
+# hermes check_fn: _browser_cdp_check
+module HermesTools
+  class BrowserCdp < Brute::Tool
+    description "Send a raw Chrome DevTools Protocol (CDP) command. Escape hatch for browser operations not covered by browser_navigate, browser_click, browser_console, etc.\n\n**Requires a reachable CDP endpoint.** Available when the user has run '/browser connect' to attach to a running Chrome, Brave, Chromium, or Edge browser, or when 'browser.cdp_url' is set in config.yaml. Not currently wired up for cloud backends (Browserbase, Browser Use, Firecrawl) — those expose CDP per session but live-session routing is a follow-up. Camofox is REST-only and will never support CDP. If the tool is in your toolset at all, a CDP endpoint is already reachable.\n\n**CDP method reference:** {dynamic} — use web_extract on a method's URL (e.g. '/tot/Page/#method-handleJavaScriptDialog') to look up parameters and return shape.\n\n**Common patterns:**\n- List tabs: method='Target.getTargets', params={}\n- Handle a native JS dialog: method='Page.handleJavaScriptDialog', params={'accept': true, 'promptText': ''}, target_id=<tabId>\n- Get all cookies: method='Network.getAllCookies', params={}\n- Eval in a specific tab: method='Runtime.evaluate', params={'expression': '...', 'returnByValue': true}, target_id=<tabId>\n- Set viewport for a tab: method='Emulation.setDeviceMetricsOverride', params={'width': 1280, 'height': 720, 'deviceScaleFactor': 1, 'mobile': false}, target_id=<tabId>\n\n**Usage rules:**\n- Browser-level methods (Target.*, Browser.*, Storage.*): omit target_id and frame_id.\n- Page-level methods (Page.*, Runtime.*, DOM.*, Emulation.*, Network.* scoped to a tab): pass target_id from Target.getTargets.\n- **Cross-origin iframe scope** (Runtime.evaluate inside an OOPIF, Page.* targeting a frame target, etc.): pass frame_id from the browser_snapshot frame_tree output. This routes through the CDP supervisor's live connection — the only reliable way on Browserbase where stateless CDP calls hit signed-URL expiry.\n- Each stateless call (without frame_id) is independent — sessions and event subscriptions do not persist between calls. For stateful workflows, prefer the dedicated browser tools or use frame_id routing."
+    params({ "type" => "object", "properties" => { "method" => { "type" => "string", "description" => "CDP method name, e.g. 'Target.getTargets', 'Runtime.evaluate', 'Page.handleJavaScriptDialog'." }, "params" => { "type" => "object", "description" => "Method-specific parameters as a JSON object. Omit or pass {} for methods that take no parameters.", "properties" => {}, "additionalProperties" => true }, "target_id" => { "type" => "string", "description" => "Optional. Target/tab ID from Target.getTargets result (each entry's 'targetId'). Use for page-level methods at the top-level tab scope. Mutually exclusive with frame_id." }, "frame_id" => { "type" => "string", "description" => "Optional. Out-of-process iframe (OOPIF) frame_id from browser_snapshot.frame_tree.children[] where is_oopif=true. When set, routes the call through the CDP supervisor's live session for that iframe. Essential for Runtime.evaluate inside cross-origin iframes, especially on Browserbase where fresh per-call CDP connections can't keep up with signed URL rotation. For same-origin iframes, use parent contentWindow/contentDocument from Runtime.evaluate at the top-level page instead." }, "timeout" => { "type" => "number", "description" => "Timeout in seconds (default 30, max 300).", "default" => 30 } }, "required" => ["method"] })
+    def name = "browser_cdp"
+
+    def execute(**_args)
+      JSON.dump("error" => "not implemented", "tool" => "browser_cdp")
+    end
+  end
+end

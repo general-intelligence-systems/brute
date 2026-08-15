@@ -1,0 +1,45 @@
+{
+  "model": null,
+  "restrict_to_workspace": true,
+  "allow_read_outside_workspace": false,
+  "max_tokens": 8192,
+  "context_window": 0,
+  "summarize_message_threshold": 20,
+  "summarize_token_percent": 75,
+  "steering_mode": "one-at-a-time",
+  "tools": {
+    "allow_read_paths": [],
+    "allow_write_paths": [],
+    "read_file": { "mode": "bytes", "max_read_file_size": 65536 },
+    "exec": {
+      "enabled": true,
+      "timeout_seconds": 60,
+      "enable_deny_patterns": true,
+      "allow_remote": true,
+      "custom_deny_patterns": [],
+      "custom_allow_patterns": []
+    },
+    "web": {
+      "provider": "auto",
+      "proxy": "",
+      "format": "plaintext",
+      "fetch_limit_bytes": 10485760,
+      "private_host_whitelist": [],
+      "sogou": { "enabled": true, "max_results": 5 },
+      "duckduckgo": { "enabled": false, "max_results": 5 },
+      "brave": { "enabled": false, "api_keys": [], "max_results": 5 },
+      "tavily": { "enabled": false, "api_keys": [], "base_url": "", "max_results": 5 },
+      "kagi": { "enabled": false, "api_keys": [], "base_url": "", "max_results": 5 },
+      "gemini": { "enabled": false, "api_key": "", "model": "gemini-2.5-flash", "max_results": 5 },
+      "perplexity": { "enabled": false, "api_keys": [], "max_results": 5 },
+      "searxng": { "enabled": false, "base_url": "", "max_results": 5 },
+      "glm_search": { "enabled": false, "api_key": "", "base_url": "", "search_engine": "search_std", "max_results": 5 },
+      "baidu_search": { "enabled": false, "api_key": "", "base_url": "", "max_results": 10 }
+    },
+    "cron": {
+      "exec_timeout_minutes": 5,
+      "allow_command": true,
+      "command_allowed_remotes": []
+    }
+  }
+}

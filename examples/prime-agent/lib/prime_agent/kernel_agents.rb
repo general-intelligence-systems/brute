@@ -196,6 +196,25 @@ module PrimeAgent
         agent.stop!
       end
 
+      # SCAFFOLD (FEATURES.md K4) — dispose one FINISHED child from the
+      # registry. Ports prime-agent's rlm.delete_subagent: deletes a retained
+      # direct child by id or name; a still-running child is skipped
+      # ({outcome: "skipped_running"}), never killed — `stop` already covers
+      # killing here. Returns the disposed handle.
+      def delete(name)
+        "KernelAgent.delete not implemented (scaffold)"
+      end
+
+      # SCAFFOLD (FEATURES.md K2) — bounded fuzzy search over the
+      # authenticated model catalog for spawn's model: override. Ports
+      # prime-agent's rlm.find_models: scoring exact < prefix < substring
+      # over "provider/id", id and name; limit default 8, clamped to 20; the
+      # override selector is exact "provider/model". Backed by
+      # Middleware::ModelRegistry; the catalog is never prompt-visible.
+      def find_models(query = "", limit: 8)
+        "KernelAgent.find_models not implemented (scaffold)"
+      end
+
       def max_depth
         (ENV["BRUTE_KERNEL_AGENT_MAX_DEPTH"] || 2).to_i
       end
@@ -392,6 +411,11 @@ describe "prime_agent/kernel_agents" do
     agent.error.should.not.be.nil
   ensure
     KA.terminal = nil
+  end
+
+  it "scaffolds delete and find_models as no-op stubs (FEATURES.md K2/K4)" do
+    KA.delete("tester").should.include "not implemented"
+    KA.find_models("gpt").should.include "not implemented"
   end
 
   it "capture_eval renders stdout, result and errors like the iruby tool" do

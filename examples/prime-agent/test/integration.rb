@@ -32,6 +32,9 @@ require_relative "../lib/prime_agent/middleware/kernel_lifecycle"
 require_relative "../lib/prime_agent/middleware/prompt_template"
 require_relative "../lib/prime_agent/middleware/auto_refine"
 require_relative "../lib/prime_agent/middleware/refine_on_exit"
+require_relative "../lib/prime_agent/middleware/compaction"
+require_relative "../lib/prime_agent/cron_store"
+require_relative "../lib/prime_agent/schedule_driver"
 
 $stdout.sync = true
 
@@ -133,6 +136,24 @@ Dir.mktmpdir do |work|
   result = provisioner.execute('require "demo_skill"; DemoSkill.hi')
   assert result.result == '"hi from demo skill"', "skill lib dirs are on the kernel load path"
 
+  # The shipped edit skill: Edit.run edits the file AND emits the diff
+  # display over display_data, captured by the manager onto result.diffs
+  # (prime-agent's KernelDiffDisplay side channel, kernel/index.ts:1096-1108).
+  FileUtils.cp(File.expand_path("../work/.brute/skills/edit/lib/edit.rb", __dir__), skill_lib)
+  edit_target = File.join(work, "edit-target.txt")
+  File.write(edit_target, "alpha\nbeta\ngamma\n")
+  result = provisioner.execute(<<~RUBY)
+    require "edit"
+    Edit.run(path: #{edit_target.inspect}, old_str: "beta", new_str: "BETA")
+  RUBY
+  assert result.status == "ok", "Edit.run executes in the kernel"
+  assert result.result.include?("Edited #{edit_target}"), "Edit.run returns the confirmation (got #{result.result})"
+  assert File.read(edit_target).include?("BETA"), "the file was actually edited"
+  diff = result.diffs.find { |d| d["path"] == edit_target }
+  assert diff, "the diff display was captured onto the cell result"
+  assert diff["old_str"] == "beta" && diff["new_str"] == "BETA", "the diff payload carries old/new strings"
+  assert diff["start_line"] == 2, "the diff payload carries the 1-based start line"
+
   result = provisioner.execute("harness.overview")
   assert result.result.include?("integration_lesson"), "harness.overview sees the kernel-written entry"
 
@@ -148,6 +169,56 @@ Dir.mktmpdir do |work|
   request = JSON.parse(File.read(request_path))
   assert request["instructions"] == "distill the demo lesson", "refine.run wrote the request file"
   assert request["global"] == false, "request defaults to local scope"
+
+  # Stage 7 (kernel side): the `compact` proxy rides request/status files in
+  # the local harness dir.
+  result = provisioner.execute('compact.run("keep the migration checklist")')
+  assert result.result.include?('"scheduled" => true'), "compact.run schedules (got #{result.result})"
+  compact_request = JSON.parse(File.read(File.join(local_dir, "compact_request.json")))
+  assert compact_request["instructions"] == "keep the migration checklist", "compact.run wrote the request file"
+  result = provisioner.execute("compact.status")
+  assert result.result.include?('"scheduled" => true'), "compact.status sees the pending request"
+  result = provisioner.execute("begin; compact.run(42); rescue TypeError => e; e.class.name; end")
+  assert result.result.include?("TypeError"), "compact.run validates instructions"
+
+  # Stage 8 (kernel side): the rlm_heartbeat proxy writes the shared job
+  # store directly from the kernel.
+  result = provisioner.execute(<<~RUBY)
+    hb = rlm_heartbeat.create("check the test run", interval: "5m", label: "tests")
+    rlm_heartbeat.update(hb["id"], status: "pause")
+    [rlm_heartbeat.list.length, rlm_heartbeat.list(include_inactive: true).length]
+  RUBY
+  assert result.result.include?("0") && result.result.include?("1"),
+         "rlm_heartbeat create/update/list works from the kernel (got #{result.result})"
+  cron_state = JSON.parse(File.read(File.join(local_dir, "scheduled-jobs.json")))
+  heartbeat_job = cron_state["jobs"].find { |j| j["source"] == "rlm_heartbeat" }
+  assert heartbeat_job, "the kernel-created heartbeat landed in the job store"
+  assert heartbeat_job["status"] == "paused", "the pause update landed"
+  assert heartbeat_job["schedule"]["interval_seconds"] == 300, "the 5m interval parsed"
+  assert heartbeat_job["label"] == "tests", "the label landed"
+
+  # Stage 6 (kernel side): Edit.run serializes same-file mutations across
+  # threads (the port of prime-agent's withFileMutationQueue).
+  queue_target = File.join(work, "queue-target.txt")
+  File.write(queue_target, "0")
+  result = provisioner.execute(<<~RUBY)
+    threads = 8.times.map do |i|
+      Thread.new do
+        5.times do
+          Edit::MutationQueue.serialize(#{queue_target.inspect}) do
+            current = File.read(#{queue_target.inspect}).to_i
+            sleep 0.001 # force a scheduling point mid read-modify-write
+            File.write(#{queue_target.inspect}, (current + 1).to_s)
+          end
+        end
+      end
+    end
+    threads.each(&:join)
+    File.read(#{queue_target.inspect})
+  RUBY
+  assert result.result.include?('"40"'), "same-file mutations serialize (got #{result.result})"
+  result = provisioner.execute("Edit::MutationQueue.size")
+  assert result.result.include?("0"), "mutation queue self-cleans (got #{result.result})"
 
   # ------------------------------------------------------------------
   # Stage 5: KernelAgents — a real brute agent pipeline in the kernel,
@@ -190,6 +261,126 @@ Dir.mktmpdir do |work|
 end
 
 puts "\nstage 1 + 3 + 5 integration: all assertions passed"
+
+# ---------------------------------------------------------------------------
+# Stage 7: compaction — a kernel `compact.run` request is drained at the turn
+# boundary through a full agent run (scripted model, real kernel).
+# ---------------------------------------------------------------------------
+
+Dir.mktmpdir do |work|
+  local_dir = File.join(work, ".brute", "harness")
+  FileUtils.mkdir_p(local_dir)
+  request_path = File.join(local_dir, "compact_request.json")
+  status_path = File.join(local_dir, "compact_status.json")
+  File.write(request_path, JSON.generate("instructions" => "keep the failing tests"))
+
+  summary_prompts = []
+  compact_llm = lambda do |system:, user:, max_tokens:|
+    summary_prompts << user
+    "stage-7 summary"
+  end
+
+  provisioner = PrimeAgent::KernelProvisioner.new(
+    cwd: work,
+    bootstrap: PrimeAgent::KernelRuntime.bootstrap_code(
+      harness_store_path: File.expand_path("../lib/prime_agent/harness_store.rb", __dir__),
+      local_dir: local_dir,
+      global_dir: File.join(work, "global-harness"),
+      request_path: File.join(local_dir, "refine_request.json"),
+      skill_lib_glob: nil,
+    ),
+  )
+
+  scripted_model = lambda do |env|
+    if env[:messages].none? { |m| m.role == :tool }
+      env[:messages] << Brute::Message.new(role: :assistant, content: "", tool_calls: [
+        { id: "c1", name: "iruby", arguments: { "code" => "'#{"x" * 2000}'" } },
+      ])
+    else
+      env[:messages] << Brute::Message.new(role: :assistant, content: "done")
+    end
+    env
+  end
+
+  agent = Brute.agent
+    .use(PrimeAgent::Middleware::KernelLifecycle, provisioner: provisioner)
+    .use(Brute::Middleware::Loop::ToolResult)
+    .use(Brute::Middleware::MaxIterations)
+    .use(PrimeAgent::Middleware::Compaction,
+         llm: compact_llm,
+         context_window: nil, # threshold disabled — only the request fires
+         keep_recent_tokens: 10,
+         reserve_tokens: 50,
+         request_path: request_path,
+         status_path: status_path)
+    .use(Brute::Middleware::ToolPipeline, tools: [PrimeAgent::IrubyTool.new(provisioner: provisioner)])
+    .run(scripted_model)
+
+  env = agent.start("long task")
+
+  assert !File.exist?(request_path), "the compact request was drained"
+  summary = env[:messages].find { |m| m.content.to_s.include?("compacted into the following summary") }
+  assert summary, "the compaction summary message was injected"
+  assert summary.role == :user, "the summary is a user message"
+  assert summary.content.include?("stage-7 summary"), "the scripted summary landed"
+  assert summary.content.include?("**Turn Context (split turn):**"), "mid-turn cut produced a turn-prefix summary"
+  assert env[:messages].none? { |m| m.content.to_s.include?("x" * 100) }, "the summarized region is gone"
+  assert env[:messages].last.content == "done", "the final answer survives compaction"
+  status = JSON.parse(File.read(status_path))
+  assert status["scheduled"] == false, "compact.status shows the drained request"
+  assert status["percent"].nil?, "percent is null right after a compaction"
+end
+
+puts "\nstage 7 integration (compaction): all assertions passed"
+
+# ---------------------------------------------------------------------------
+# Stage 8: scheduled prompts — a due job claimed from the store is delivered
+# as a fresh agent run (scripted model, real kernel per run).
+# ---------------------------------------------------------------------------
+
+Dir.mktmpdir do |work|
+  local_dir = File.join(work, ".brute", "harness")
+  store = PrimeAgent::CronStore.new(File.join(local_dir, "scheduled-jobs.json"))
+  store.create(prompt: "the scheduled prompt", schedule_text: "in 30m", now: Time.utc(2020, 1, 1))
+  store.create_heartbeat(instruction: "check the deployment", now: Time.utc(2020, 1, 1))
+
+  tasks = []
+  build_agent = lambda do
+    provisioner = PrimeAgent::KernelProvisioner.new(
+      cwd: work,
+      bootstrap: PrimeAgent::KernelRuntime.bootstrap_code(
+        harness_store_path: File.expand_path("../lib/prime_agent/harness_store.rb", __dir__),
+        local_dir: local_dir,
+        global_dir: File.join(work, "global-harness"),
+        request_path: File.join(local_dir, "refine_request.json"),
+        skill_lib_glob: nil,
+      ),
+    )
+    scripted_model = lambda do |env|
+      tasks << env[:messages].reverse.find { |m| m.role == :user }&.content
+      env[:messages] << Brute::Message.new(role: :assistant, content: "scheduled answer")
+      env
+    end
+    Brute.agent
+      .use(PrimeAgent::Middleware::KernelLifecycle, provisioner: provisioner)
+      .use(Brute::Middleware::Loop::ToolResult)
+      .use(Brute::Middleware::MaxIterations)
+      .use(Brute::Middleware::ToolPipeline, tools: [PrimeAgent::IrubyTool.new(provisioner: provisioner)])
+      .run(scripted_model)
+  end
+
+  PrimeAgent::ScheduleDriver.new(store: store, agent_factory: build_agent).run(nil)
+
+  assert tasks.include?("the scheduled prompt"), "the due cron job ran as an agent task"
+  assert tasks.include?("check the deployment"), "the due heartbeat ran as an agent task"
+  cron_job = store.jobs.find { |j| j.prompt == "the scheduled prompt" }
+  assert cron_job.run_count == 1 && cron_job.status == "completed", "the one-shot completed"
+  heartbeat = store.jobs.find { |j| j.source == "heartbeat" }
+  assert heartbeat.run_count == 1 && heartbeat.status == "active", "the heartbeat stays active for the next tick"
+  assert heartbeat.next_run_at, "the heartbeat's next tick was advanced at claim time"
+end
+
+puts "\nstage 8 integration (scheduled prompts + heartbeats): all assertions passed"
 
 # ---------------------------------------------------------------------------
 # Stages 2-4: a full agent run — scripted model (no network), real kernel,

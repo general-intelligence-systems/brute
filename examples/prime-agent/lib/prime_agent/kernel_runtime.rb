@@ -13,14 +13,19 @@ module PrimeAgent
   #   get_harness_state  — the local store (`global_: true` for the global one)
   #   refine.run(...)    — schedule a /refine pass; runs when the turn ends
   #   refine.status      — pending request info
+  #   compact.run(...)   — schedule compaction; runs when the turn ends
+  #   compact.status     — context usage {tokens, context_window, percent, scheduled}
+  #   rlm_heartbeat.*    — agent-owned recurring instructions (cron_store.rb)
   #
   # prime-agent's kernel talks to its host over a comm bridge on the Jupyter
   # control channel; iruby's dispatch loop is single-threaded and has no
-  # control channel, so the bridge here is a FILE: `refine.run` atomically
-  # writes `<local harness dir>/refine_request.json`, which the host's
-  # AutoRefine middleware drains at the next turn boundary. Harness CRUD
-  # needs no bridge at all — both sides read/write harness_state.json
-  # directly with mtime re-sync (exactly like prime-agent's Python store).
+  # control channel, so the bridge here is a FILE pair per service:
+  # `refine.run` atomically writes `<local harness dir>/refine_request.json`
+  # (drained by AutoRefine at the next turn boundary) and `compact.run`
+  # writes compact_request.json (drained by the Compaction middleware, which
+  # publishes compact_status.json back). Harness CRUD needs no bridge at all
+  # — both sides read/write harness_state.json directly with mtime re-sync
+  # (exactly like prime-agent's Python store).
   #
   # Pure stdlib — this file and harness_store.rb must stay loadable without
   # brute or any gem.
@@ -51,15 +56,156 @@ module PrimeAgent
       end
     end
 
+    # `compact` in the kernel namespace — the port of prime-agent's bundled
+    # `compact` skill (packages/coding-agent/skills/compact): context
+    # compaction control from the kernel. Upstream calls the host over a comm
+    # bridge (compact.run / compact.status); here the bridge is a FILE pair
+    # in the local harness dir: `compact.run` atomically writes
+    # compact_request.json, which the host's Compaction middleware drains at
+    # the next turn boundary (never mid-cell), and `compact.status` reads
+    # compact_status.json, which the middleware publishes every iteration.
+    class CompactProxy
+      def initialize(request_path:, status_path:)
+        @request_path = request_path
+        @status_path = status_path
+      end
+
+      # Schedule compaction. Returns {"scheduled" => true}; upstream can
+      # answer {"scheduled": false, "reason": ...} synchronously from its
+      # host bridge — the file bridge can't, so a nothing-to-compact drain
+      # no-ops and is observable via #status instead.
+      def run(instructions = nil)
+        unless instructions.nil? || instructions.is_a?(String)
+          raise TypeError, "instructions must be a String or nil, got #{instructions.class}"
+        end
+
+        request = {
+          "instructions" => instructions,
+          "requested_at" => Time.now.utc.iso8601,
+        }
+        FileUtils.mkdir_p(File.dirname(@request_path))
+        tmp = "#{@request_path}.#{Process.pid}.tmp"
+        File.write(tmp, "#{JSON.pretty_generate(request)}\n")
+        File.rename(tmp, @request_path)
+        { "scheduled" => true }
+      end
+
+      # Current context usage: {"tokens", "context_window", "percent",
+      # "scheduled"}. percent is nil right after a compaction until the next
+      # model response (published that way by the middleware).
+      def status
+        base =
+          if File.exist?(@status_path)
+            begin
+              JSON.parse(File.read(@status_path))
+            rescue JSON::ParserError
+              {}
+            end
+          else
+            {}
+          end
+        {
+          "tokens" => base["tokens"],
+          "context_window" => base["context_window"],
+          "percent" => base["percent"],
+          "scheduled" => File.exist?(@request_path) || base["scheduled"] == true,
+        }
+      end
+    end
+
+    # `rlm_heartbeat` in the kernel namespace — the port of prime-agent's
+    # bundled `rlm-heartbeat` skill: agent-owned recurring instructions.
+    # Upstream routes these through the host bridge; here the job store is
+    # just a JSON file with atomic writes + flock (cron_store.rb), so the
+    # proxy writes it DIRECTLY — the dual-writer pattern harness_state.json
+    # already uses. The ScheduleDriver claims due jobs between runs.
+    class RlmHeartbeatProxy
+      def initialize(store_path:)
+        @store_path = store_path
+      end
+
+      def list(include_inactive: false)
+        unless include_inactive == true || include_inactive == false
+          raise TypeError, "include_inactive must be true or false"
+        end
+
+        store.list_rlm_heartbeats(include_inactive: include_inactive).map { |job| serialize(job) }
+      end
+
+      def create(instruction, interval: nil, label: nil, delivery_mode: nil)
+        raise TypeError, "instruction must be a String, got #{instruction.class}" unless instruction.is_a?(String)
+        validate_optional_string("interval", interval)
+        validate_optional_string("label", label)
+        validate_optional_string("delivery_mode", delivery_mode)
+
+        serialize(store.create_rlm_heartbeat(
+          instruction: instruction, interval: interval, label: label, delivery_mode: delivery_mode,
+        ))
+      end
+
+      def update(id, instruction: nil, interval: nil, label: nil, status: nil, delivery_mode: nil)
+        raise TypeError, "id must be a String, got #{id.class}" unless id.is_a?(String)
+        validate_optional_string("instruction", instruction)
+        validate_optional_string("interval", interval)
+        validate_optional_string("label", label)
+        validate_optional_string("status", status)
+        validate_optional_string("delivery_mode", delivery_mode)
+
+        serialize(store.update_rlm_heartbeat(
+          id, instruction: instruction, interval: interval, label: label,
+          status: status, delivery_mode: delivery_mode,
+        ))
+      end
+
+      def delete(id)
+        raise TypeError, "id must be a String, got #{id.class}" unless id.is_a?(String)
+
+        { "deleted" => true, "heartbeat" => serialize(store.delete_rlm_heartbeat(id)) }
+      end
+
+      private
+
+      def store
+        @store ||= PrimeAgent::CronStore.new(@store_path)
+      end
+
+      def validate_optional_string(name, value)
+        return if value.nil? || value.is_a?(String)
+
+        raise TypeError, "#{name} must be a String or nil, got #{value.class}"
+      end
+
+      # The kernel-facing shape (upstream's rlmHeartbeatHostResponse,
+      # agent-session.ts): snake_case, instruction/schedule text.
+      def serialize(job)
+        {
+          "id" => job.id,
+          "status" => job.status,
+          "label" => job.label,
+          "delivery_mode" => job.delivery_mode,
+          "instruction" => job.prompt,
+          "schedule" => job.schedule["expression"],
+          "created_at" => job.created_at,
+          "updated_at" => job.updated_at,
+          "next_run_at" => job.next_run_at,
+          "last_run_at" => job.last_run_at,
+          "last_error" => job.last_error,
+          "run_count" => job.run_count,
+        }
+      end
+    end
+
     # The bootstrap cell executed right after the kernel boots. Paths are
     # interpolated as Ruby literals via #inspect.
     def self.bootstrap_code(harness_store_path:, local_dir:, global_dir:, request_path:, skill_lib_glob: nil,
                             kernel_agents_path: File.expand_path("kernel_agents.rb", __dir__),
+                            cron_store_path: File.expand_path("cron_store.rb", __dir__),
                             bundle_gemfile: File.expand_path("../../Gemfile", __dir__))
       <<~RUBY
         load #{File.expand_path(harness_store_path).inspect}
         load #{File.expand_path(__FILE__).inspect}
         load #{File.expand_path(kernel_agents_path).inspect}
+        load #{File.expand_path(cron_store_path).inspect}
         PrimeAgent::KernelRuntime.install!(
           harness_store_path: #{File.expand_path(harness_store_path).inspect},
           local_dir: #{local_dir.inspect},
@@ -67,6 +213,7 @@ module PrimeAgent
           request_path: #{request_path.inspect},
           skill_lib_glob: #{skill_lib_glob.inspect},
           kernel_agents_path: #{File.expand_path(kernel_agents_path).inspect},
+          cron_store_path: #{File.expand_path(cron_store_path).inspect},
           bundle_gemfile: #{bundle_gemfile.inspect}
         )
         "prime-agent kernel runtime ready"
@@ -74,14 +221,20 @@ module PrimeAgent
     end
 
     def self.install!(local_dir:, global_dir:, request_path:, harness_store_path:, skill_lib_glob: nil,
-                      kernel_agents_path: nil, bundle_gemfile: nil)
+                      kernel_agents_path: nil, cron_store_path: nil, bundle_gemfile: nil)
       load harness_store_path unless defined?(PrimeAgent::HarnessStore)
+      load cron_store_path if cron_store_path && !defined?(PrimeAgent::CronStore)
 
       harness = PrimeAgent::Harness.new(
         local_store: PrimeAgent::HarnessStore.new(local_dir, scope: "local"),
         global_store: PrimeAgent::HarnessStore.new(global_dir, scope: "global"),
       )
       refine = RefineProxy.new(request_path: request_path)
+      compact = CompactProxy.new(
+        request_path: File.join(local_dir, "compact_request.json"),
+        status_path: File.join(local_dir, "compact_status.json"),
+      )
+      rlm_heartbeat = RlmHeartbeatProxy.new(store_path: File.join(local_dir, "scheduled-jobs.json"))
 
       Array(skill_lib_glob).compact.each do |glob|
         Dir.glob(glob).each { |dir| $LOAD_PATH.unshift(dir) unless $LOAD_PATH.include?(dir) }
@@ -96,6 +249,8 @@ module PrimeAgent
       runtime = Module.new do
         define_method(:harness) { harness }
         define_method(:refine) { refine }
+        define_method(:compact) { compact }
+        define_method(:rlm_heartbeat) { rlm_heartbeat }
         define_method(:get_harness_state) { |global_: false| harness.get_harness_state(global_: global_) }
       end
       Object.include(runtime)
@@ -124,6 +279,50 @@ describe "prime_agent/kernel_runtime" do
       request["global"].should == false
       request["rollback_id"].should.be.nil
       request["requested_at"].should.not.be.nil
+    end
+  end
+
+  it "CompactProxy#run writes the request file; #status reads the published status" do
+    Dir.mktmpdir do |dir|
+      request_path = File.join(dir, "compact_request.json")
+      status_path = File.join(dir, "compact_status.json")
+      proxy = PrimeAgent::KernelRuntime::CompactProxy.new(request_path: request_path, status_path: status_path)
+
+      proxy.status.should == { "tokens" => nil, "context_window" => nil, "percent" => nil, "scheduled" => false }
+      proxy.run("keep the failing tests").should == { "scheduled" => true }
+      proxy.status["scheduled"].should.be.true
+      JSON.parse(File.read(request_path))["instructions"].should == "keep the failing tests"
+
+      File.write(status_path, JSON.generate("tokens" => 100, "context_window" => 1000,
+                                            "percent" => 10.0, "scheduled" => false))
+      proxy.status["percent"].should == 10.0
+      proxy.status["scheduled"].should.be.true # the pending request wins
+
+      lambda { proxy.run(123) }.should.raise(TypeError)
+    end
+  end
+
+  it "RlmHeartbeatProxy does CRUD against the store file in the kernel-facing shape" do
+    Dir.mktmpdir do |dir|
+      proxy = PrimeAgent::KernelRuntime::RlmHeartbeatProxy.new(
+        store_path: File.join(dir, "scheduled-jobs.json"),
+      )
+      created = proxy.create("check the test run", interval: "5m", label: "tests")
+      created["status"].should == "active"
+      created["instruction"].should == "check the test run"
+      created["schedule"].should == "5m" # expressions are stored verbatim
+      created["delivery_mode"].should == "steer"
+      created["run_count"].should == 0
+
+      proxy.list.map { |h| h["label"] }.should == ["tests"]
+      proxy.update(created["id"], status: "pause")["status"].should == "paused"
+      proxy.list.should == []
+      proxy.list(include_inactive: true).length.should == 1
+      proxy.delete(created["id"])["deleted"].should.be.true
+      proxy.list(include_inactive: true).should == []
+
+      lambda { proxy.create(42) }.should.raise(TypeError)
+      lambda { proxy.update(created["id"], status: "explode") }.should.raise(ArgumentError)
     end
   end
 

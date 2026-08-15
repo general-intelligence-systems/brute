@@ -1,0 +1,32 @@
+<%= agents %>
+<% if soul -%>
+
+<%= soul %>
+<% end -%>
+<% if user %>
+
+<%= user %>
+<% end -%>
+<% if memory -%>
+
+<%= memory %>
+<% end -%>
+<% if summary -%>
+
+# Summary of earlier turns
+
+<%= summary %>
+<% end -%>
+<% if environment -%>
+
+<%= environment %>
+<% end -%>
+<% if skills -%>
+
+<%= skills %>
+<% end -%>
+
+# Workspace rules
+- Your workspace is <%= workspace %> — keep all file work inside it (restrict_to_workspace).
+- Record durable facts about the user in memory/MEMORY.md using the write/patch tools.
+- HEARTBEAT.md lists your periodic tasks, run by an external scheduler.
