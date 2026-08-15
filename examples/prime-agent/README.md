@@ -67,7 +67,18 @@ middleware:
   `compact` proxy rides a request/status file pair under the local harness
   dir, drained at the turn boundary (`compact.status` reads the published
   usage). 
-- **stages 8+ — scaffolded**: the remaining middleware from **FEATURES.md**
+- **stage 8 — scheduled prompts + heartbeats** (wired):
+  `lib/prime_agent/cron_store.rb` ports the job store (atomic writes +
+  flock, claim-ledger with missed-tick coalescing and crash recovery,
+  `in`/`every`/`at`/cron schedules). There is no resident session to steer
+  into, so `lib/prime_agent/schedule_driver.rb` delivers a due job as a
+  **fresh agent run** whose task is the job's prompt — one-shot mode drains
+  what's due after the initial task (this is what the systemd timer
+  activates), `BRUTE_FOLLOW=1` keeps looping while future ticks exist. The
+  kernel's preloaded `rlm_heartbeat` proxy (create/list/update/delete)
+  writes the same store directly; the user heartbeat is a per-store
+  singleton seeded from `BRUTE_HEARTBEAT`.
+- **stages 9+ — scaffolded**: the remaining middleware from **FEATURES.md**
   are pass-through no-ops wired in `main.rb` in their intended fill-in
   order; the remaining kernel skills are no-op stubs under
   `work/.brute/skills/`. Fill in per FEATURES.md §5.
@@ -77,7 +88,10 @@ turn interval, default 25), `BRUTE_REFINE_FINAL=0` (skip the exit distill),
 `BRUTE_GLOBAL_HARNESS_DIR` (global store location, default
 `~/.brute/harness`), `BRUTE_KERNEL_AGENT_MAX_DEPTH` (recursion cap,
 default 2), `BRUTE_CONTEXT_WINDOW` (model context size in tokens; enables
-threshold compaction — overflow and `compact.run` work regardless).
+threshold compaction — overflow and `compact.run` work regardless),
+`BRUTE_HEARTBEAT` + `BRUTE_HEARTBEAT_EVERY` (the user heartbeat instruction
+and its interval, default `every 5m`), `BRUTE_FOLLOW=1` (keep running due
+scheduled jobs after the initial task instead of exiting).
 
 Everything not yet wired is catalogued in **FEATURES.md** — the complete list
 of tools (the kernel API + the 13 bundled skills) and middleware (compaction,
