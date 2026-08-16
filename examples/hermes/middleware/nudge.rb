@@ -136,7 +136,7 @@ module Hermes
 
       def tool_names_used(env)
         Array(env[:events])
-          .select { |e| e[:type] == :tool_result }
+          .select { |e| e.is_a?(Hash) && e[:type] == :tool_result }
           .map { |e| e.dig(:data, :name).to_s }
       end
     end

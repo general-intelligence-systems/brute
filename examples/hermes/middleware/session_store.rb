@@ -82,7 +82,8 @@ module Hermes
       end
 
       def flush(env, store)
-        fresh = env[:messages].reject { |m| @persisted.include?(m.object_id) }
+        ephemeral = Array(env[:ephemeral_messages])
+        fresh = env[:messages].reject { |m| @persisted.include?(m.object_id) || ephemeral.include?(m.object_id) }
         return if fresh.empty?
 
         store.append_messages_batch(

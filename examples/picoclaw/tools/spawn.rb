@@ -2,13 +2,9 @@
 
 require "json"
 
-# spawn — picoclaw `pkg/tools/spawn.go`.
-# Gate: tools.spawn.enabled AND tools.subagent.enabled (both default true).
-# Async: immediate ack, the subagent runs as a critical subturn (survives the
-# parent turn) and its result is delivered back into the parent. agent_id
-# checked against the per-agent subagent allowlist. Backed by the subturns
-# middleware (depth <= 3, concurrency <= 5, 5-min timeout).
-# Scaffold: no-op handler, returns a JSON error string.
+# spawn — picoclaw `pkg/tools/spawn.go`. Async: acks immediately and the child
+# runs on a thread as a critical subturn; results are injected back into the
+# parent by Subturns::Drain / the end-of-turn join.
 class Spawn < Brute::Tool
   description "Spawn a subagent to handle a task in the background. Use this for complex or " \
               "time-consuming tasks that can run independently. The subagent will complete the " \
@@ -23,9 +19,25 @@ class Spawn < Brute::Tool
     "required" => ["task"],
   })
 
+  def initialize(registry:)
+    @registry = registry
+  end
+
   def name = "spawn"
 
-  def execute(**_args)
-    JSON.dump("error" => "not implemented", "tool" => "spawn")
+  def execute(task: nil, label: nil, **_args)
+    return "task is required" unless task.is_a?(String) && !task.empty?
+
+    return "concurrency limit reached (could not acquire a subagent slot in 30s)" unless @registry.acquire
+
+    record = @registry.register(Subturns::Registry::Task.new(id: @registry.next_id, label: label,
+                                                             task: task, status: "running",
+                                                             started_at: Time.now, reported: false))
+    record.thread = Thread.new { Subturns.run_child(@registry, record) }
+
+    label.to_s.empty? ? "Spawned subagent for task: #{task}" : "Spawned subagent '#{label}' for task: #{task}"
+  rescue StandardError => e
+    warn("spawn crashed: #{e.class}: #{e.message}")
+    e.message
   end
 end

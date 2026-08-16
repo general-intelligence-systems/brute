@@ -43,6 +43,9 @@ require_relative "skill_store"
 require_relative "write_approval"
 require_relative "review"
 require_relative "compactor"
+require_relative "cron"
+require_relative "cron_store"
+require_relative "heartbeat"
 
 Dir[File.join(__dir__, "tools", "*.rb")].sort.each { |f| require f }
 
@@ -70,10 +73,11 @@ tool_pipeline = Brute::Turn::Pipeline.new do
 end
 
 # The terminal LLM call. env[:tool_free] (set by IterationBudget's grace call)
-# drops tool advertising for that pass.
+# drops tool advertising; env[:model] lets ErrorRecovery switch models.
 terminal = lambda do |env|
   options = env[:tool_free] ? {} : { tools: advertised }
-  options[:model] = ENV["HERMES_MODEL"] if ENV["HERMES_MODEL"]
+  model = env[:model] || ENV["HERMES_MODEL"]
+  options[:model] = model if model
   Brute::Middleware::OpenRouter::Completion.new({}, **options).call(env)
 end
 
@@ -135,13 +139,87 @@ agent = Brute.agent
   .use(Hermes::Middleware::IterationBudget, max_iterations: 90)
   .use(Hermes::Middleware::Compaction, compactor: compactor)
   .use(Hermes::Middleware::ToolPipeline, tools: tools, pipeline: tool_pipeline)
-  .use(Hermes::Middleware::ErrorRecovery)
+  .use(Hermes::Middleware::ErrorRecovery, compactor: compactor, fallback_model: ENV["HERMES_FALLBACK_MODEL"])
   .use(Hermes::Middleware::TokenUsage)
   .use(Hermes::Middleware::UsageAudit)
   .run(terminal)
 
+# The cron job runner: a mini Brute.agent per job with the cron policy
+# (no memory/clarify/cronjob/todo), the inactivity watchdog, and delivery.
+cron_runner = lambda do |job|
+  output = +""
+  if job["script"] && !job["script"].empty?
+    out = Dir.chdir(job["workdir"] || Dir.pwd) { `#{job["script"]}` rescue "script failed: #{$!}" }
+    output << out
+    unless job["no_agent"]
+      output = ""
+    else
+      Hermes::CronStore.new(File.join(Dir.pwd, "cron")).write_output(job_id: job["id"], content: out)
+      return { ok: true, output: out }
+    end
+  end
+
+  upstream = Array(job["context_from"]).filter_map do |parent_id|
+    Hermes::CronStore.new(File.join(Dir.pwd, "cron")).last_output(parent_id)&.then { |o| "[Upstream job output]\n#{o[0, 8_000]}" }
+  end
+
+  prompt = +""
+  prompt << "[Cron job '#{job['name']}' running unattended. Your reply is delivered when the job fires. If there is nothing worth reporting, reply exactly [SILENT].]\n\n"
+  prompt << output << "\n" unless output.empty?
+  prompt << upstream.join("\n\n") << "\n\n" unless upstream.empty?
+  prompt << job["prompt"].to_s
+
+  denied = %w[clarify memory cronjob todo]
+  job_tools = tools.reject { |t| denied.include?(t.name) }
+  job_advertised = Brute.tools(job_tools).values.map { |a| { type: "function", function: a.to_h } }
+  job_options = { tools: job_advertised }
+  job_options[:model] = ENV["HERMES_MODEL"] if ENV["HERMES_MODEL"]
+
+  job_env = nil
+  Hermes::Cron.with_watchdog(events: (events = [])) do
+    job_env = Brute.agent
+      .use(Brute::Middleware::Loop::ToolResult)
+      .use(Hermes::Middleware::IterationBudget, max_iterations: 90)
+      .use(Hermes::Middleware::ToolPipeline, tools: job_tools, pipeline: tool_pipeline)
+      .use(Hermes::Middleware::ErrorRecovery, compactor: compactor, fallback_model: ENV["HERMES_FALLBACK_MODEL"])
+      .use(Hermes::Middleware::TokenUsage)
+      .run(terminal)
+      .start(prompt)
+  end
+
+  reply = job_env[:messages].select { |m| m.role == :assistant }.last&.content.to_s
+  return { ok: true } if reply.strip.match?(/\A\[?SILENT\]?/i) # [SILENT] suppresses delivery
+
+  store = Hermes::CronStore.new(File.join(Dir.pwd, "cron"))
+  path = store.write_output(job_id: job["id"], content: reply)
+  puts "Cronjob Response: #{job['name']}\n(job_id: #{job['id']})\n-------------\n\n#{reply}\n\nTo stop or manage this job, send me a new message (e.g. \"stop reminder #{job['name']}\")."
+  { ok: true, output_path: path, output: reply }
+rescue StandardError => e
+  { ok: false, error: "#{e.class}: #{e.message}" }
+end
+
+def reply(env)
+  env[:messages].select { |m| m.role == :assistant && !m.content.to_s.strip.empty? }.last&.content.to_s
+end
+
+if ARGV.empty?
+  # Bare invocation = the tick (systemd timer): estop → cron due jobs → heartbeat.
+  result = Hermes::Cron.tick(
+    store: Hermes::CronStore.new(File.join(Dir.pwd, "cron")),
+    run_job: cron_runner,
+  )
+  result["fired"]&.each { |f| warn "cron: fired #{f['name']} (#{f['status']})" }
+
+  if Hermes::Heartbeat.due?(dir: Dir.pwd)
+    heartbeat_env = agent.start(Hermes::Heartbeat.message(Hermes::Heartbeat.load(dir: Dir.pwd)))
+    Hermes::Heartbeat.fired!(dir: Dir.pwd)
+    puts reply(heartbeat_env)
+  end
+  exit 0
+end
+
 env = agent.start(ARGV.join(" "))
-puts env[:messages].select { |m| m.role == :assistant }.last&.content
+puts reply(env)
 
 # The learning loop: when a nudge fired this turn, the review runs right here —
 # a second Brute.agent after the first, with only the memory/skill tools and no

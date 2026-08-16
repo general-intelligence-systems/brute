@@ -1,19 +1,131 @@
 # frozen_string_literal: true
 
 require "json"
+require_relative "../cron_store"
+require_relative "../threat_patterns"
 
-# cronjob — hermes toolset: cronjob
-# Port of hermes-agent `tools/cronjob_tools.py:1654` (registry.register).
-# Scaffold: no-op handler, returns a JSON error string (hermes tool_error convention).
-# hermes check_fn: check_cronjob_requirements
 module HermesTools
+  # cronjob — manage scheduled jobs. Port of hermes-agent
+  # tools/cronjob_tools.py (create|list|update|pause|resume|remove|run).
+  #
+  # Guards (hermes invariants):
+  #   * model/provider/base_url are NOT tool args — per-job inference pins are
+  #     user-owned, so prompt injection can't redirect spend.
+  #   * create scans prompt+script for injection patterns (strict scope).
+  #   * jobs created from WITHIN a cron run default to disabled.
+  #   * context_from ids must exist.
+  # The store and a job runner are injected per turn by CronSchedule.
   class Cronjob < Brute::Tool
-    description "Manage scheduled cron jobs with a single compressed tool.\n\nUse action='create' to schedule a new job from a prompt or one or more skills.\nUse action='list' to inspect jobs.\nUse action='update', 'pause', 'resume', 'remove', or 'run' to manage an existing job.\n\naction='run' fires the job immediately in the BACKGROUND (like delegate_task): the call returns at once with a handle and the job's outcome re-enters the conversation as a new message when it finishes. Do not wait or poll after triggering a run — just continue. Optionally pass 'prompt' with action='run' to inject transient per-run context (appended to the job's stored prompt for that single fire only, never persisted).\n\nTo stop a job the user no longer wants: first action='list' to find the job_id, then action='remove' with that job_id. Never guess job IDs — always list first.\n\nJobs run in a fresh session with no current-chat context, so prompts must be self-contained.\nIf skills are provided on create, the future cron run loads those skills in order, then follows the prompt as the task instruction.\nOn update, passing skills=[] clears attached skills.\n\nNOTE: The agent's final response is auto-delivered to the target. Put the primary\nuser-facing content in the final response. Cron jobs run autonomously with no user\npresent — they cannot ask questions or request clarification.\n\nScheduling from cron-run sessions is disabled by default and enabled via cron.allow_agent_scheduling in config.yaml. When enabled, jobs created from a cron run are user-owned in the same flat job table as every other job, and their delivery resolves to the creating job's own persistent target — never to the ephemeral cron-run session. Prefer updating an existing job (list first, then update by job_id) over creating near-duplicates."
-    params({ "type" => "object", "properties" => { "action" => { "type" => "string", "description" => "One of: create, list, update, pause, resume, remove, run. When action=create, the 'schedule' and 'prompt' fields are REQUIRED." }, "job_id" => { "type" => "string", "description" => "Required for update/pause/resume/remove/run" }, "prompt" => { "type" => "string", "description" => "For create: the full self-contained prompt. If skills are also provided, this becomes the task instruction paired with those skills. For run: optional transient context appended to the stored prompt for that single fire only (never persisted)." }, "schedule" => { "type" => "string", "description" => "REQUIRED for action=create. For create/update: '30m', 'every 2h', '0 9 * * *', or ISO timestamp. Examples: '30m' (every 30 minutes), 'every 2h' (every 2 hours), '0 9 * * *' (daily at 9am), '2026-06-01T09:00:00' (one-shot). You MUST include this field when action=create." }, "name" => { "type" => "string", "description" => "Optional human-friendly name" }, "repeat" => { "type" => "integer", "description" => "Optional repeat count. Omit for defaults (once for one-shot, forever for recurring)." }, "deliver" => { "type" => "string", "description" => "Omit this parameter to auto-deliver back to the current chat and topic (recommended). Auto-detection preserves thread/topic context. Only set explicitly when the user asks to deliver somewhere OTHER than the current conversation. Values: 'origin' (same as omitting), 'local' (no delivery, save only), 'all' (fan out to every connected home channel), or platform:chat_id:thread_id for a specific destination. Combine with comma: 'origin,all' delivers to the origin plus every other connected channel. Examples: 'telegram:-1001234567890:17585', 'discord:#engineering', 'sms:+15551234567', 'all'. WARNING: 'platform:chat_id' without :thread_id loses topic targeting. 'all' resolves at fire time, so a job created before a channel was wired up will pick it up automatically once connected." }, "skills" => { "type" => "array", "items" => { "type" => "string" }, "description" => "Optional ordered list of skill names to load before executing the cron prompt. On update, pass an empty array to clear attached skills." }, "script" => { "type" => "string", "description" => "Optional path to a script that runs each tick. In the default mode its stdout is injected into the agent's prompt as context (data-collection / change-detection pattern). With no_agent=True, the script IS the job and its stdout is delivered verbatim (classic watchdog pattern). Relative paths resolve under {dynamic}/scripts/. ``.sh``/``.bash`` extensions run via bash, everything else via Python. On update, pass empty string to clear." }, "monitor_script" => { "type" => "string", "description" => "Optional monitor-mode source script (same rules as `script`: relative to {dynamic}/scripts/, .sh/.bash via bash, else Python). Each tick it runs FIRST and its output is hashed as exact bytes: UNCHANGED output suppresses the agent run entirely (no LLM, no delivery, recorded as a silent no_change tick); CHANGED output injects a MONITOR CHANGE DETECTED block (unified diff + new output) into the prompt before a normal agent run. The first tick always runs the agent (baseline). Scripts must emit STABLE output — no timestamps or random ordering — or every tick looks changed. Mutually exclusive with monitor_url; incompatible with no_agent=True. On update, pass empty string to clear." }, "monitor_url" => { "type" => "string", "description" => "Optional http(s) URL used as the monitor source instead of a script — fetched with a bounded GET (30s timeout, 256KB cap) each tick. Same hash-suppression semantics as monitor_script. Mutually exclusive with monitor_script. On update, pass empty string to clear." }, "no_agent" => { "type" => "boolean", "default" => false, "description" => "Default: False (LLM-driven job — the agent runs the prompt each tick). Set True to skip the LLM entirely: the scheduler just runs ``script`` on schedule and delivers its stdout verbatim. No tokens, no agent loop, no model override honoured. \n\nREQUIREMENTS when True: ``script`` MUST be set (``prompt`` and ``skills`` are ignored). \n\nDELIVERY SEMANTICS when True: (a) non-empty stdout is sent verbatim as the message; (b) EMPTY stdout means SILENT — nothing is sent to the user and they won't see anything happened, so design your script to stay quiet when there's nothing to report (the watchdog pattern); (c) non-zero exit / timeout sends an error alert so a broken watchdog can't fail silently. \n\nWHEN TO USE True: recurring script-only pings where the script itself produces the exact message text (memory/disk/GPU watchdogs, threshold alerts, heartbeats, CI notifications, API pollers with a fixed output shape). WHEN TO USE False (default): anything that needs reasoning — summarize a feed, draft a daily briefing, pick interesting items, rephrase data for a human, follow conditional logic based on content." }, "context_from" => { "type" => "array", "items" => { "type" => "string" }, "description" => "Optional job ID or list of job IDs whose most recent completed output is injected into the prompt as context before each run. Use this to chain cron jobs: job A collects data, job B processes it. Each entry must be a valid job ID (from cronjob action='list'). Note: injects the most recent completed output — does not wait for upstream jobs running in the same tick. On update, pass an empty array to clear." }, "enabled_toolsets" => { "type" => "array", "items" => { "type" => "string" }, "description" => "Optional list of toolset names to restrict the job's agent to (e.g. [\"web\", \"terminal\", \"file\", \"delegation\"]). When set, only tools from these toolsets are loaded, significantly reducing input token overhead. When omitted, all default tools are loaded. Infer from the job's prompt — e.g. use \"web\" if it calls web_search, \"terminal\" if it runs scripts, \"file\" if it reads files, \"delegation\" if it calls delegate_task. On update, pass an empty array to clear." }, "workdir" => { "type" => "string", "description" => "Optional absolute path to run the job from. When set, AGENTS.md / CLAUDE.md / .cursorrules from that directory are injected into the system prompt, and the terminal/file/code_exec tools use it as their working directory — useful for running a job inside a specific project repo. Must be an absolute path that exists. When unset (default), preserves the original behaviour: no project context files, tools use the scheduler's cwd. On update, pass an empty string to clear. Jobs with workdir run sequentially (not parallel) to keep per-job directories isolated." }, "attach_to_session" => { "type" => "boolean", "description" => "When True, this job becomes CONTINUABLE: the user can reply to its delivery and the agent has the brief in context instead of asking 'what is that?'. On thread-capable platforms (Telegram topics, Discord/Slack threads) a dedicated thread is opened for the job and its replies; on DM-only platforms (WhatsApp/Signal) the brief is mirrored into the origin DM session. Use this for conversational recurring jobs the user will reply to — daily briefings, reminders that kick off follow-up work. Leave unset for fire-and-forget alerts/watchdogs. Overrides the global cron.mirror_delivery config for this one job. Only the origin chat is touched (never fan-out targets); no effect when deliver='local'." } }, "required" => ["action"] })
+    description "Manage scheduled cron jobs: create, list, update, pause, resume, remove, run."
+    params({
+      "type" => "object",
+      "properties" => {
+        "action" => { "type" => "string", "enum" => %w[create list update pause resume remove run] },
+        "job_id" => { "type" => "string" },
+        "name" => { "type" => "string", "description" => "Human-readable job name (create)." },
+        "prompt" => { "type" => "string", "description" => "The instruction to run on schedule (create)." },
+        "schedule" => { "type" => "string", "description" => "'30m' | 'every 2h' | 'every monday 9am' | '0 9 * * *' | ISO timestamp." },
+        "skills" => { "type" => "array", "items" => { "type" => "string" }, "description" => "Skills to load for the job run." },
+        "script" => { "type" => "string", "description" => "Pre-run script path (stdout is injected into the prompt)." },
+        "no_agent" => { "type" => "boolean", "description" => "Script-only mode: stdout IS the job output.", "default" => false },
+        "context_from" => { "type" => "array", "items" => { "type" => "string" }, "description" => "Upstream job ids whose last output is injected." },
+        "workdir" => { "type" => "string", "description" => "Working directory for the run (absolute)." },
+        "deliver" => { "type" => "string", "description" => "Delivery target: local|origin|all|session (default local).", "default" => "local" },
+        "repeat" => { "type" => "integer", "description" => "Fire at most N times." },
+        "fields" => { "type" => "object", "description" => "For update: the fields to change (name, prompt, schedule, deliver, workdir, skills)." },
+      },
+      "required" => ["action"],
+    })
+
+    def initialize(store: nil, runner: nil, in_cron: false)
+      @store = store
+      @runner = runner
+      @in_cron = in_cron
+    end
+
     def name = "cronjob"
 
-    def execute(**_args)
-      JSON.dump("error" => "not implemented", "tool" => "cronjob")
+    def execute(action:, job_id: nil, name: nil, prompt: nil, schedule: nil, skills: nil,
+                script: nil, no_agent: false, context_from: nil, workdir: nil,
+                deliver: "local", repeat: nil, fields: nil, **_rest)
+      return err("Cron store unavailable.") unless @store
+
+      case action
+      when "create"   then create_job(name, prompt, schedule, skills, script, no_agent, context_from, workdir, deliver, repeat)
+      when "list"     then JSON.dump("success" => true, "jobs" => @store.all.map { |j| summarize(j) })
+      when "update"   then update_job(job_id, fields)
+      when "pause"    then simple_update(job_id) { @store.pause(job_id) }
+      when "resume"   then simple_update(job_id) { @store.resume(job_id) }
+      when "remove"   then simple_update(job_id) { @store.remove(job_id) }
+      when "run"      then run_job(job_id)
+      else err("unknown action '#{action}'. Use: create, list, update, pause, resume, remove, run")
+      end
+    rescue ArgumentError => e
+      err(e.message)
+    end
+
+    private
+
+    def create_job(name, prompt, schedule, skills, script, no_agent, context_from, workdir, deliver, repeat)
+      return err("name is required for create") if name.to_s.strip.empty?
+      return err("prompt is required for create") if prompt.to_s.strip.empty? && !no_agent
+      return err("schedule is required for create") if schedule.to_s.strip.empty?
+
+      scan = Hermes::ThreatPatterns.first_threat_message("#{prompt}\n#{script}", scope: "strict")
+      return err("Cron job refused: #{scan}") if scan
+
+      missing = Array(context_from).reject { |id| @store.find(id) }
+      return err("context_from job(s) not found: #{missing.join(', ')}") unless missing.empty?
+
+      job = @store.create(
+        name: name, prompt: prompt, schedule: schedule, skills: skills || [],
+        script: script, no_agent: no_agent, context_from: context_from || [],
+        workdir: workdir, deliver: deliver, repeat: repeat,
+        created_in_cron: @in_cron,
+      )
+      JSON.dump("success" => true, "job_id" => job["id"],
+                "enabled" => job["enabled"],
+                "note" => (job["enabled"] ? nil : "Job created DISABLED (created inside a cron run — enable with resume)."),
+                "next_run_at" => job["next_run_at"])
+    end
+
+    def update_job(job_id, fields)
+      return err("job_id is required") if job_id.to_s.empty?
+      return err("fields is required for update") unless fields.is_a?(Hash) && !fields.empty?
+
+      allowed = %w[name prompt schedule deliver workdir skills]
+      updates = fields.transform_keys(&:to_s).slice(*allowed)
+      updates["schedule"] = Hermes::CronStore.parse_schedule(updates["schedule"]) if updates["schedule"]
+      job = @store.update(job_id, **updates.transform_keys(&:to_sym))
+      return err("job '#{job_id}' not found") unless job
+
+      JSON.dump("success" => true, "job_id" => job_id, "next_run_at" => job["next_run_at"])
+    end
+
+    def simple_update(job_id)
+      return err("job_id is required") if job_id.to_s.empty?
+
+      result = yield
+      return err("job '#{job_id}' not found") unless result
+
+      JSON.dump("success" => true, "job_id" => job_id)
+    end
+
+    def run_job(job_id)
+      return err("job_id is required") if job_id.to_s.empty?
+      return err("job '#{job_id}' not found") unless @store.find(job_id)
+      return err("no runner configured (run is driver-side in this context)") unless @runner
+
+      result = @runner.call(@store.find(job_id))
+      JSON.dump("success" => true, "job_id" => job_id, "result" => result.to_s[0, 2_000])
+    end
+
+    def summarize(job)
+      job.slice("id", "name", "enabled", "state", "next_run_at", "last_run_at", "last_status", "deliver")
+    end
+
+    def err(message)
+      JSON.dump("success" => false, "error" => message)
     end
   end
 end

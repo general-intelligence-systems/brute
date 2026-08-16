@@ -123,8 +123,13 @@ class FallbackChain
     [until_ms - now_ms, 0].max
   end
 
+  # Success resets the cooldown counters — the RPM bucket is independent and survives.
   def mark_success(state, key)
-    state.delete(key)
+    e = entry(state, key)
+    e.delete("errors")
+    e.delete("billing_errors")
+    e.delete("cooldown_until")
+    e.delete("last_failure_at")
   end
 
   def mark_failure(state, key, reason)

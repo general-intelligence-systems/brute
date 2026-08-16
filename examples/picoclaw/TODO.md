@@ -21,15 +21,15 @@ no-op files wired into `main.rb`; tick a box when the body is filled in.
 
 ## Tools — P1: subagents (need the `subturns` middleware)
 
-- [ ] `spawn` — `spawn.go:20` — async subturn, critical (survives parent)
-- [ ] `subagent` — `subagent.go:347` — sync subturn
-- [ ] `spawn_status` — `spawn_status.go:19` — channel-scoped listing
+- [x] `spawn` — `spawn.go:20` — async subturn, critical (joined before turn end; results injected by Drain)
+- [x] `subagent` — `subagent.go:347` — sync subturn
+- [x] `spawn_status` — `spawn_status.go:19` — listing (channel-scoping N/A here)
 - [ ] `delegate` — `delegate.go:21` — only when ≥2 agents configured
 
 ## Tools — P1: skills registry
 
-- [ ] `find_skills` — `integration/skills_search.go:27` — clawhub+github registries, trigram cache
-- [ ] `install_skill` — `integration/skills_install.go:43` — into `<workspace>/skills/<slug>/`, moderation flags
+- [x] `find_skills` — `integration/skills_search.go:27` — clawhub+github registries, trigram cache
+- [x] `install_skill` — `integration/skills_install.go:43` — into `<workspace>/skills/<slug>/`, moderation flags
 
 ## Tools — P2: channel-dependent (skeleton now; no-op until a message bus exists)
 
@@ -69,19 +69,19 @@ no-op files wired into `main.rb`; tick a box when the body is filled in.
 
 ## Middleware — P1: per-tool-call policy (layer with WorkspaceGuard/SafetyGuard)
 
-- [ ] `tool_policy` — schema validation, per-agent tool allowlist (AGENT.md `tools:`), sensitive-data filter (min len 8), `ResponseHandled`, async results re-enter as system-channel turns, message-tool delivery dedup — `pipeline_execute.go:111-864`
-- [ ] `approval` — ApproveTool seam, fail-closed (hermes `write_approval.rb` precedent)
+- [x] `tool_policy` — tools/tool_policy.rb wrapper (brute's per-call seam): schema validation (validate.go), AGENT.md `tools:` allowlist at registration, sensitive-data scrub ([FILTERED], min len 8), approval seam — `pipeline_execute.go:111-864`
+- [x] `approval` — approve proc in the wrapper; `tools.require_approval` denies fail-closed + stages to `pending/approvals/` (no interactive surface)
 
 ## Middleware — P1: LLM-call policy
 
-- [ ] `fallback_chain` — ordered candidates, cooldowns (1m→5m→25m→1h; billing 5h→24h), RPM token buckets — `pkg/providers/fallback.go`, `cooldown.go`, `ratelimiter.go`
-- [ ] `model_router` — light/heavy rule classifier (threshold 0.35) — `pkg/routing/`
-- [ ] `media_store` + `media_resolver` — `media://` lifecycle, path tags, current-turn base64 inlining after the tool block — `pkg/media/store.go`, `agent_media.go:60-149`
+- [x] `fallback_chain` — ordered candidates, cooldowns (1m→5m→25m→1h; billing 5h→24h), RPM token buckets; state persisted to state/fallback_chain.json (one-shot process) — `pkg/providers/fallback.go`, `cooldown.go`, `ratelimiter.go`
+- [x] `model_router` — light/heavy rule classifier (threshold 0.35) → env[:metadata][:llm_model] — `pkg/routing/`
+- [x] `media_store` + `media_resolver` — `media://` lifecycle (refcounts, cleanup policies, TTL janitor), path tags; base64 inline blocked on brute transport (plain-string content) — `pkg/media/store.go`, `agent_media.go:60-149`
 
 ## Middleware — P2: advanced
 
-- [ ] `subturns` — depth 3 / concurrency 5 / 5-min timeout / token budget; pendingResults injection as `[SubTurn Result]` messages — `pkg/agent/subturn.go`
-- [ ] `hooks` — BeforeLLM/AfterLLM/BeforeTool/AfterTool/ApproveTool + observer; JSON-RPC process transport; no built-ins upstream — `pkg/agent/hooks.go`
+- [x] `subturns` — depth/concurrency/timeout guards; Drain injects results per-iteration; end-of-turn join (one-shot process can't orphan children; token budget N/A) — `pkg/agent/subturn.go`
+- [x] `hooks` — **brute `.on()` lifecycle hooks + `hooks.rb` HookManager**: 5 points (before/after_llm, before/after_tool, approve_tool) + observers; decision contract (continue/modify/respond/deny_tool/abort_turn/hard_abort); JSON-RPC stdio process hooks; fail-open interceptors / fail-closed approval; prompt-mutation revert — `pkg/agent/hooks.go`
 - [ ] `evolution_cold_path` — clustering + skill drafts (observe/draft/apply); `evolution_log` hot path already done — `pkg/evolution/runtime.go`
 - [ ] `runtime_events` — event bus + `agent.*` logging subscriber — `pkg/events/`
 - [ ] `turn_profile` — history/system_prompt/skills/tools gating per turn — `turn_profile_policy.go`

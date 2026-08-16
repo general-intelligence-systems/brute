@@ -24,9 +24,15 @@ complete port catalogue: `FEATURES.md`.
 | exec deny patterns | inside `exec` (full `defaultDenyPatterns` + `guardCommand` port: deny always wins, traversal/path-token checks) |
 | `web_search` (DuckDuckGo fallback) | `web_search` tool: full provider chain (sogou/duckduckgo default, brave/tavily/kagi/gemini/perplexity/searxng/glm/baidu by config), `count`/`range` filters, key rotation |
 | `web_fetch` | `web_fetch` tool: SSRF guard, ≤5 redirects, 10MB cap, plaintext/markdown extraction, Cloudflare-challenge retry |
+| model fallback chain + cooldowns + RPM | `FallbackChain` middleware (state/fallback_chain.json persistence; single candidate → plain call) |
+| light/heavy model routing | `ModelRouter` middleware (rule classifier, threshold 0.35, routing.light_model) |
+| media store (`media://` refs) | `Media` middleware (refcounted store, TTL janitor, path-tag resolver; base64 inline needs transport support) |
+| subagents (spawn/subagent/spawn_status) | `Subturns` middleware + the three tools (ephemeral child turns; no recursive spawning) |
+| tool arg validation + sensitive-data filter | `ToolPolicy` wrapper (validate.go port; `[FILTERED]` scrub; `tools.require_approval` staging) |
 | last-channel state (`state/state.json`) | `StateManager` middleware (cli/direct in this port) |
 | system prompt from workspace files | `Brute::PromptTemplate` + `prompt.erb`, re-read every turn (mtime hot-reload) |
-| channels, gateway, WebUI, MCP, subagents, model routing | not ported (interactive surface) |
+| hooks (BeforeLLM/AfterLLM/BeforeTool/AfterTool/ApproveTool, JSON-RPC process hooks) | brute `.on()` lifecycle hooks + `hooks.rb` HookManager (decision contract, fail-open interceptors / fail-closed approval, prompt-mutation revert) |
+| channels, gateway, WebUI, MCP | not ported (interactive surface) |
 
 ## Layout
 
@@ -34,6 +40,7 @@ complete port catalogue: `FEATURES.md`.
 main.rb                  # config, wiring, runner
 prompt.erb               # system prompt template (Brute::PromptTemplate)
 cron.rb                  # CronStore (cron/jobs.json)
+hooks.rb                 # HookManager (built on brute's .on() lifecycle hooks)
 FEATURES.md              # complete upstream catalogue (tools + middleware, source refs)
 TODO.md                  # extraction tracker
 middleware/
@@ -51,11 +58,10 @@ middleware/
   token_estimator.rb     # chars×2/5 +256/media estimator (shared)
   context_budget.rb      # token estimate + proactive force-compress/trim
   emergency_compression.rb # context-error → compress + retry (wraps the LLM call)
-  model_router.rb        # scaffold (no-op) — light/heavy routing
-  media.rb               # scaffold (no-op) — media:// store + resolver
-  fallback_chain.rb      # scaffold (no-op) — candidates/cooldowns/RPM
-  subturns.rb            # scaffold (no-op) — spawn machinery + result drain
-  tool_policy.rb         # scaffold (no-op) — per-tool-call policy
+  model_router.rb        # light/heavy turn classifier → llm_model override
+  media.rb               # media:// store (refcounts, janitor) + path-tag resolver
+  fallback_chain.rb      # candidates/cooldowns/RPM (state/fallback_chain.json)
+  subturns.rb            # registry + spawn machinery + per-iteration result drain
 tools/
   tool_wrapper.rb        # guard base class
   workspace_guard.rb     # restrict_to_workspace (for stand-ins/scaffolds)
@@ -67,15 +73,19 @@ tools/
   web_search.rb          # 10-provider search chain + resolution
   web_fetch.rb           # SSRF-guarded fetch + extractors
   cron_tool.rb           # agent-facing job management (full action set)
+  tool_policy.rb         # per-call wrapper: schema validation + approval + [FILTERED] scrub
+  skill_registries.rb    # clawhub + github clients, search cache, zip extract
+  find_skills.rb         # registry search (cached)
+  install_skill.rb       # install into workspace/skills (moderation, origin meta)
+  spawn.rb subagent.rb spawn_status.rb   # subturn tools (async/sync/status)
   read_file.rb           # ported (bytes + lines modes, pagination, sandbox)
   write_file.rb          # ported (overwrite guard, atomic write)
   edit_file.rb           # ported (single-occurrence replace, diff result)
   append_file.rb         # ported
   list_dir.rb            # ported (DIR/FILE, lstat semantics)
   exec.rb                # ported (7 actions, deny patterns, guard, sessions, PTY)
-  load_image.rb find_skills.rb install_skill.rb                       # scaffolds (no-op)
-  spawn.rb subagent.rb spawn_status.rb                                # scaffolds (no-op)
-test/                    # plain-ruby harnesses: tools_test.rb + p0_test.rb (via nix develop)
+  load_image.rb          # scaffold (no-op)
+test/                    # plain-ruby harnesses: tools_test + p0_test + p1_test + hooks_test (nix develop)
 work/                    # workspace template (copied into the CWD on run)
 ```
 

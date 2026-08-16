@@ -7,9 +7,21 @@
   "summarize_message_threshold": 20,
   "summarize_token_percent": 75,
   "steering_mode": "one-at-a-time",
+  "model_fallbacks": [],
+  "models": {},
+  "routing": { "enabled": false, "light_model": "", "threshold": 0.35 },
+  "subturn": { "max_depth": 3, "max_concurrent": 5, "default_timeout_minutes": 5, "concurrency_timeout_sec": 30 },
+  "hooks": {
+    "enabled": true,
+    "defaults": { "observer_timeout_ms": 500, "interceptor_timeout_ms": 5000, "approval_timeout_ms": 60000 },
+    "processes": {}
+  },
   "tools": {
     "allow_read_paths": [],
     "allow_write_paths": [],
+    "filter_sensitive_data": true,
+    "filter_min_length": 8,
+    "require_approval": [],
     "read_file": { "mode": "bytes", "max_read_file_size": 65536 },
     "exec": {
       "enabled": true,
@@ -40,6 +52,13 @@
       "exec_timeout_minutes": 5,
       "allow_command": true,
       "command_allowed_remotes": []
+    },
+    "media_cleanup": { "enabled": true, "max_age_minutes": 30 },
+    "skills": {
+      "registries": [
+        { "name": "clawhub", "enabled": true, "base_url": "", "auth_token": "" },
+        { "name": "github", "enabled": true, "token": "" }
+      ]
     }
   }
 }

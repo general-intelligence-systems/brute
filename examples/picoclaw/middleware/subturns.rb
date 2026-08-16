@@ -1,25 +1,23 @@
 # frozen_string_literal: true
 
 require "securerandom"
+require "timeout"
 
 # Subturns — picoclaw's child-turn machinery (pkg/agent/subturn.go,
 # turn_state.go), adapted to a one-shot process.
 #
-# Backs the spawn/subagent tools. Children run the same agent stack with an
-# ephemeral in-memory session, a fixed subagent system prompt, and the
-# parent's tool registry MINUS spawn/subagent/spawn_status (no recursive
-# spawning). Guards: depth <= 3, concurrency <= 5 (30s acquire timeout),
-# 5-min default child timeout.
+# Backs the spawn/subagent/spawn_status tools. Children run the same agent
+# stack with an ephemeral session, a fixed subagent system prompt, and the
+# parent's tools MINUS spawn/subagent/spawn_status (no recursive spawning).
+# Guards: depth <= 3, concurrency <= 5 (30s acquire timeout), 5-min default
+# child timeout.
 #
-# Sync (subagent tool) blocks and returns the child's final text. Async
-# (spawn tool) returns an ack immediately and runs the child on a thread;
-# finished child results are drained into the parent as "[SubTurn Result]"
-# user messages at iteration boundaries. Before the turn ends, critical
-# children still running are joined (bounded by their remaining timeout) and
-# their results injected — a one-shot process must not orphan them.
-#
-# env reads: :messages. env writes: :messages (result injection),
-# env[:metadata][:subturns]. Side effects: child agent runs (threads).
+# Sync (subagent) blocks and returns the child's final text. Async (spawn)
+# returns an ack immediately and runs the child on a thread; Subturns::Drain
+# (per-iteration, inside the loop) injects finished results into the parent
+# as "[SubTurn Result]" user messages. Before the turn ends, critical
+# children still running are joined (bounded by their timeouts) — a one-shot
+# process must not orphan them.
 class Subturns
   SYSTEM_PROMPT = "You are a subagent. Complete the given task independently and report the result.\n" \
                   "You have access to tools - use them as needed to complete your task.\n" \
@@ -27,7 +25,7 @@ class Subturns
 
   # Shared between the middleware and the spawn/subagent/spawn_status tools.
   class Registry
-    Task = Struct.new(:id, :label, :task, :status, :result, :thread, :started_at, :critical)
+    Task = Struct.new(:id, :label, :task, :status, :result, :thread, :started_at, :reported)
 
     attr_reader :build_child
 
@@ -44,13 +42,12 @@ class Subturns
       @mutex = Mutex.new
     end
 
-    def next_id
-      @mutex.synchronize { @counter += 1; "subagent-#{@counter}" }
-    end
-
+    def next_id = @mutex.synchronize { @counter += 1; "subagent-#{@counter}" }
     def tasks = @mutex.synchronize { @tasks.dup }
-
     def find(id) = tasks.find { |t| t.id == id }
+    def timeout_seconds = @timeout_seconds
+
+    def register(task) = @mutex.synchronize { @tasks << task; task }
 
     def acquire
       Timeout.timeout(@concurrency_timeout) { @semaphore.pop }
@@ -59,15 +56,10 @@ class Subturns
       false
     end
 
-    def release = (@semaphore << true)
-
-    # depth guard happens in the tools (via env metadata).
-    def register(task)
-      @mutex.synchronize { @tasks << task }
-      task
+    def release
+      @semaphore << true
+      nil
     end
-
-    def timeout_seconds = @timeout_seconds
   end
 
   def initialize(app, registry:)
@@ -77,32 +69,63 @@ class Subturns
 
   def call(env)
     env[:metadata][:subturns] = @registry
-    env[:metadata][:subturn_depth] = env[:metadata][:subturn_depth].to_i
-
-    result = @app.call(env)
-
+    @app.call(env)
     join_critical_children(env)
-    result
+    env
   end
 
-  private
-
-  # A one-shot process cannot orphan critical children: join the survivors
-  # (bounded by their timeouts) and inject their results before unwinding.
+  # A one-shot process cannot orphan children: join the survivors (bounded by
+  # their remaining timeouts) and inject any unreported results.
   def join_critical_children(env)
     @registry.tasks.each do |task|
       next unless task.thread&.alive?
 
       remaining = task.started_at + @registry.timeout_seconds - Time.now
       task.thread.join([remaining, 1].max)
-      next unless task.status == "completed"
-
-      env[:messages] << Brute::Message.new(role: :user, content: result_message(task))
+      Drain.inject(env, @registry)
     end
   end
 
-  def result_message(task)
-    label = task.label.to_s.empty? ? task.id : task.label
-    "[SubTurn Result] #{label}\n#{task.result}"
+  # Runs one child turn (ephemeral session, fixed subagent prompt, no spawn
+  # tools — the child stack is built by the registry's build_child proc) with
+  # the default timeout; records status/result and releases the slot.
+  def self.run_child(registry, record)
+    Timeout.timeout(registry.timeout_seconds) do
+      env = registry.build_child.call(record.task)
+      final = env[:messages].reverse.find { |m| m.role.to_sym == :assistant && !m.content.to_s.strip.empty? }
+      record.result = final&.content.to_s
+      record.status = "completed"
+    end
+  rescue Timeout::Error
+    record.status = "failed"
+    record.result = "subagent timed out after #{registry.timeout_seconds}s"
+  rescue StandardError => e
+    record.status = "failed"
+    record.result = e.message
+  ensure
+    registry.release
+  end
+
+  # Per-iteration result drain (upstream's pendingResults poll).
+  class Drain
+    def initialize(app, registry:)
+      @app = app
+      @registry = registry
+    end
+
+    def call(env)
+      self.class.inject(env, @registry)
+      @app.call(env)
+    end
+
+    def self.inject(env, registry)
+      registry.tasks.each do |task|
+        next unless task.status == "completed" && !task.reported
+
+        task.reported = true
+        label = task.label.to_s.empty? ? task.id : task.label
+        env[:messages] << Brute::Message.new(role: :user, content: "[SubTurn Result] #{label}\n#{task.result}")
+      end
+    end
   end
 end

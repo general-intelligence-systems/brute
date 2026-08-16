@@ -3,6 +3,21 @@
 All notable changes to Brute are documented in this file. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- `Brute::Hooks` + `.on()` — lifecycle hooks on the agent builder:
+  `Brute.agent.use(...).run(...).on(:before_llm) { ... }.on(:approve_tool) { ... }`.
+  Emission points: `:turn_start`/`:turn_end` (AgentPipeline#start; turn_end
+  fires from an ensure), `:before_llm`/`:after_llm` (around every LLM call in
+  Middleware::OpenRouter::Completion), and `:before_tool`/`:approve_tool`/
+  `:after_tool` around every tool execution in Middleware::ToolPipeline.
+  before_tool may rewrite `:arguments` or short-circuit with a `:result`
+  ("respond"); approve_tool denies on a false return (or a String, which
+  becomes the denial message); after_tool may rewrite `:result`. Tool call
+  payloads are {name:, arguments:, result:, events:, metadata:, turn_env:}.
+
 ## [3.1.0] - 2026-07-18
 
 ### Added
