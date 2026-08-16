@@ -54,11 +54,14 @@ class EvolutionLog
     end
 
     reply = delta.reverse.find { |m| m.role == :assistant && !m.content.to_s.strip.empty? }&.content.to_s
+    goal = delta.find { |m| m.role == :user }&.content.to_s
 
     append(
       id: SecureRandom.hex(8),
       kind: "task",
       created_at: Time.now.iso8601,
+      summary: goal.to_s[0, 160],          # upstream: user message truncated to 160
+      final_output: reply.to_s[0, 1200],   # upstream: final output truncated to 1200
       tools: tools,
       skills_used: skills_used.uniq.reject(&:empty?),
       reply: reply.to_s[0, 200],

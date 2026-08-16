@@ -34,7 +34,12 @@
 #            delivered as fresh runs by the ScheduleDriver (no resident
 #            session to steer into); the kernel's `rlm_heartbeat` proxy
 #            writes the store directly                           ← WIRED IN
-#   stages 9+  the remaining 13 middlewares are SCAFFOLDS (pass-through
+#   stage 9  goals + autonomous mode — the persistent thread goal
+#            (Middleware::Goal + goal.json + the kernel's `goal` proxy) and
+#            bounded continuations with quality gates
+#            (Middleware::Autonomous + lib/prime_agent/autonomous.rb);
+#            the goal gets first refusal every turn              ← WIRED IN
+#   stages 10+  the remaining 11 middlewares are SCAFFOLDS (pass-through
 #            no-ops wired in their intended fill-in order) and the remaining
 #            kernel skills are no-op stubs under work/.brute/skills/.
 #            Fill in per FEATURES.md §5.
@@ -77,6 +82,8 @@ require_relative "lib/prime_agent/middleware/refine_on_exit"
 # fills in and upstream source refs.
 require_relative "lib/prime_agent/cron_store"
 require_relative "lib/prime_agent/schedule_driver"
+require_relative "lib/prime_agent/goal"
+require_relative "lib/prime_agent/autonomous"
 require_relative "lib/prime_agent/middleware/agent_messages"
 require_relative "lib/prime_agent/middleware/agent_observe"
 require_relative "lib/prime_agent/middleware/autonomous"
@@ -153,6 +160,25 @@ if ENV["BRUTE_HEARTBEAT"]
   )
 end
 
+# Stage 9 — the thread goal seed (upstream's `/goal <objective>` /
+# `--goal --goal-token-budget`): the Goal middleware re-prompts until the
+# kernel's `goal.complete` lands.
+if ENV["BRUTE_GOAL"]
+  PrimeAgent::Goal.create_in_store(
+    File.join(refiner.local_dir, "goal.json"),
+    objective: ENV["BRUTE_GOAL"],
+    token_budget: ENV["BRUTE_GOAL_TOKEN_BUDGET"]&.to_i,
+  )
+end
+
+# Autonomous gates: a single command string, or a JSON array of commands.
+autonomous_gates =
+  case (raw_gates = ENV["BRUTE_AUTONOMOUS_GATES"].to_s.strip)
+  when "" then []
+  when /\A\[/ then JSON.parse(raw_gates)
+  else [raw_gates]
+  end
+
 # One pipeline per run: each scheduled job gets a fresh kernel and fresh
 # middleware state; the harness/cron stores persist across runs via files.
 build_agent = lambda do
@@ -188,8 +214,24 @@ build_agent = lambda do
     .use(PrimeAgent::Middleware::ModelRegistry)    # SCAFFOLD — find_models backend (M14)
     .use(PrimeAgent::Middleware::AgentObserve)     # SCAFFOLD — read-only family views (M7)
     .use(PrimeAgent::Middleware::AgentMessages)    # SCAFFOLD — family bus, steer-only (M6)
-    .use(PrimeAgent::Middleware::Goal)             # SCAFFOLD — persistent goal re-prompt (M2)
-    .use(PrimeAgent::Middleware::Autonomous)       # SCAFFOLD — continuations + gates (M3)
+    # Stage 9 — the persistent thread goal (M2): re-prompts with the goal
+    # context after every turn until the kernel's goal.complete lands, the
+    # budget flips it, or an error marks it. Outer of Autonomous: the goal
+    # gets first refusal every turn.
+    .use(PrimeAgent::Middleware::Goal,
+         store_path: File.join(refiner.local_dir, "goal.json"),
+         request_path: File.join(refiner.local_dir, "goal_request.json"))
+    # Stage 9 — autonomous mode (M3): bounded continuations + quality gates
+    # (BRUTE_AUTONOMOUS=1, BRUTE_AUTONOMOUS_GATES). Defers while a goal is active.
+    .use(PrimeAgent::Middleware::Autonomous,
+         enabled: ENV["BRUTE_AUTONOMOUS"] == "1",
+         cwd: Dir.pwd,
+         goal_store_path: File.join(refiner.local_dir, "goal.json"),
+         gates: autonomous_gates,
+         max_continuations: ENV["BRUTE_AUTONOMOUS_MAX_CONTINUATIONS"]&.to_i,
+         max_turns: ENV["BRUTE_AUTONOMOUS_MAX_TURNS"]&.to_i,
+         max_tokens: ENV["BRUTE_AUTONOMOUS_MAX_TOKENS"]&.to_i,
+         timeout_ms: ENV["BRUTE_AUTONOMOUS_TIMEOUT_MS"]&.to_i)
     # SCAFFOLD — steer/follow_up lanes + queue-key coalescing (M10); innermost
     # per-turn driver: everything above enqueues here.
     .use(PrimeAgent::Middleware::PromptQueue)

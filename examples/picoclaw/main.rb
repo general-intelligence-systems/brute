@@ -8,6 +8,9 @@
 require "json"
 require "tmpdir"
 require "yaml"
+require "base64"
+require "net/http"
+require "uri"
 
 require "open_router"
 require "brute"
@@ -27,6 +30,11 @@ require_relative "tools/skill_registries"
 require_relative "tools/web_search"
 require_relative "tools/web_fetch"
 require_relative "tools/cron_tool"
+require_relative "tools/outbox"
+require_relative "tools/message"
+require_relative "tools/reaction"
+require_relative "tools/send_file"
+require_relative "tools/send_tts"
 require_relative "tools/read_file"
 require_relative "tools/write_file"
 require_relative "tools/edit_file"
@@ -44,6 +52,7 @@ require_relative "tools/spawn_status"
 
 require_relative "middleware/heartbeat_gate"
 require_relative "middleware/evolution_log"
+require_relative "middleware/evolution_cold_path"
 require_relative "middleware/cron_schedule"
 require_relative "middleware/compaction"
 require_relative "middleware/steering_loop"
@@ -136,7 +145,7 @@ MEDIA_TMP_PATTERN = %r{\A#{Regexp.escape(File.join(Dir.tmpdir, "picoclaw_media")
 # sandbox lives inside the tools (pkg/tools/fs, shell.go), so wrapping them in
 # WorkspaceGuard would wrongly reject allow_read/allow_writePaths matches.
 # Stand-ins and scaffolds keep the guard.
-def build_tools(config, cron_store:, subturn_registry: nil)
+def build_tools(config, cron_store:, subturn_registry: nil, outbox: Outbox.new, media_store: nil)
   workspace = Dir.pwd
   restrict = config.fetch("restrict_to_workspace", true)
   read_restrict = restrict && !config["allow_read_outside_workspace"]
@@ -183,12 +192,15 @@ def build_tools(config, cron_store:, subturn_registry: nil)
   guarded = [
     Brute::Tools::FSRemove.new,  # no picoclaw counterpart
     Brute::Tools::SkillLoad.new,
-    LoadImage.new,               # scaffold
   ]
   # Upstream leaves web_search unregistered when no provider is ready
   # (NewWebSearchTool returns nil); sogou is enabled by default.
   guarded << WebSearch.new(options: web_cfg) if WebSearch.registerable?(web_cfg)
   guarded = guarded.map { |tool| WorkspaceGuard.new(tool) } if restrict
+
+  max_media_size = config["max_media_size"] || 20 * 1024 * 1024
+  message_cfg = tools_cfg["message"] || {}
+  tts_synth = build_tts_synth(config)
 
   list = list + guarded + [
     CronTool.new(store: cron_store,
@@ -199,10 +211,31 @@ def build_tools(config, cron_store:, subturn_registry: nil)
                  proxy: web_cfg["proxy"],
                  fetch_limit_bytes: web_cfg["fetch_limit_bytes"],
                  private_host_whitelist: web_cfg["private_host_whitelist"] || []),
+    LoadImage.new(workspace:, restrict: read_restrict, media_store:,
+                  max_media_size:, allow_paths: allow_read),
+    Message.new(outbox:, workspace:, restrict:,
+                media_enabled: message_cfg.fetch("media_enabled", false),
+                media_store:, max_media_size:, allow_paths: allow_read),
+    SendFile.new(outbox:, workspace:, restrict:, media_store:,
+                 max_media_size:, allow_paths: allow_read),
+    Reaction.new,
     FindSkills.new(registries: registries),
     InstallSkill.new(registries: registries, workspace: workspace),
     *spawn_tools(subturn_registry),
   ]
+  list << SendTTS.new(outbox:, synthesize: tts_synth, media_store:) if tts_synth
+
+  # turn_profile.tools: "off" → none; {"mode" => "custom", "allow" => [...]} → filter.
+  case (tools_profile = config.dig("turn_profile", "tools"))
+  when String
+    list = [] if tools_profile == "off"
+  when Hash
+    list = [] if tools_profile["mode"] == "off"
+    if tools_profile["mode"] == "custom"
+      allow = Array(tools_profile["allow"]).map(&:to_s)
+      list = list.select { |tool| allow.include?(Brute::Tools::Adapter.wrap(tool).name.to_s) }
+    end
+  end
 
   # AGENT.md/AGENTS.md frontmatter `tools:` allowlist filters registration
   # (upstream registry.SetAllowlist): nil = all, [] = none.
@@ -220,6 +253,30 @@ def build_tools(config, cron_store:, subturn_registry: nil)
                    filter_enabled: filter_enabled,
                    filter_min_length: filter_min,
                    approve: approval_policy(require_approval, workspace))
+  end
+end
+
+# TTS provider detection (upstream tts.DetectTTS): voice.tts_model_name, or
+# the configured model containing "tts". Returns nil when unavailable (the
+# send_tts tool is then not registered, like upstream).
+def build_tts_synth(config)
+  model = (config.dig("voice", "tts_model_name") || "").to_s
+  model = config["model"].to_s if model.empty? && config["model"].to_s.downcase.include?("tts")
+  return nil if model.empty?
+
+  lambda do |text|
+    uri = URI("https://openrouter.ai/api/v1/chat/completions")
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = true
+    request = Net::HTTP::Post.new(uri)
+    request["Authorization"] = "Bearer #{ENV.fetch("OPENROUTER_API_KEY")}"
+    request["Content-Type"] = "application/json"
+    request.body = JSON.generate(model: model, modalities: ["audio"],
+                                 audio: { voice: "alloy", format: "ogg" },
+                                 messages: [{ role: "user", content: text }])
+    data = JSON.parse(http.request(request).body)
+    encoded = data.dig("choices", 0, "message", "audio", "data")
+    encoded && Base64.decode64(encoded)
   end
 end
 
@@ -315,11 +372,14 @@ end
 
 # --- Workflow (built middleware-by-middleware) -------------------------------
 
-def build_agent(config, session: "heartbeat")
+def build_agent(config, session: "heartbeat", outbox: Outbox.new)
   cron_store = CronStore.new(File.join(Dir.pwd, "cron", "jobs.json"))
   tool_list = nil # assigned below; the registry's build_child reads it lazily
   subturn_registry = build_subturn_registry(config) { tool_list }
-  tool_list = build_tools(config, cron_store:, subturn_registry:)
+  media_store = Media::Store.new(
+    max_age_minutes: (config.dig("tools", "media_cleanup", "max_age_minutes") || 30),
+  )
+  tool_list = build_tools(config, cron_store:, subturn_registry:, outbox:, media_store:)
 
   # ToolPipeline executes env[:tools]; the provider learns about them through
   # CompletionOptions#tools, serialized as OpenAI-wire function definitions.
@@ -337,6 +397,12 @@ def build_agent(config, session: "heartbeat")
   summary_path = File.join(Dir.pwd, "sessions", "#{session}.summary.md")
   routing_cfg = config["routing"] || {}
   cleanup_cfg = (config["tools"] || {})["media_cleanup"] || {}
+  events_cfg = (config["events"] || {})["logging"] || {}
+  evolution_cfg = config["evolution"] || {}
+  profile = config["turn_profile"] || {}
+  history_off = profile["history"] == "off"   # NoHistory + EnableSummary=false upstream
+  prompt_off = profile["system_prompt"] == "off"
+  skills_off = profile["skills"] == "off"
 
   # The terminal proc resolves the model per call — ModelRouter's light pick
   # and FallbackChain's candidate both flow through env[:metadata][:llm_model].
@@ -348,20 +414,38 @@ def build_agent(config, session: "heartbeat")
 
   pipeline = Brute.agent
     .use(HeartbeatGate)
-    .use(RuntimeEvents)           # scaffold (no-op) — turn-span event bus
+    .use(RuntimeEvents, enabled: events_cfg.fetch("enabled", true),
+                        include: events_cfg["include"] || ["agent.*"],
+                        exclude: events_cfg["exclude"] || [],
+                        min_severity: events_cfg["min_severity"] || "info",
+                        include_payload: events_cfg.fetch("include_payload", false))
     .use(StateManager)
     .use(EvolutionLog, path: File.join(Dir.pwd, ".evolution", "records.jsonl"))
-    .use(SessionStore, path: File.join(Dir.pwd, "sessions", "#{session}.jsonl"))
+    .use(EvolutionColdPath, dir: File.join(Dir.pwd, ".evolution"),
+                            mode: evolution_cfg["mode"] || "observe",
+                            min_task_count: evolution_cfg["min_task_count"] || 2,
+                            min_success_ratio: evolution_cfg["min_success_ratio"] || 0.7,
+                            trigger: evolution_cfg["cold_path_trigger"] || "after_turn",
+                            generate_draft: evolution_cfg["mode"] == "observe" ? nil : summarizer(config))
+    .tap { |p| p.use(SessionStore, path: File.join(Dir.pwd, "sessions", "#{session}.jsonl")) unless history_off }
     .use(CronSchedule, store: cron_store, exec_tool: cron_exec)
-    .use(SkillsCatalog)
+    .use(SkillsCatalog, **(skills_off ? { roots: [] } : {}))
     .use(MemoryFiles)
-    .use(Compaction, threshold: config["summarize_message_threshold"] || 20,
-                     token_percent: config["summarize_token_percent"] || 75,
-                     context_window: config["context_window"],
-                     summary_path: summary_path,
-                     summarize: summarizer(config))
-    .use(SystemPrompt)            # scaffold (no-op) — will absorb Brute::Middleware::SystemPrompt + prompt.erb
-    .use(Brute::Middleware::SystemPrompt, system_prompt: prompt_template(session:))
+    .tap do |p|
+      unless history_off
+        p.use(Compaction, threshold: config["summarize_message_threshold"] || 20,
+                          token_percent: config["summarize_token_percent"] || 75,
+                          context_window: config["context_window"],
+                          summary_path: summary_path,
+                          summarize: summarizer(config))
+      end
+    end
+    .tap do |p|
+      unless prompt_off
+        p.use(SystemPrompt) # scaffold (no-op) — will absorb Brute::Middleware::SystemPrompt + prompt.erb
+        p.use(Brute::Middleware::SystemPrompt, system_prompt: prompt_template(session:))
+      end
+    end
     .use(ContextBudget, tool_defs: advertised,
                         max_tokens: config["max_tokens"],
                         context_window: config["context_window"],
@@ -369,9 +453,8 @@ def build_agent(config, session: "heartbeat")
     .use(ModelRouter, enabled: routing_cfg.fetch("enabled", false),
                       light_model: routing_cfg["light_model"],
                       threshold: routing_cfg["threshold"] || 0.35)
-    .use(Media, store: Media::Store.new(max_age_minutes: cleanup_cfg["max_age_minutes"] || 30),
-                enabled_cleanup: cleanup_cfg.fetch("enabled", true))
     .use(SteeringLoop, mode: config["steering_mode"] || "one-at-a-time")
+    .use(Media, store: media_store, enabled_cleanup: cleanup_cfg.fetch("enabled", true))
     .use(Subturns, registry: subturn_registry)
     .use(Subturns::Drain, registry: subturn_registry)
     .use(Brute::Middleware::MaxIterations)
@@ -443,8 +526,18 @@ if __FILE__ == $PROGRAM_NAME
   # Positional args are a dev/test driver: bypasses the gate, separate session.
   heartbeat = ARGV.empty?
   message = heartbeat ? HeartbeatGate::TRIGGER : ARGV.join(" ")
-  result = reply(build_agent(load_config, session: heartbeat ? "heartbeat" : "dev").start(message))
-  puts result
+  outbox = Outbox.new
+  env = build_agent(load_config, session: heartbeat ? "heartbeat" : "dev", outbox: outbox).start(message)
+  result = reply(env)
+
+  if outbox.sent_to?("cli", "direct")
+    # The message tool already delivered this turn — suppress the duplicate
+    # final response (picoclaw's PublishResponseIfNeeded dedup).
+    result = ""
+  else
+    puts result
+    outbox.append(content: result) unless result.to_s.strip.empty?
+  end
 
   # picoclaw logs heartbeat activity to heartbeat.log in the workspace.
   File.open(File.join(Dir.pwd, "heartbeat.log"), "a") do |f|

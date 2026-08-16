@@ -147,6 +147,9 @@ module Hermes
         snapshot = workspace_snapshot
         parts << snapshot if snapshot
         parts << env[:system_message].to_s unless env[:system_message].to_s.empty?
+        # External context-engine sections (the ContextEngine seam).
+        sections = (env[:metadata] || {})[:context_sections]
+        parts.concat(sections) if sections.is_a?(Array)
         project = ContextFiles.build_prompt(
           cwd: @cwd,
           skip_soul: true, # SOUL.md already occupied the identity slot

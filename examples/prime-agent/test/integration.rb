@@ -33,8 +33,11 @@ require_relative "../lib/prime_agent/middleware/prompt_template"
 require_relative "../lib/prime_agent/middleware/auto_refine"
 require_relative "../lib/prime_agent/middleware/refine_on_exit"
 require_relative "../lib/prime_agent/middleware/compaction"
+require_relative "../lib/prime_agent/middleware/goal"
+require_relative "../lib/prime_agent/middleware/autonomous"
 require_relative "../lib/prime_agent/cron_store"
 require_relative "../lib/prime_agent/schedule_driver"
+require_relative "../lib/prime_agent/goal"
 
 $stdout.sync = true
 
@@ -196,6 +199,20 @@ Dir.mktmpdir do |work|
   assert heartbeat_job["status"] == "paused", "the pause update landed"
   assert heartbeat_job["schedule"]["interval_seconds"] == 300, "the 5m interval parsed"
   assert heartbeat_job["label"] == "tests", "the label landed"
+
+  # Stage 9 (kernel side): the goal proxy validates, schedules, and reads back.
+  result = provisioner.execute("goal.get")
+  assert result.result.include?('"goal" => nil'), "goal.get starts empty (got #{result.result})"
+  result = provisioner.execute(<<~RUBY)
+    goal.create("ship the release", token_budget: 50000)
+    [goal.get["goal"].nil?, goal.get["remaining_tokens"]]
+  RUBY
+  assert result.result.include?("true"), "goal.create defers to the turn boundary (got #{result.result})"
+  goal_request = JSON.parse(File.read(File.join(local_dir, "goal_request.json")))
+  assert goal_request["action"] == "create", "goal.create wrote the request file"
+  assert goal_request["token_budget"] == 50_000, "the budget landed"
+  result = provisioner.execute("begin; goal.create(42); rescue TypeError => e; e.class.name; end")
+  assert result.result.include?("TypeError"), "goal.create validates the objective type"
 
   # Stage 6 (kernel side): Edit.run serializes same-file mutations across
   # threads (the port of prime-agent's withFileMutationQueue).
@@ -381,6 +398,97 @@ Dir.mktmpdir do |work|
 end
 
 puts "\nstage 8 integration (scheduled prompts + heartbeats): all assertions passed"
+
+# ---------------------------------------------------------------------------
+# Stage 9: goals + autonomous — a seeded goal re-prompts across turns until
+# the kernel's goal.complete lands; autonomous continuations respect limits.
+# ---------------------------------------------------------------------------
+
+Dir.mktmpdir do |work|
+  local_dir = File.join(work, ".brute", "harness")
+  goal_path = File.join(local_dir, "goal.json")
+  PrimeAgent::Goal.create_in_store(goal_path, objective: "ship the integration test", token_budget: 1_000_000)
+
+  provisioner = PrimeAgent::KernelProvisioner.new(
+    cwd: work,
+    bootstrap: PrimeAgent::KernelRuntime.bootstrap_code(
+      harness_store_path: File.expand_path("../lib/prime_agent/harness_store.rb", __dir__),
+      local_dir: local_dir,
+      global_dir: File.join(work, "global-harness"),
+      request_path: File.join(local_dir, "refine_request.json"),
+      skill_lib_glob: nil,
+    ),
+  )
+
+  scripted_model = lambda do |env|
+    if env[:messages].last&.role == :tool
+      env[:messages] << Brute::Message.new(role: :assistant, content: "noted")
+      next env
+    end
+    contexts = env[:messages].count { |m| m.content.to_s.include?("<goal_context>") }
+    if contexts.zero?
+      env[:messages] << Brute::Message.new(role: :assistant, content: "", tool_calls: [
+        { id: "g1", name: "iruby", arguments: { "code" => 'goal.get["goal"]["status"]' } },
+      ])
+    elsif contexts == 1
+      env[:messages] << Brute::Message.new(role: :assistant, content: "", tool_calls: [
+        { id: "g2", name: "iruby", arguments: { "code" => "goal.complete" } },
+      ])
+    else
+      env[:messages] << Brute::Message.new(role: :assistant, content: "goal work done")
+    end
+    env
+  end
+
+  agent = Brute.agent
+    .use(PrimeAgent::Middleware::KernelLifecycle, provisioner: provisioner)
+    .use(PrimeAgent::Middleware::Goal,
+         store_path: goal_path,
+         request_path: File.join(local_dir, "goal_request.json"))
+    .use(PrimeAgent::Middleware::Autonomous, enabled: true, cwd: work,
+         goal_store_path: goal_path, max_continuations: 5)
+    .use(Brute::Middleware::Loop::ToolResult)
+    .use(Brute::Middleware::MaxIterations)
+    .use(Brute::Middleware::ToolPipeline, tools: [PrimeAgent::IrubyTool.new(provisioner: provisioner)])
+    .run(scripted_model)
+
+  env = agent.start("do the goal")
+
+  contexts = env[:messages].select { |m| m.content.to_s.include?("<goal_context>") }
+  assert contexts.length == 1, "exactly one goal continuation was injected (got #{contexts.length})"
+  assert contexts.first.role == :user, "the continuation is a user message"
+  assert contexts.first.content.include?("ship the integration test"), "the objective is in the context"
+  assert env[:messages].any? { |m| m.role == :tool && m.content.to_s.include?("active") },
+         "goal.get saw the active goal from the kernel"
+  state = PrimeAgent::Goal.load_state(goal_path)
+  assert state.status == "complete", "goal.complete drained and marked the goal complete"
+  assert state.continuations_used == 1, "the continuation was accounted (got #{state.continuations_used})"
+  assert state.tokens_used > 0, "estimated usage was accounted"
+  # Autonomous deferred the whole time: no autonomous continuation messages.
+  assert env[:messages].none? { |m| m.content.to_s.include?("autonomous mode") },
+         "autonomous deferred to the active goal"
+end
+
+Dir.mktmpdir do |work|
+  # Autonomous without a goal: continuations up to the limit, then stop.
+  calls = 0
+  scripted_model = lambda do |env|
+    calls += 1
+    env[:messages] << Brute::Message.new(role: :assistant, content: "working")
+    env
+  end
+  agent = Brute.agent
+    .use(PrimeAgent::Middleware::Autonomous, enabled: true, cwd: work, max_continuations: 2)
+    .use(Brute::Middleware::Loop::ToolResult)
+    .use(Brute::Middleware::MaxIterations)
+    .run(scripted_model)
+  env = agent.start("unsupervised task")
+  continuations = env[:messages].select { |m| m.content.to_s.include?("No human input is available") }
+  assert continuations.length == 2, "autonomous continued exactly to maxContinuations (got #{continuations.length})"
+  assert calls == 3, "initial turn + 2 continuations (got #{calls})"
+end
+
+puts "\nstage 9 integration (goals + autonomous): all assertions passed"
 
 # ---------------------------------------------------------------------------
 # Stages 2-4: a full agent run — scripted model (no network), real kernel,

@@ -184,8 +184,15 @@ module Hermes
 
       chain = []
       dir = cwd
-      chain.unshift(dir) until dir == root || (dir = File.dirname(dir)) == dir
-      chain.unshift(root) unless chain.include?(root)
+      loop do
+        chain.unshift(dir)
+        break if dir == root
+
+        parent = File.dirname(dir)
+        break if parent == dir # filesystem root safety
+
+        dir = parent
+      end
       chain
     end
 

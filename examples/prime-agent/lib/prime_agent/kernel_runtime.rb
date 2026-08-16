@@ -16,6 +16,7 @@ module PrimeAgent
   #   compact.run(...)   — schedule compaction; runs when the turn ends
   #   compact.status     — context usage {tokens, context_window, percent, scheduled}
   #   rlm_heartbeat.*    — agent-owned recurring instructions (cron_store.rb)
+  #   goal.get/create/complete — the persistent thread goal (goal.rb)
   #
   # prime-agent's kernel talks to its host over a comm bridge on the Jupyter
   # control channel; iruby's dispatch loop is single-threaded and has no
@@ -195,17 +196,79 @@ module PrimeAgent
       end
     end
 
+    # `goal` in the kernel namespace — the port of prime-agent's bundled
+    # `goal` skill: manage the persistent thread goal from the kernel. All
+    # goal state lives in goal.json in the local harness dir; `get` reads it
+    # directly (dual-reader, like harness CRUD) and mutations write
+    # goal_request.json, which the host's Goal middleware drains at the next
+    # turn boundary (never mid-cell).
+    class GoalProxy
+      def initialize(store_path:, request_path:)
+        @store_path = store_path
+        @request_path = request_path
+      end
+
+      # Current goal: {"goal", "remaining_tokens", "completion_budget_report"}.
+      def get
+        PrimeAgent::Goal.host_response(PrimeAgent::Goal.load_state(@store_path))
+      end
+
+      # Start a new active thread goal. Only when the user or system
+      # instructions explicitly ask for a persistent long-running goal — and
+      # only when no goal is pending (a completed or errored goal is
+      # replaced). Validated here; the middleware applies it at the boundary.
+      def create(objective, token_budget: nil)
+        raise TypeError, "objective must be a String, got #{objective.class}" unless objective.is_a?(String)
+        unless token_budget.nil? || token_budget.is_a?(Integer)
+          raise TypeError, "token_budget must be an Integer or nil, got #{token_budget.class}"
+        end
+
+        objective = PrimeAgent::Goal.validate_objective(objective)
+        token_budget = PrimeAgent::Goal.validate_budget(token_budget)
+        state = PrimeAgent::Goal.load_state(@store_path)
+        if state.objective && %w[active paused budget_limited].include?(state.status)
+          raise "a thread goal is still pending (status: #{state.status}); " \
+                "a completed or errored goal can be replaced, a pending one cannot"
+        end
+
+        write_request("action" => "create", "objective" => objective, "token_budget" => token_budget)
+        { "scheduled" => true }
+      end
+
+      # Mark the existing thread goal achieved — only when it actually is.
+      def complete
+        state = PrimeAgent::Goal.load_state(@store_path)
+        if state.objective.nil? || state.status == "idle"
+          raise "no thread goal to complete"
+        end
+
+        write_request("action" => "complete")
+        { "scheduled" => true }
+      end
+
+      private
+
+      def write_request(request)
+        FileUtils.mkdir_p(File.dirname(@request_path))
+        tmp = "#{@request_path}.#{Process.pid}.tmp"
+        File.write(tmp, "#{JSON.pretty_generate(request.merge("requested_at" => Time.now.utc.iso8601))}\n")
+        File.rename(tmp, @request_path)
+      end
+    end
+
     # The bootstrap cell executed right after the kernel boots. Paths are
     # interpolated as Ruby literals via #inspect.
     def self.bootstrap_code(harness_store_path:, local_dir:, global_dir:, request_path:, skill_lib_glob: nil,
                             kernel_agents_path: File.expand_path("kernel_agents.rb", __dir__),
                             cron_store_path: File.expand_path("cron_store.rb", __dir__),
+                            goal_path: File.expand_path("goal.rb", __dir__),
                             bundle_gemfile: File.expand_path("../../Gemfile", __dir__))
       <<~RUBY
         load #{File.expand_path(harness_store_path).inspect}
         load #{File.expand_path(__FILE__).inspect}
         load #{File.expand_path(kernel_agents_path).inspect}
         load #{File.expand_path(cron_store_path).inspect}
+        load #{File.expand_path(goal_path).inspect}
         PrimeAgent::KernelRuntime.install!(
           harness_store_path: #{File.expand_path(harness_store_path).inspect},
           local_dir: #{local_dir.inspect},
@@ -214,6 +277,7 @@ module PrimeAgent
           skill_lib_glob: #{skill_lib_glob.inspect},
           kernel_agents_path: #{File.expand_path(kernel_agents_path).inspect},
           cron_store_path: #{File.expand_path(cron_store_path).inspect},
+          goal_path: #{File.expand_path(goal_path).inspect},
           bundle_gemfile: #{bundle_gemfile.inspect}
         )
         "prime-agent kernel runtime ready"
@@ -221,9 +285,10 @@ module PrimeAgent
     end
 
     def self.install!(local_dir:, global_dir:, request_path:, harness_store_path:, skill_lib_glob: nil,
-                      kernel_agents_path: nil, cron_store_path: nil, bundle_gemfile: nil)
+                      kernel_agents_path: nil, cron_store_path: nil, goal_path: nil, bundle_gemfile: nil)
       load harness_store_path unless defined?(PrimeAgent::HarnessStore)
       load cron_store_path if cron_store_path && !defined?(PrimeAgent::CronStore)
+      load goal_path if goal_path && !defined?(PrimeAgent::Goal)
 
       harness = PrimeAgent::Harness.new(
         local_store: PrimeAgent::HarnessStore.new(local_dir, scope: "local"),
@@ -235,6 +300,10 @@ module PrimeAgent
         status_path: File.join(local_dir, "compact_status.json"),
       )
       rlm_heartbeat = RlmHeartbeatProxy.new(store_path: File.join(local_dir, "scheduled-jobs.json"))
+      goal = GoalProxy.new(
+        store_path: File.join(local_dir, "goal.json"),
+        request_path: File.join(local_dir, "goal_request.json"),
+      )
 
       Array(skill_lib_glob).compact.each do |glob|
         Dir.glob(glob).each { |dir| $LOAD_PATH.unshift(dir) unless $LOAD_PATH.include?(dir) }
@@ -251,6 +320,7 @@ module PrimeAgent
         define_method(:refine) { refine }
         define_method(:compact) { compact }
         define_method(:rlm_heartbeat) { rlm_heartbeat }
+        define_method(:goal) { goal }
         define_method(:get_harness_state) { |global_: false| harness.get_harness_state(global_: global_) }
       end
       Object.include(runtime)
@@ -323,6 +393,36 @@ describe "prime_agent/kernel_runtime" do
 
       lambda { proxy.create(42) }.should.raise(TypeError)
       lambda { proxy.update(created["id"], status: "explode") }.should.raise(ArgumentError)
+    end
+  end
+
+  it "GoalProxy validates, schedules create/complete, and reads state back" do
+    require_relative "goal"
+    Dir.mktmpdir do |dir|
+      store_path = File.join(dir, "goal.json")
+      proxy = PrimeAgent::KernelRuntime::GoalProxy.new(
+        store_path: store_path, request_path: File.join(dir, "goal_request.json"),
+      )
+
+      proxy.get.should == { "goal" => nil, "remaining_tokens" => nil, "completion_budget_report" => nil }
+      lambda { proxy.complete }.should.raise(RuntimeError) # no goal to complete
+
+      proxy.create("ship the release", token_budget: 5000).should == { "scheduled" => true }
+      request = JSON.parse(File.read(File.join(dir, "goal_request.json")))
+      request["action"].should == "create"
+      request["objective"].should == "ship the release"
+
+      # The store itself is untouched until the middleware drains the request;
+      # a completed/errored goal is replaceable, a pending one is not.
+      PrimeAgent::Goal.save_state(store_path, PrimeAgent::Goal.load_state(store_path))
+      lambda { proxy.create(42) }.should.raise(TypeError)
+      lambda { proxy.create("x" * 4001) }.should.raise(ArgumentError)
+      lambda { proxy.create("ok", token_budget: 0) }.should.raise(ArgumentError)
+
+      PrimeAgent::Goal.create_in_store(store_path, objective: "active goal")
+      lambda { proxy.create("another") }.should.raise(RuntimeError) # pending
+      proxy.complete.should == { "scheduled" => true }
+      JSON.parse(File.read(File.join(dir, "goal_request.json")))["action"].should == "complete"
     end
   end
 

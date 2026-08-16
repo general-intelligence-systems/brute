@@ -29,6 +29,8 @@ module HermesTools
       @registry = registry
     end
 
+    attr_writer :registry
+
     def name = "terminal"
 
     def execute(command:, background: false, timeout: Hermes::ShellSession::DEFAULT_TIMEOUT,
@@ -36,7 +38,7 @@ module HermesTools
       return err("command is required") if command.to_s.strip.empty?
 
       if background
-        entry = registry.spawn(command, workdir: workdir || session.cwd)
+        entry = registry.spawn(command, workdir: workdir || session.cwd, notify: notify_on_complete)
         return JSON.dump(
           "session_id" => entry.session_id, "pid" => entry.pid, "exit_code" => 0,
           "status" => "running",

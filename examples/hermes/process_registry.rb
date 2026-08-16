@@ -3,6 +3,7 @@
 require "securerandom"
 require "shellwords"
 require "fileutils"
+require "json"
 
 module Hermes
   # Background process registry — port of hermes-agent tools/process_registry.py
@@ -119,7 +120,8 @@ module Hermes
         rescue Errno::ECHILD
           nil
         end
-        tail = File.exist?(e["log_path"]) ? File.read(e["log_path"])[-2_000..] : ""
+        content = File.exist?(e["log_path"]) ? File.read(e["log_path"]) : ""
+        tail = content.length > 2_000 ? content[-2_000..] : content
         yield(e.merge("exit_code" => exit_code, "output_tail" => tail))
         reg.mark_notified(e["session_id"])
       end

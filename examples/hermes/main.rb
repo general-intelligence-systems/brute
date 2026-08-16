@@ -46,12 +46,15 @@ require_relative "compactor"
 require_relative "cron"
 require_relative "cron_store"
 require_relative "heartbeat"
+require_relative "delegation"
 
 Dir[File.join(__dir__, "tools", "*.rb")].sort.each { |f| require f }
 
 OpenRouter.configure { |config| config.access_token = ENV.fetch("OPENROUTER_API_KEY") }
 
 tools = HermesTools.constants.map { |c| HermesTools.const_get(c) }.select { |k| k.is_a?(Class) && k < Brute::Tool }.map(&:new)
+shared_registry = Hermes::ProcessRegistry.new(log_dir: File.join(Dir.pwd, "processes"))
+tools.each { |t| t.registry = shared_registry if t.respond_to?(:registry=) }
 advertised = Brute.tools(tools).values.map { |a| { type: "function", function: a.to_h } }
 
 # The per-call tool middleware stack (MIDDLEWARE.md §4) — every tool call is
@@ -110,6 +113,64 @@ review_agent = ->(prompt:, history:) do
     .start(history + [Brute::Message.new(role: :user, content: prompt)])
 end
 
+# Delegation: the ledger + the sub-agent factory. Leaf subagents get a
+# stripped toolset (no delegate/clarify/memory/cronjob), the ephemeral
+# YOUR-TASK prompt, a 50-iteration cap, and no session log.
+delegation = Hermes::Delegation.new(dir: File.join(Dir.pwd, "delegations"))
+
+sub_agent_factory = lambda do |goal:, context:, role: "leaf", output_schema: nil, delegation_id: nil|
+  denied = %w[clarify memory cronjob delegate_task]
+  child_tools = tools.reject { |t| denied.include?(t.name) }
+  child_advertised = Brute.tools(child_tools).values.map { |a| { type: "function", function: a.to_h } }
+  child_options = { tools: child_advertised }
+  child_options[:model] = ENV["HERMES_MODEL"] if ENV["HERMES_MODEL"]
+
+  prompt = +"YOUR TASK: #{goal}\n\n"
+  prompt << "CONTEXT: #{context}\n\n" unless context.to_s.empty?
+  prompt << "Work autonomously until the task is complete, then give a clear, self-contained summary."
+  prompt << " The summary MUST be valid JSON matching this schema: #{JSON.dump(output_schema)}" if output_schema
+
+  started = Time.now
+  env = Brute.agent
+    .use(Brute::Middleware::Loop::ToolResult)
+    .tap { |a| a.use(Hermes::Delegation::SteerReader, delegation: delegation, id: delegation_id) if delegation_id }
+    .use(Hermes::Middleware::IterationBudget, max_iterations: Hermes::Delegation::MAX_ITERATIONS)
+    .use(Hermes::Middleware::ToolPipeline, tools: child_tools, pipeline: tool_pipeline)
+    .use(Hermes::Middleware::ErrorRecovery, compactor: compactor, fallback_model: ENV["HERMES_FALLBACK_MODEL"])
+    .use(Hermes::Middleware::TokenUsage)
+    .run(terminal)
+    .start(prompt)
+
+  summary = env[:messages].select { |m| m.role == :assistant }.last&.content.to_s
+  {
+    "status" => env[:should_exit] ? "interrupted" : "completed",
+    "summary" => summary,
+    "api_calls" => env[:current_iteration] || 1,
+    "duration_seconds" => (Time.now - started).round(2),
+    "exit_reason" => env[:should_exit]&.dig(:reason) || "completed",
+  }
+end
+
+# Child entry: `ruby main.rb --subagent <task.json>` — run the sub-agent and
+# write the result file the parent's tick drains.
+if ARGV[0] == "--subagent"
+  task = JSON.parse(File.read(ARGV[1]))
+  started = Time.now
+  begin
+    result = sub_agent_factory.call(
+      goal: task["goal"], context: task["context"], role: task["role"],
+      output_schema: task["output_schema"], delegation_id: task["delegation_id"],
+    )
+    delegation.complete(task["delegation_id"],
+      status: result["status"], summary: result["summary"],
+      api_calls: result["api_calls"], duration: result["duration_seconds"])
+  rescue StandardError => e
+    delegation.complete(task["delegation_id"], status: "error", summary: "",
+                        error: "#{e.class}: #{e.message}", duration: Time.now - started)
+  end
+  exit 0
+end
+
 agent = Brute.agent
   # ── per-turn (MIDDLEWARE.md §2) ─────────────────────────────
   .use(Hermes::Middleware::Estop)
@@ -120,12 +181,12 @@ agent = Brute.agent
   .use(Hermes::Middleware::MemoryProviders)
   .use(Hermes::Middleware::Skills)
   .use(Hermes::Middleware::Todo)
+  .use(Hermes::Middleware::ContextEngine)
   .use(Hermes::Middleware::PromptTiers, tools: tools, model: ENV["HERMES_MODEL"])
   .use(Hermes::Middleware::SessionSearch)
-  .use(Hermes::Middleware::ContextEngine)
   .use(Hermes::Middleware::Clarify)
-  .use(Hermes::Middleware::Delegation)
-  .use(Hermes::Middleware::ProcessRegistry)
+  .use(Hermes::Middleware::Delegation, delegation: delegation, run_sync: sub_agent_factory, main_rb: File.expand_path(__FILE__))
+  .use(Hermes::Middleware::ProcessRegistry, registry: shared_registry)
   .use(Hermes::Middleware::CronSchedule)
   .use(Hermes::Middleware::Heartbeat)
   .use(Hermes::Middleware::Curator)
@@ -209,6 +270,23 @@ if ARGV.empty?
     run_job: cron_runner,
   )
   result["fired"]&.each { |f| warn "cron: fired #{f['name']} (#{f['status']})" }
+
+  # Background-process completions (notify_on_complete armed) become a turn.
+  Hermes::ProcessRegistry.check_completions(log_dir: File.join(Dir.pwd, "processes")) do |entry|
+    notification = "[IMPORTANT: Background process #{entry['session_id']} exited (exit code #{entry['exit_code'] || 'unknown'}).\nCommand: #{entry['command']}\nOutput:\n#{entry['output_tail']}]"
+    puts reply(agent.start(notification))
+  end
+
+  # Completed background delegations re-enter as a new turn.
+  delegation.completions.each do |record|
+    result = delegation.result_for(record["id"])
+    text = "[ASYNC DELEGATION COMPLETE — #{record['id']}]\n" \
+           "A background subagent you dispatched earlier has finished.\n" \
+           "Original goal: #{record['goal']}\nRole: #{record['role']}\n" \
+           "Status: #{record['status']}\n--- RESULT ---\n#{result && result['summary']}"
+    puts reply(agent.start(text))
+    delegation.mark_delivered(record["id"])
+  end
 
   if Hermes::Heartbeat.due?(dir: Dir.pwd)
     heartbeat_env = agent.start(Hermes::Heartbeat.message(Hermes::Heartbeat.load(dir: Dir.pwd)))
