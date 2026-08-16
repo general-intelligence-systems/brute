@@ -45,23 +45,26 @@ module PrimeAgent
     # The spawn handle. `.result` is nil until a terminal status; on :failed
     # it carries the error text so a polling parent sees what happened.
     class Agent
-      attr_reader :id, :name, :task, :depth, :model, :status, :error, :thread
+      attr_reader :id, :name, :task, :depth, :model, :status, :error, :thread, :parent
 
-      def initialize(id:, name:, task:, depth:, model:)
+      def initialize(id:, name:, task:, depth:, model:, parent: nil)
         @id = id
         @name = name
         @task = task
         @depth = depth
         @model = model
+        @parent = parent
         @status = :running
         @error = nil
         @result = nil
         @created_at = Time.now.utc.iso8601
+        @replied_since_task = false
       end
 
       def start!
         @thread = Thread.new do
-          Thread.current[:kernel_agent_depth] = @depth
+          Thread.current.thread_variable_set(:kernel_agent_depth, @depth)
+          Thread.current.thread_variable_set(:kernel_agent, self)
           run
         end
         self
@@ -86,19 +89,64 @@ module PrimeAgent
       end
       alias_method :to_s, :inspect
 
+      # Agent-message bookkeeping (upstream's repliedToParentSinceTask):
+      # set when this child sends to its parent.
+      attr_reader :replied_since_task
+
+      def mark_replied!
+        @replied_since_task = true
+      end
+
+      # Upstream's RlmChildAgentStatus vocabulary is running|completed|error.
+      def registry_status
+        case @status
+        when :running then "running"
+        when :finished then "completed"
+        else "error" # :failed, :stopped
+        end
+      end
+
+      # The registry-entry shape (upstream's RlmSubagentRegistryEntry, K3).
+      # Children of the kernel's main thread report the root run as parent.
+      def to_registry_h
+        {
+          "rlm_child_id" => id,
+          "session_name" => name,
+          "status" => registry_status,
+          "depth" => depth,
+          "model" => model,
+          "parent_id" => parent&.id || "root",
+          "replied_since_task" => replied_since_task,
+        }
+      end
+
       private
 
       def run
         context = Object.new
         child_binding = context.instance_eval { binding }
         system_prompt = Brute::SystemPrompt.build { |prompt, _ctx| prompt << child_prompt }
-        agent = Brute.agent
-                     .use(Brute::Middleware::SystemPrompt, system_prompt: system_prompt)
-                     .use(Brute::Middleware::Loop::ToolResult)
-                     .use(Brute::Middleware::MaxIterations, max_iterations: MAX_ITERATIONS)
-                     .use(Brute::Middleware::ToolPipeline,
-                          tools: [EvalTool.new(eval_binding: child_binding)])
-                     .run(KernelAgents.terminal_for(@model))
+        builder = Brute.agent
+                       .use(Brute::Middleware::SystemPrompt, system_prompt: system_prompt)
+        # The family bus (stage 10): drain this child's mailbox at each turn
+        # boundary and publish its transcript for agent_observe. Loaded into
+        # the kernel by the bootstrap; bus_dir comes from install!.
+        if KernelAgents.bus_dir && defined?(PrimeAgent::Middleware::AgentMessages)
+          builder = builder
+                    .use(PrimeAgent::Middleware::AgentMessages, bus_dir: KernelAgents.bus_dir, agent_id: @id)
+                    .use(PrimeAgent::Middleware::AgentObserve, bus_dir: KernelAgents.bus_dir, agent_id: @id)
+        end
+        builder = builder
+                  .use(Brute::Middleware::Loop::ToolResult)
+                  .use(Brute::Middleware::MaxIterations, max_iterations: MAX_ITERATIONS)
+        if KernelAgents.bus_dir && defined?(PrimeAgent::Middleware::UsageAttribution)
+          builder = builder
+                    .use(PrimeAgent::Middleware::UsageAttribution, bus_dir: KernelAgents.bus_dir, agent_id: @id)
+        end
+        agent = builder
+                .use(Brute::Middleware::ToolPipeline,
+                     tools: [EvalTool.new(eval_binding: child_binding)])
+                .run(KernelAgents.terminal_for(@model))
         env = agent.start(@task)
         final = env[:messages].reverse.find { |message| message.role == :assistant }
         @result = final&.content.to_s
@@ -154,11 +202,12 @@ module PrimeAgent
 
     class << self
       # Test seam: when set, children run this terminal app instead of the
-      # OpenRouter completion middleware.
-      attr_accessor :terminal, :bundle_gemfile
+      # OpenRouter completion middleware. bus_dir: the family-bus directory
+      # (agent_message/agent_observe), set by KernelRuntime.install!.
+      attr_accessor :terminal, :bundle_gemfile, :bus_dir
 
       def spawn(task, name: nil, model: nil)
-        depth = (Thread.current[:kernel_agent_depth] || 0) + 1
+        depth = (Thread.current.thread_variable_get(:kernel_agent_depth) || 0) + 1
         if depth > max_depth
           return "KernelAgent not spawned: recursive agent depth limit " \
                  "(#{depth} > #{max_depth}). Answer inline instead."
@@ -167,7 +216,8 @@ module PrimeAgent
         ensure_loaded!
         agent = nil
         registry_mutex.synchronize do
-          agent = Agent.new(id: next_id, name: unique_name(name), task: task, depth: depth, model: model)
+          agent = Agent.new(id: next_id, name: unique_name(name), task: task, depth: depth, model: model,
+                            parent: Thread.current.thread_variable_get(:kernel_agent))
           registry[agent.name] = agent
         end
         agent.start!
@@ -196,23 +246,65 @@ module PrimeAgent
         agent.stop!
       end
 
-      # SCAFFOLD (FEATURES.md K4) — dispose one FINISHED child from the
-      # registry. Ports prime-agent's rlm.delete_subagent: deletes a retained
-      # direct child by id or name; a still-running child is skipped
-      # ({outcome: "skipped_running"}), never killed — `stop` already covers
-      # killing here. Returns the disposed handle.
+      # K4 — dispose one FINISHED child from the registry (prime-agent's
+      # rlm.delete_subagent): a still-running child is skipped, never killed
+      # (`stop` covers killing). Upstream's return shape: {subagent} when
+      # deleted, {subagent, outcome: "skipped_running"} when running.
       def delete(name)
-        "KernelAgent.delete not implemented (scaffold)"
+        agent = get(name.to_s)
+        return "no KernelAgent named #{name.inspect}" unless agent
+
+        if agent.alive?
+          return { "subagent" => agent.to_registry_h, "outcome" => "skipped_running" }
+        end
+
+        registry_mutex.synchronize { registry.delete(agent.name) }
+        { "subagent" => agent.to_registry_h }
       end
 
-      # SCAFFOLD (FEATURES.md K2) — bounded fuzzy search over the
-      # authenticated model catalog for spawn's model: override. Ports
-      # prime-agent's rlm.find_models: scoring exact < prefix < substring
-      # over "provider/id", id and name; limit default 8, clamped to 20; the
-      # override selector is exact "provider/model". Backed by
-      # Middleware::ModelRegistry; the catalog is never prompt-visible.
+      # K3 — the parent-scoped child registry (prime-agent's
+      # rlm.list_subagents): direct children of the CURRENT agent, or of the
+      # root run when called from the kernel's main thread.
+      def list_subagents
+        current = Thread.current.thread_variable_get(:kernel_agent)
+        registry_mutex.synchronize { registry.values.dup }
+          .select { |agent| current ? agent.parent.equal?(current) : agent.parent.nil? }
+          .map(&:to_registry_h)
+      end
+
+      # The roster catalog for the family bus: the root run plus every
+      # registered child, as AgentFamily.build_roster entries. Children
+      # spawned from the kernel's main thread have the root run as parent.
+      def catalog
+        agents = registry_mutex.synchronize { registry.values.dup }
+        [root_entry] + agents.map do |agent|
+          {
+            id: agent.id, name: agent.name, depth: agent.depth,
+            status: agent.registry_status, parent_id: agent.parent&.id || "root",
+            replied_since_task: agent.replied_since_task,
+          }
+        end
+      end
+
+      # The calling agent's roster identity (the root run on the main thread).
+      def current_entry
+        agent = Thread.current.thread_variable_get(:kernel_agent)
+        return root_entry unless agent
+
+        { id: agent.id, name: agent.name, depth: agent.depth, parent_id: agent.parent&.id || "root" }
+      end
+
+      def root_entry
+        { id: "root", name: "root", depth: 0, status: "running", parent_id: nil }
+      end
+
+      # K2 — bounded fuzzy search over the authenticated model catalog for
+      # spawn's model: override (prime-agent's rlm.find_models): scoring
+      # exact < prefix < substring over "provider/id", id and name; limit
+      # default 8, clamped to 20; the override selector is exact
+      # "provider/model". The catalog is never prompt-visible.
       def find_models(query = "", limit: 8)
-        "KernelAgent.find_models not implemented (scaffold)"
+        PrimeAgent::ModelRegistry.find_models(query, limit: limit)
       end
 
       def max_depth
@@ -379,12 +471,12 @@ describe "prime_agent/kernel_agents" do
   end
 
   it "refuses to spawn past the depth limit (error string, no thread)" do
-    Thread.current[:kernel_agent_depth] = KA.max_depth
+    Thread.current.thread_variable_set(:kernel_agent_depth, KA.max_depth)
     result = KA.spawn("too deep")
     result.should.be.kind_of String
     result.should.include "depth limit"
   ensure
-    Thread.current[:kernel_agent_depth] = nil
+    Thread.current.thread_variable_set(:kernel_agent_depth, nil)
   end
 
   it "tracks running/finished and stops children" do
@@ -413,9 +505,64 @@ describe "prime_agent/kernel_agents" do
     KA.terminal = nil
   end
 
-  it "scaffolds delete and find_models as no-op stubs (FEATURES.md K2/K4)" do
-    KA.delete("tester").should.include "not implemented"
-    KA.find_models("gpt").should.include "not implemented"
+  it "find_models delegates to the model registry (K2)" do
+    require_relative "model_registry"
+    PrimeAgent::ModelRegistry.define_singleton_method(:fetch_catalog) do |_key|
+      [{ provider: "openai", id: "gpt-5", name: "GPT-5" }]
+    end
+    begin
+      result = KA.find_models("gpt")
+      result.first["selector"].should == "openai/gpt-5"
+    ensure
+      PrimeAgent::ModelRegistry.singleton_class.send(:remove_method, :fetch_catalog)
+    end
+  end
+
+  it "delete disposes finished children and skips running ones (K4)" do
+    KA.terminal = ->(env) { env[:messages].assistant("ok"); env }
+    done = spawn_and_wait("quick", name: "gone")
+    result = KA.delete("gone")
+    result["subagent"]["rlm_child_id"].should == done.id
+    result["subagent"]["status"].should == "completed"
+    result.key?("outcome").should.be.false
+    KA.get("gone").should.be.nil
+
+    KA.terminal = ->(env) { sleep 30; env }
+    slow = KA.spawn("slow", name: "linger")
+    skipped = KA.delete("linger")
+    skipped["outcome"].should == "skipped_running"
+    KA.stop("linger")
+    slow.thread.join(5)
+    KA.delete("no-such-agent").should.include "no KernelAgent named"
+  ensure
+    KA.terminal = nil
+  end
+
+  it "list_subagents is scoped to the caller's direct children (K3)" do
+    KA.terminal = ->(env) { env[:messages].assistant("ok"); env }
+    a = spawn_and_wait("one", name: "child-a")
+    spawn_and_wait("two", name: "child-b")
+    listed = KA.list_subagents
+    # (the registry accumulates across specs in this process — select ours)
+    mine = listed.select { |h| %w[child-a child-b].include?(h["session_name"]) }
+    mine.length.should == 2
+    mine.find { |h| h["session_name"] == "child-a" }["rlm_child_id"].should == a.id
+    mine.all? { |h| h["parent_id"] == "root" }.should.be.true # children of the root run
+  ensure
+    KA.terminal = nil
+  end
+
+  it "catalog + current_entry model the family roster" do
+    KA.terminal = ->(env) { env[:messages].assistant("ok"); env }
+    spawn_and_wait("one", name: "scoped")
+    catalog = KA.catalog
+    catalog.first[:id].should == "root"
+    child = catalog.find { |e| e[:name] == "scoped" }
+    child[:parent_id].should == "root"
+    child[:status].should == "completed"
+    KA.current_entry[:id].should == "root" # main thread is the root run
+  ensure
+    KA.terminal = nil
   end
 
   it "capture_eval renders stdout, result and errors like the iruby tool" do

@@ -82,16 +82,26 @@ module PrimeAgent
       end
 
       # addAutonomousUsage: one turn per iteration; the token delta counts
-      # the turn's new messages (estimate mode — see class comment). The
-      # cursor re-anchors when compaction shrinks the log.
+      # input+output+cacheWrite per LLM call (cache reads excluded) from
+      # UsageAttribution's usage_totals when the provider reports, else the
+      # chars/4 estimate over the turn's new messages. The cursors re-anchor
+      # when compaction shrinks the log.
       def account_turn(env)
+        @state.turns_used += 1
+        totals = env[:metadata] && env[:metadata][:usage_totals]
+        if totals
+          seen = @usage_seen ||= 0
+          current = totals[:input_sum] + totals[:output_sum] + totals[:cache_write_sum]
+          @usage_seen = current
+          @state.tokens_used += current - seen
+          return
+        end
+
         messages = env[:messages]
         from = @accounted_cursor
         from = messages.length if from > messages.length
         delta = messages[from..] || []
         @accounted_cursor = messages.length
-
-        @state.turns_used += 1
         @state.tokens_used += delta.reject { |message| message.role == :system }
                                    .sum { |message| PrimeAgent::Compaction.estimate_tokens(message) }
       end
@@ -174,6 +184,26 @@ describe "prime_agent/middleware/autonomous" do
       calls.should == 4 # 1 + 3 continuations; retry_exhausted and the limit coincide
       texts = env[:messages].map(&:content).join
       texts.should.include "not rerun: workspace unchanged since previous failed gate"
+    end
+  end
+
+  it "uses exact provider usage for the token limit when reported" do
+    Dir.mktmpdir do |dir|
+      calls = 0
+      app = lambda do |env|
+        calls += 1
+        (env[:metadata] ||= {})[:usage_totals] = {
+          calls: calls, input_sum: 30_000 * calls, output_sum: 10_000 * calls,
+          cache_read_sum: 0, cache_write_sum: 5_000 * calls, total_sum: 45_000 * calls,
+        }
+        env[:messages].assistant("working")
+        env
+      end
+      env = fresh_env
+      build(app, dir, enabled: true, max_tokens: 80_000).call(env)
+      # turn 1: 45k counted; turn 2: 90k >= 80k -> maxTokens stops it
+      calls.should == 2
+      env[:messages].count { |m| m.content.to_s.include?("autonomous mode") }.should == 1
     end
   end
 

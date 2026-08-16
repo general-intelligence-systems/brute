@@ -3,5 +3,7 @@
 source "https://rubygems.org"
 
 gem "brute", "~> 3.2.2"
+gem "extralite"
 gem "fugit"
+gem "mcp"
 gem "open_router_enhanced"

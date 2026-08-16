@@ -16,6 +16,16 @@
     "defaults": { "observer_timeout_ms": 500, "interceptor_timeout_ms": 5000, "approval_timeout_ms": 60000 },
     "processes": {}
   },
+  "turn_profile": { "history": "default", "system_prompt": "default", "skills": "default", "tools": "default" },
+  "evolution": { "mode": "observe", "min_task_count": 2, "min_success_ratio": 0.7, "cold_path_trigger": "after_turn" },
+  "events": { "logging": { "enabled": true, "include": ["agent.*"], "exclude": [], "min_severity": "info", "include_payload": false } },
+  "voice": { "tts_model_name": "" },
+  "max_media_size": 20971520,
+  "context_manager": "legacy",
+  "agents": {
+    "list": [],
+    "defaults": { "subagents": null }
+  },
   "tools": {
     "allow_read_paths": [],
     "allow_write_paths": [],
@@ -48,12 +58,22 @@
       "glm_search": { "enabled": false, "api_key": "", "base_url": "", "search_engine": "search_std", "max_results": 5 },
       "baidu_search": { "enabled": false, "api_key": "", "base_url": "", "max_results": 10 }
     },
+    "message": { "enabled": true, "media_enabled": false },
     "cron": {
       "exec_timeout_minutes": 5,
       "allow_command": true,
       "command_allowed_remotes": []
     },
     "media_cleanup": { "enabled": true, "max_age_minutes": 30 },
+    "mcp": {
+      "enabled": false,
+      "servers": {},
+      "discovery": { "enabled": false, "ttl": 5, "max_search_results": 5, "use_bm25": true, "use_regex": false },
+      "max_inline_text_chars": 16384
+    },
+    "i2c": { "enabled": false },
+    "spi": { "enabled": false },
+    "serial": { "enabled": false },
     "skills": {
       "registries": [
         { "name": "clawhub", "enabled": true, "base_url": "", "auth_token": "" },

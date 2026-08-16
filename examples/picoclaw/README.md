@@ -32,7 +32,12 @@ complete port catalogue: `FEATURES.md`.
 | last-channel state (`state/state.json`) | `StateManager` middleware (cli/direct in this port) |
 | system prompt from workspace files | `Brute::PromptTemplate` + `prompt.erb`, re-read every turn (mtime hot-reload) |
 | hooks (BeforeLLM/AfterLLM/BeforeTool/AfterTool/ApproveTool, JSON-RPC process hooks) | brute `.on()` lifecycle hooks + `hooks.rb` HookManager (decision contract, fail-open interceptors / fail-closed approval, prompt-mutation revert) |
-| channels, gateway, WebUI, MCP | not ported (interactive surface) |
+| channels (message delivery) | `outbound.jsonl` outbox (the port's bus; operator or future channel tails it); final-reply dedup when the `message` tool delivered |
+| channels, gateway, WebUI | not ported (interactive surface) |
+| MCP (server connections, deferred tool discovery) | `tools/mcp_*` on the official `mcp` gem: stdio/HTTP servers, hidden registration + TTL promotion, `tool_search_tool_regex`/`bm25`, >16KB artifact spill |
+| multi-agent delegation (`delegate` tool) | registered when `agents.list` is non-empty; subturn against the target's model/workspace, allowlist via `agents.defaults.subagents` |
+| seahorse context manager (SQLite, hierarchical summaries) | `middleware/seahorse_*` on extralite when `context_manager: "seahorse"` + `short_grep`/`short_expand` tools |
+| hardware tools (i2c/spi/serial, default-off) | `tools/i2c.rb` `spi.rb` `serial.rb` + `linux_ioctl.rb` (SMBus/spidev/termios ioctls via Fiddle) |
 
 ## Layout
 
@@ -59,9 +64,13 @@ middleware/
   context_budget.rb      # token estimate + proactive force-compress/trim
   emergency_compression.rb # context-error → compress + retry (wraps the LLM call)
   model_router.rb        # light/heavy turn classifier → llm_model override
-  media.rb               # media:// store (refcounts, janitor) + path-tag resolver
+  media.rb               # media:// store (refcounts, janitor) + path-tag resolver (per-pass)
   fallback_chain.rb      # candidates/cooldowns/RPM (state/fallback_chain.json)
   subturns.rb            # registry + spawn machinery + per-iteration result drain
+  runtime_events.rb      # turn-span events + filtered logging (events.logging.*)
+  evolution_cold_path.rb # pattern clustering + skill drafts (observe/draft/apply)
+  seahorse/              # SQLite context manager (store/engine/retrieval) via extralite
+  seahorse_context.rb    # the context-manager middleware (assemble/ingest/compact)
 tools/
   tool_wrapper.rb        # guard base class
   workspace_guard.rb     # restrict_to_workspace (for stand-ins/scaffolds)
@@ -75,17 +84,30 @@ tools/
   cron_tool.rb           # agent-facing job management (full action set)
   tool_policy.rb         # per-call wrapper: schema validation + approval + [FILTERED] scrub
   skill_registries.rb    # clawhub + github clients, search cache, zip extract
+  bm25.rb                # BM25 ranking engine (for MCP tool discovery)
+  mcp_tool.rb            # mcp_<server>_<tool> wrapper (sanitize, artifacts, media)
+  mcp_manager.rb         # MCP server connections + hidden-tool TTL registry
+  tool_search_tool_regex.rb tool_search_tool_bm25.rb  # discovery → promote tools
   find_skills.rb         # registry search (cached)
   install_skill.rb       # install into workspace/skills (moderation, origin meta)
   spawn.rb subagent.rb spawn_status.rb   # subturn tools (async/sync/status)
+  delegate.rb            # multi-agent delegation (agents.list)
+  short_grep.rb short_expand.rb          # seahorse retrieval tools
+  linux_ioctl.rb         # ioctl layer: SMBus, spidev, termios (Fiddle pointers)
+  i2c.rb spi.rb serial.rb                # hardware tools (default-off; Linux)
+  outbox.rb              # outbound.jsonl — the port's message bus + send tracking
+  message.rb             # outbox delivery (+ media attachments)
+  send_file.rb           # file → media store → outbox
+  send_tts.rb            # TTS synth → outbox (registered only with a TTS model)
+  reaction.rb            # always errors (no ReactionCapable channel — upstream parity)
+  load_image.rb          # image → media:// ref → path tag next pass
   read_file.rb           # ported (bytes + lines modes, pagination, sandbox)
   write_file.rb          # ported (overwrite guard, atomic write)
   edit_file.rb           # ported (single-occurrence replace, diff result)
   append_file.rb         # ported
   list_dir.rb            # ported (DIR/FILE, lstat semantics)
   exec.rb                # ported (7 actions, deny patterns, guard, sessions, PTY)
-  load_image.rb          # scaffold (no-op)
-test/                    # plain-ruby harnesses: tools_test + p0_test + p1_test + hooks_test (nix develop)
+test/                    # tools/p0/p1/hooks/p2/mcp/p3/hw suites (via nix develop)
 work/                    # workspace template (copied into the CWD on run)
 ```
 

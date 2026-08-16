@@ -52,11 +52,17 @@ module PrimeAgent
         drain_requests
         run_turn(env)
         loop do
+          # Account the turn that just ran BEFORE draining requests, so a
+          # goal completed mid-turn still has its final turn's usage
+          # preserved (upstream accounts at message_end; the complete drains
+          # later).
+          state = PrimeAgent::Goal.load_state(@store_path)
+          state = account_usage(env, state) if state.active?
+
           drain_requests
           state = PrimeAgent::Goal.load_state(@store_path)
           break unless state.active?
 
-          state = account_usage(env, state)
           if state.token_budget && state.tokens_used >= state.token_budget
             state = save(state.with(status: "budget_limited", last_reason: "budget_limit",
                                     updated_at: now_iso))
@@ -95,18 +101,29 @@ module PrimeAgent
         )
       end
 
-      # Estimate accounting: sum the chars/4 estimate over the messages added
-      # since the last accounting, plus elapsed wall time. The cursor
-      # re-anchors (without double counting) when compaction shrinks the log.
+      # Usage accounting: exact when the provider reports usage (upstream's
+      # goalTokenDeltaForUsage: input+output per LLM call, summed via
+      # UsageAttribution's usage_totals), chars/4 estimate otherwise. The
+      # estimate cursor re-anchors (without double counting) when compaction
+      # shrinks the log; once real usage flows it wins — the estimate cursor
+      # never runs.
       def account_usage(env, state)
         messages = env[:messages]
-        from = @accounted_cursor
-        from = messages.length if from > messages.length
-        delta = messages[from..] || []
-        @accounted_cursor = messages.length
-
-        tokens = delta.reject { |message| message.role == :system }
-                      .sum { |message| PrimeAgent::Compaction.estimate_tokens(message) }
+        totals = env[:metadata] && env[:metadata][:usage_totals]
+        tokens =
+          if totals
+            seen = @usage_seen ||= 0
+            current = totals[:input_sum] + totals[:output_sum]
+            @usage_seen = current
+            current - seen
+          else
+            from = @accounted_cursor
+            from = messages.length if from > messages.length
+            delta = messages[from..] || []
+            @accounted_cursor = messages.length
+            delta.reject { |message| message.role == :system }
+                 .sum { |message| PrimeAgent::Compaction.estimate_tokens(message) }
+          end
         now = Time.now.utc
         elapsed = @last_tick ? (now - @last_tick).round : 0
         @last_tick = now
@@ -267,6 +284,30 @@ describe "prime_agent/middleware/goal" do
       state.status.should == "complete"
       env[:messages].map(&:content).join.should.include "The active thread goal objective was edited by the user."
       env[:messages].map(&:content).join.should.include "new objective"
+    end
+  end
+
+  it "counts exact provider usage toward the budget when reported" do
+    Dir.mktmpdir do |dir|
+      PrimeAgent::Goal.create_in_store(File.join(dir, "goal.json"),
+                                       objective: "metered", token_budget: 500)
+      calls = 0
+      app = lambda do |env|
+        calls += 1
+        (env[:metadata] ||= {})[:usage_totals] = {
+          calls: calls, input_sum: 100 * calls, output_sum: 40 * calls,
+          cache_read_sum: 0, cache_write_sum: 0, total_sum: 140 * calls,
+        }
+        env[:messages].assistant("working")
+        File.write(File.join(dir, "goal_request.json"), JSON.generate("action" => "complete")) if calls == 2
+        env
+      end
+      env = env_with([[:user, "task"]])
+      build(app, dir).call(env)
+
+      state = PrimeAgent::Goal.load_state(File.join(dir, "goal.json"))
+      state.tokens_used.should == 280 # 140 per turn — exact, not estimated
+      state.status.should == "complete"
     end
   end
 

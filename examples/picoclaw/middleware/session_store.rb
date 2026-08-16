@@ -23,13 +23,14 @@ require "fileutils"
 # exactly matching, non-duplicate, known tool results — otherwise the whole
 # block is dropped.
 class SessionStore
-  def initialize(app, path:, **_opts)
+  def initialize(app, path:, read: true, **_opts)
     @app = app
     @path = path
+    @read = read
   end
 
   def call(env)
-    if File.exist?(@path)
+    if @read && File.exist?(@path)
       loaded = []
       File.foreach(@path) do |line|
         line = line.strip

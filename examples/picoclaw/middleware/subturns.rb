@@ -25,7 +25,7 @@ class Subturns
 
   # Shared between the middleware and the spawn/subagent/spawn_status tools.
   class Registry
-    Task = Struct.new(:id, :label, :task, :status, :result, :thread, :started_at, :reported)
+    Task = Struct.new(:id, :label, :task, :status, :result, :thread, :started_at, :reported, :target)
 
     attr_reader :build_child
 
@@ -89,9 +89,11 @@ class Subturns
   # Runs one child turn (ephemeral session, fixed subagent prompt, no spawn
   # tools — the child stack is built by the registry's build_child proc) with
   # the default timeout; records status/result and releases the slot.
+  # record.target (an agent config hash) delegates into that agent's
+  # workspace/model.
   def self.run_child(registry, record)
     Timeout.timeout(registry.timeout_seconds) do
-      env = registry.build_child.call(record.task)
+      env = registry.build_child.call(record.task, record.target)
       final = env[:messages].reverse.find { |m| m.role.to_sym == :assistant && !m.content.to_s.strip.empty? }
       record.result = final&.content.to_s
       record.status = "completed"

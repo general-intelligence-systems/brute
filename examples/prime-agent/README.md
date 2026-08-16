@@ -78,10 +78,49 @@ middleware:
   kernel's preloaded `rlm_heartbeat` proxy (create/list/update/delete)
   writes the same store directly; the user heartbeat is a per-store
   singleton seeded from `BRUTE_HEARTBEAT`.
-- **stages 9+ — scaffolded**: the remaining middleware from **FEATURES.md**
-  are pass-through no-ops wired in `main.rb` in their intended fill-in
-  order; the remaining kernel skills are no-op stubs under
-  `work/.brute/skills/`. Fill in per FEATURES.md §5.
+- **stage 9 — goals + autonomous mode** (wired): `Middleware::Goal`
+  re-prompts with the `<goal_context>` user message after every turn while a
+  goal is active (`lib/prime_agent/goal.rb` ports the state machine and the
+  verbatim prompts; state in `goal.json`, seeded with `BRUTE_GOAL`), and the
+  kernel's preloaded `goal` proxy (`get`/`create`/`complete`) drives it via
+  a request file. `Middleware::Autonomous` (`lib/prime_agent/autonomous.rb`)
+  adds bounded continuations with quality gates: shell gates with retries,
+  git-worktree snapshots that skip re-running an unchanged failed gate, and
+  continuation/turn/token/wall-clock limits. The goal gets first refusal
+  every turn; autonomous defers while one is active.
+- **stage 10 — the family bus** (wired): `lib/prime_agent/agent_family.rb`
+  ports the roster (parent/siblings/children), validation, prompt text,
+  receipts, and rate limits; `Middleware::AgentMessages` delivers mailbox
+  messages as user messages at each turn boundary (shared by the root run
+  and every KernelAgent child pipeline); `Middleware::AgentObserve`
+  publishes each agent's transcript for the read-only `agent_observe` proxy.
+  The kernel gains preloaded `agent_message` and `agent_observe` proxies,
+  and `KernelAgent.list_subagents`/`delete` complete the registry surface
+  (K3/K4). Also landed: the upstream-shaped `<available_skills>` block
+  (`lib/prime_agent/skills_block.rb`, M16), the `prime-intellect` (verbatim)
+  and `skill-creator` (adapted) doc skills (S4/S5), and M10's queue semantics
+  folded into the driver model.
+- **stage 11 — MCP integrations + model registry** (wired):
+  `lib/prime_agent/mcp.rb` ports mcp_base.py onto the official `mcp` gem
+  client (streamable HTTP): shared `~/.prime/agent/auth.json` credentials
+  (env-bearer > api_key > oauth-with-skew), kernel-side token refresh under
+  flock, structuredContent-first result parsing, `NotEnabled` guidance. The
+  `linear`/`notion` skills wrap it (`Linear.list_tools`/`call_tool`). OAuth
+  2.1 login runs host-side via `mcp_login.rb <server>` (PKCE, RFC 7591
+  registration, localhost callback racing a manual paste).
+  `lib/prime_agent/model_registry.rb` backs `KernelAgent.find_models` with
+  the OpenRouter catalog and prime-agent's exact fuzzy scoring.
+- **stage 12 — the deferred substrate** (wired): usage accounting
+  (`Middleware::UsageAttribution` + a brute-side patch recording provider
+  usage into env metadata; goal/autonomous/compaction now prefer real
+  numbers), kernel snapshots (`KernelProvisioner` flushes a Marshalled
+  namespace on a debounce and at shutdown; the next boot restores it via
+  codegen — `BRUTE_KERNEL_SNAPSHOT=0` disables), the `attach-image` skill +
+  `Middleware::AttachImages` (multimodal delivery into the same turn),
+  session tree (`Middleware::SessionTree` journals every run;
+  `BRUTE_FORK=<log>#<entry>` forks with a branch summary), side questions
+  (`BRUTE_BTW`), and the orphan reaper (kernel spawn journal +
+  `Middleware::OrphanReaper`).
 
 Knobs: `BRUTE_MODEL` (model override), `BRUTE_REFINE_TURNS` (auto-refine
 turn interval, default 25), `BRUTE_REFINE_FINAL=0` (skip the exit distill),
@@ -91,7 +130,15 @@ default 2), `BRUTE_CONTEXT_WINDOW` (model context size in tokens; enables
 threshold compaction — overflow and `compact.run` work regardless),
 `BRUTE_HEARTBEAT` + `BRUTE_HEARTBEAT_EVERY` (the user heartbeat instruction
 and its interval, default `every 5m`), `BRUTE_FOLLOW=1` (keep running due
-scheduled jobs after the initial task instead of exiting).
+scheduled jobs after the initial task instead of exiting),
+`BRUTE_GOAL` + `BRUTE_GOAL_TOKEN_BUDGET` (the persistent thread goal),
+`BRUTE_AUTONOMOUS=1` + `BRUTE_AUTONOMOUS_GATES` (single gate command or JSON
+array; plus `BRUTE_AUTONOMOUS_MAX_CONTINUATIONS`/`MAX_TURNS`/`MAX_TOKENS`/
+`TIMEOUT_MS` overrides), `BRUTE_KERNEL_SNAPSHOT=0` (disable kernel namespace
+snapshots), `BRUTE_FORK=<session-log>[#<entry-id>]` (fork a new run from a
+prior one, with the abandoned branch's summary injected),
+`BRUTE_BTW=<question>` (a side question against the finished run),
+`BRUTE_MODELS_URL` (model-catalog override).
 
 Everything not yet wired is catalogued in **FEATURES.md** — the complete list
 of tools (the kernel API + the 13 bundled skills) and middleware (compaction,

@@ -156,6 +156,16 @@
     };
     version = "1.4.1";
   };
+  extralite = {
+    groups = ["default"];
+    platforms = [];
+    source = {
+      remotes = ["https://rubygems.org"];
+      sha256 = "0wppfnm3z2mldm9c5qzghz8bpsh2l138fpg92isl3sai66fankib";
+      type = "gem";
+    };
+    version = "3.0.1";
+  };
   faraday = {
     dependencies = ["faraday-net_http" "json" "logger"];
     groups = ["default"];
@@ -314,6 +324,17 @@
       type = "gem";
     };
     version = "1.7.0";
+  };
+  mcp = {
+    dependencies = ["json_schemer"];
+    groups = ["default"];
+    platforms = [];
+    source = {
+      remotes = ["https://rubygems.org"];
+      sha256 = "19jbanghx95vj8av7aczz2kjlzpy9ikd1qcj96vmvzybzdqa4xdg";
+      type = "gem";
+    };
+    version = "1.2.0";
   };
   minitest = {
     dependencies = ["drb" "prism"];

@@ -143,7 +143,13 @@ module PrimeAgent
         { found: true, instructions: nil }
       end
 
+      # The threshold's token count: the provider's reported total when
+      # UsageAttribution published one (upstream's calculateContextTokens on
+      # the last assistant usage), else the chars/4 estimate.
       def current_tokens(env)
+        real = env[:metadata] && env[:metadata][:last_context_tokens]
+        return real if real
+
         conversation = env[:messages].reject { |message| message.role == :system }
         PrimeAgent::Compaction.estimate_context_tokens(conversation).tokens
       end
@@ -318,6 +324,22 @@ describe "prime_agent/middleware/compaction" do
     middleware.call(env)
     calls.should == 2
     env[:messages].last.content.should == "recovered"
+  end
+
+  it "prefers the provider's reported context total over the estimate" do
+    app = lambda do |env|
+      (env[:metadata] ||= {})[:last_context_tokens] = 190 # tiny log, huge real context
+      env[:messages].assistant("final answer")
+      env
+    end
+    llm = ->(system:, user:, max_tokens:) { SUMMARY }
+    middleware = PrimeAgent::Middleware::Compaction.new(
+      app, llm: llm, context_window: 200, keep_recent_tokens: 10, reserve_tokens: 50,
+    )
+    env = conversation([]) { |m| m.assistant("prior work #{"p" * 400}") }
+    middleware.call(env)
+    # 190 > 200 - 50: compacted even though the chars/4 estimate is ~10
+    env[:messages].any? { |m| m.content.to_s.include?("compacted into the following summary") }.should.be.true
   end
 
   it "re-raises a non-overflow error without compacting" do

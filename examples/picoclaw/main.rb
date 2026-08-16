@@ -27,6 +27,11 @@ require_relative "tools/exec_session"
 require_relative "tools/web_http"
 require_relative "tools/html_markdown"
 require_relative "tools/skill_registries"
+require_relative "tools/bm25"
+require_relative "tools/mcp_tool"
+require_relative "tools/mcp_manager"
+require_relative "tools/tool_search_tool_regex"
+require_relative "tools/tool_search_tool_bm25"
 require_relative "tools/web_search"
 require_relative "tools/web_fetch"
 require_relative "tools/cron_tool"
@@ -41,6 +46,10 @@ require_relative "tools/edit_file"
 require_relative "tools/append_file"
 require_relative "tools/list_dir"
 require_relative "tools/exec"
+require_relative "tools/linux_ioctl"
+require_relative "tools/i2c"
+require_relative "tools/spi"
+require_relative "tools/serial"
 # picoclaw tool scaffolds — no-op handlers returning {"error":"not implemented"}
 # until filled in (FEATURES.md Part 1, tracked in TODO.md).
 require_relative "tools/load_image"
@@ -49,6 +58,9 @@ require_relative "tools/install_skill"
 require_relative "tools/spawn"
 require_relative "tools/subagent"
 require_relative "tools/spawn_status"
+require_relative "tools/delegate"
+require_relative "tools/short_grep"
+require_relative "tools/short_expand"
 
 require_relative "middleware/heartbeat_gate"
 require_relative "middleware/evolution_log"
@@ -71,6 +83,7 @@ require_relative "middleware/model_router"
 require_relative "middleware/media"
 require_relative "middleware/fallback_chain"
 require_relative "middleware/subturns"
+require_relative "middleware/seahorse_context"
 
 # Set OPENROUTER_API_KEY in the environment.
 OpenRouter.configure do |config|
@@ -104,7 +117,7 @@ def prompt_template(session: "heartbeat")
     soul:        -> { workspace_file("SOUL.md") },
     user:        -> { workspace_file("USER.md") },
     memory:      ->(ctx) { ctx[:memory_part] },   # MemoryFiles middleware
-    summary:     -> { workspace_file(File.join("sessions", "#{session}.summary.md")) },
+    summary:     ->(ctx) { ctx[:summary_override] || workspace_file(File.join("sessions", "#{session}.summary.md")) },
     environment: ->(ctx) { Brute::Prompts::Environment.call(ctx) },
     skills:      ->(ctx) { ctx[:skills_part] },   # SkillsCatalog middleware
     workspace:   Dir.pwd,
@@ -145,8 +158,9 @@ MEDIA_TMP_PATTERN = %r{\A#{Regexp.escape(File.join(Dir.tmpdir, "picoclaw_media")
 # sandbox lives inside the tools (pkg/tools/fs, shell.go), so wrapping them in
 # WorkspaceGuard would wrongly reject allow_read/allow_writePaths matches.
 # Stand-ins and scaffolds keep the guard.
-def build_tools(config, cron_store:, subturn_registry: nil, outbox: Outbox.new, media_store: nil)
-  workspace = Dir.pwd
+def build_tools(config, cron_store:, subturn_registry: nil, outbox: Outbox.new, media_store: nil,
+                mcp_manager: nil, workspace: Dir.pwd, subturn_spawner: nil, agents: [],
+                seahorse_retrieval: nil)
   restrict = config.fetch("restrict_to_workspace", true)
   read_restrict = restrict && !config["allow_read_outside_workspace"]
 
@@ -224,6 +238,32 @@ def build_tools(config, cron_store:, subturn_registry: nil, outbox: Outbox.new, 
     *spawn_tools(subturn_registry),
   ]
   list << SendTTS.new(outbox:, synthesize: tts_synth, media_store:) if tts_synth
+  # Upstream registers delegate only when more than one agent exists (the
+  # default "main" plus at least one entry in agents.list).
+  if subturn_spawner && agents.any?
+    allowlist = config.dig("agents", "defaults", "subagents")
+    list << Delegate.new(self_id: "main", spawner: subturn_spawner, allowlist: allowlist)
+  end
+  if seahorse_retrieval
+    list << ShortGrep.new(retrieval: seahorse_retrieval)
+    list << ShortExpand.new(retrieval: seahorse_retrieval)
+  end
+  # Hardware: default-off upstream (tools.{i2c,spi,serial}.enabled).
+  list << I2C.new if (tools_cfg["i2c"] || {}).fetch("enabled", false)
+  list << SPI.new if (tools_cfg["spi"] || {}).fetch("enabled", false)
+  list << Serial.new if (tools_cfg["serial"] || {}).fetch("enabled", false)
+
+  if mcp_manager
+    # All discovered tools register (the locked gate in MCPTool#execute
+    # rejects unpromoted hidden ones); discovery tools only when a deferred
+    # server left something to discover.
+    list += mcp_manager.tools
+    discovery = (tools_cfg["mcp"] || {})["discovery"] || {}
+    if discovery["enabled"] && mcp_manager.hidden_entries.any?
+      list << ToolSearchToolBM25.new(manager: mcp_manager) if discovery.fetch("use_bm25", true)
+      list << ToolSearchToolRegex.new(manager: mcp_manager) if discovery.fetch("use_regex", false)
+    end
+  end
 
   # turn_profile.tools: "off" → none; {"mode" => "custom", "allow" => [...]} → filter.
   case (tools_profile = config.dig("turn_profile", "tools"))
@@ -376,16 +416,23 @@ def build_agent(config, session: "heartbeat", outbox: Outbox.new)
   cron_store = CronStore.new(File.join(Dir.pwd, "cron", "jobs.json"))
   tool_list = nil # assigned below; the registry's build_child reads it lazily
   subturn_registry = build_subturn_registry(config) { tool_list }
+  agents = config.dig("agents", "list") || []
+  delegate_spawner = build_delegate_spawner(config, agents, subturn_registry)
   media_store = Media::Store.new(
     max_age_minutes: (config.dig("tools", "media_cleanup", "max_age_minutes") || 30),
   )
-  tool_list = build_tools(config, cron_store:, subturn_registry:, outbox:, media_store:)
+  mcp_manager = build_mcp_manager(config, media_store)
+  seahorse_engine = build_seahorse(config)
+  seahorse_retrieval = seahorse_engine && Seahorse::Retrieval.new(store: seahorse_engine.store, session: session)
+  tool_list = build_tools(config, cron_store:, subturn_registry:, outbox:, media_store:,
+                                  mcp_manager:, subturn_spawner: delegate_spawner, agents:,
+                                  seahorse_retrieval:)
 
   # ToolPipeline executes env[:tools]; the provider learns about them through
   # CompletionOptions#tools, serialized as OpenAI-wire function definitions.
-  advertised = Brute.tools(tool_list).values.map do |adapter|
-    { type: "function", function: adapter.to_h }
-  end
+  # MCP-hidden tools are excluded until promoted — so the list is rebuilt
+  # per call in the terminal.
+  advertised = advertised_for(tool_list, mcp_manager)
 
   options = { tools: advertised }
   options[:model] = config["model"] if config["model"]
@@ -406,9 +453,11 @@ def build_agent(config, session: "heartbeat", outbox: Outbox.new)
 
   # The terminal proc resolves the model per call — ModelRouter's light pick
   # and FallbackChain's candidate both flow through env[:metadata][:llm_model].
+  # The advertised tools rebuild per call so MCP discovery promotions land.
   terminal = proc do |env|
     opts = options.dup
     opts[:model] = env[:metadata][:llm_model] if env[:metadata][:llm_model]
+    opts[:tools] = advertised_for(tool_list, mcp_manager) if mcp_manager
     Brute::Middleware::OpenRouter::Completion.new({}, **opts).call(env)
   end
 
@@ -427,12 +476,18 @@ def build_agent(config, session: "heartbeat", outbox: Outbox.new)
                             min_success_ratio: evolution_cfg["min_success_ratio"] || 0.7,
                             trigger: evolution_cfg["cold_path_trigger"] || "after_turn",
                             generate_draft: evolution_cfg["mode"] == "observe" ? nil : summarizer(config))
-    .tap { |p| p.use(SessionStore, path: File.join(Dir.pwd, "sessions", "#{session}.jsonl")) unless history_off }
+    .tap { |p| p.use(SessionStore, path: File.join(Dir.pwd, "sessions", "#{session}.jsonl"), read: !seahorse_engine) unless history_off }
+    .tap do |p|
+      if seahorse_engine
+        budget, window = seahorse_bounds(config)
+        p.use(SeahorseContext, engine: seahorse_engine, session: session, budget: budget, window: window)
+      end
+    end
     .use(CronSchedule, store: cron_store, exec_tool: cron_exec)
     .use(SkillsCatalog, **(skills_off ? { roots: [] } : {}))
     .use(MemoryFiles)
     .tap do |p|
-      unless history_off
+      unless history_off || seahorse_engine
         p.use(Compaction, threshold: config["summarize_message_threshold"] || 20,
                           token_percent: config["summarize_token_percent"] || 75,
                           context_window: config["context_window"],
@@ -474,7 +529,56 @@ def build_agent(config, session: "heartbeat", outbox: Outbox.new)
   end
 
   HookManager.new(config: config, session: session).wire(pipeline)
+
+  # Runtime events for llm/tool lifecycle + MCP per-turn tick and cleanup.
+  pipeline.on(:before_llm) { |env| RuntimeEvents.emit("agent.llm.request", payload: { "model" => env[:metadata][:llm_model].to_s }); nil }
+  pipeline.on(:after_llm) { |_env| RuntimeEvents.emit("agent.llm.response"); nil }
+  pipeline.on(:before_tool) { |call| RuntimeEvents.emit("agent.tool.exec_start", payload: { "tool" => call[:name] }); nil }
+  pipeline.on(:after_tool) { |call| RuntimeEvents.emit("agent.tool.exec_end", payload: { "tool" => call[:name] }); nil }
+  if mcp_manager
+    pipeline.on(:turn_start) { |_env| mcp_manager.tick!; nil }
+    pipeline.on(:turn_end) { |_env| mcp_manager.stop; nil }
+  end
+
   pipeline.run(terminal)
+end
+
+# tools.mcp: builds + connects the manager when enabled with servers;
+# nil otherwise (upstream skips registration when MCP is off).
+def build_mcp_manager(config, media_store)
+  mcp_cfg = (config["tools"] || {})["mcp"] || {}
+  return nil unless mcp_cfg["enabled"] && !mcp_cfg["servers"].to_h.empty?
+
+  MCPManager.new(config: mcp_cfg, workspace: Dir.pwd, media_store: media_store).start
+end
+
+# The advertised tool defs: everything except currently-locked MCP tools
+# (rebuilt per call so discovery promotions become visible mid-turn).
+def advertised_for(tool_list, mcp_manager)
+  tools = tool_list
+  if mcp_manager
+    tools = tool_list.reject { |t| t.is_a?(MCPTool) && mcp_manager.locked?(t.name) }
+  end
+  Brute.tools(tools).values.map { |a| { type: "function", function: a.to_h } }
+end
+
+# agents.defaults.context_manager == "seahorse": SQLite store + hierarchical
+# compaction via extralite. nil under the legacy manager (default).
+def build_seahorse(config)
+  return nil unless config["context_manager"] == "seahorse"
+
+  require "extralite"
+  Seahorse::Engine.new(db_path: File.join(Dir.pwd, "sessions", "seahorse.db"),
+                       summarize: summarizer(config))
+end
+
+# Budget/window for seahorse assembly: window − max_tokens (50% fallback).
+def seahorse_bounds(config)
+  max_tokens = config["max_tokens"].to_i.positive? ? config["max_tokens"].to_i : 8192
+  window = config["context_window"].to_i.positive? ? config["context_window"].to_i : 4 * max_tokens
+  budget = window - max_tokens
+  budget = window / 2 if budget <= 0
+  [budget, window]
 end
 
 # primary + model_fallbacks; per-model rpm from config["models"][name]["rpm"].
@@ -487,6 +591,7 @@ end
 
 # Children run a minimal stack: fixed subagent prompt, ephemeral session, the
 # parent's tools minus the spawn set (no recursive spawning), same model.
+# A delegate target (agents.list entry) swaps in its model + workspace.
 def build_subturn_registry(config, &tool_list_proc)
   sub_cfg = config["subturn"] || {}
   Subturns::Registry.new(
@@ -494,13 +599,20 @@ def build_subturn_registry(config, &tool_list_proc)
     max_concurrent: sub_cfg["max_concurrent"] || 5,
     concurrency_timeout: sub_cfg["concurrency_timeout_sec"] || 30,
     default_timeout_minutes: sub_cfg["default_timeout_minutes"] || 5,
-  ) do |task_text|
+  ) do |task_text, target_agent = nil|
     tool_list = tool_list_proc.call
-    excluded = %i[spawn subagent spawn_status]
+    if target_agent.is_a?(Hash) && !target_agent["workspace"].to_s.empty?
+      # delegate target with its own workspace: rebuild the tools against it
+      target_ws = File.expand_path(target_agent["workspace"], Dir.pwd)
+      tool_list = build_tools(config, cron_store: CronStore.new(File.join(Dir.pwd, "cron", "jobs.json")),
+                                     workspace: target_ws)
+    end
+    excluded = %i[spawn subagent spawn_status delegate]
     sub_tools = tool_list.reject { |t| excluded.include?(Brute::Tools::Adapter.wrap(t).name.to_sym) }
     sub_advertised = Brute.tools(sub_tools).values.map { |a| { type: "function", function: a.to_h } }
     sub_options = { tools: sub_advertised }
-    sub_options[:model] = config["model"] if config["model"]
+    model = target_agent.is_a?(Hash) ? (target_agent["model"] || config["model"]) : config["model"]
+    sub_options[:model] = model if model
 
     agent = Brute.agent
       .use(Brute::Middleware::MaxIterations)
@@ -514,6 +626,24 @@ def build_subturn_registry(config, &tool_list_proc)
     env[:messages] << Brute::Message.new(role: :user, content: task_text)
     agent.to_app.call(env)
     env
+  end
+end
+
+# The delegate spawner: run a synchronous child against the target agent's
+# config; the result text comes back prefixed by the tool.
+def build_delegate_spawner(config, agents, subturn_registry)
+  lambda do |agent_id, task|
+    target = agents.find { |a| a["id"] == agent_id }
+    raise "unknown agent #{agent_id.inspect}" unless target
+
+    subturn_registry.acquire
+    record = Subturns::Registry::Task.new(id: subturn_registry.next_id, label: "delegate:#{agent_id}",
+                                          task: task, status: "running", started_at: Time.now,
+                                          target: target)
+    Subturns.run_child(subturn_registry, record)
+    raise record.result.to_s if record.status == "failed"
+
+    record.result
   end
 end
 

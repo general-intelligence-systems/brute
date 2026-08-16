@@ -1,30 +1,62 @@
 # frozen_string_literal: true
 
+require_relative "../agent_family"
+
 module PrimeAgent
   module Middleware
-    # AgentObserve — per-turn middleware. SCAFFOLD: pass-through no-op
-    # (FEATURES.md M7, skill S10).
+    # AgentObserve — per-turn middleware (just inside AgentMessages). The
+    # read-model half of prime-agent's agent-observe feature
+    # (core/agent-observe.ts): upstream reads the target session's in-memory
+    # transcript through the daemon; here each agent's pipeline publishes a
+    # transcript snapshot to <bus_dir>/<id>-transcript.json after every turn,
+    # and the kernel's `agent_observe` proxy reads those files (clamping
+    # previews at read time, per upstream's 1-50 / 80-2000 bounds).
     #
-    # Ports prime-agent `packages/coding-agent/src/core/agent-observe.ts`:
-    # read-only observation of the agent family for orchestration. list ->
-    # summaries with computed status (tool | model | compacting | busy | user
-    # | idle), messageCount, and a latest-message preview truncated to 240
-    # chars; get(target) -> one agent; recent(target, limit, max_chars) ->
-    # last-N previews {index, role, timestamp, text, truncated, tool_calls,
-    # custom_type} with limit default 8 clamped 1-50, max_chars default 800
-    # clamped 80-2000; images render as "[image]". Family-reach enforced;
-    # NEVER mutates the target.
+    # Message contents are stored capped at 2100 chars — observe previews
+    # clamp to at most 2000 at read time, so nothing larger is ever shown.
     #
-    # Fill-in: owns the read model over KernelAgent/session state; the
-    # kernel-side AgentObserve skill drives it via agent_observe.list/get/
-    # recent request files drained here.
+    # Loaded host-side AND into the IRuby kernel (children publish their
+    # transcripts from there): keep it dependency-free.
     class AgentObserve
-      def initialize(app, **_opts)
+      MAX_STORED_CHARS = 2100
+
+      def initialize(app, bus_dir:, agent_id:)
         @app = app
+        @bus_dir = bus_dir
+        @agent_id = agent_id
       end
 
       def call(env)
         @app.call(env)
+        publish(env)
+        env
+      rescue StandardError
+        publish(env) # a failed turn still publishes what happened
+        raise
+      end
+
+      private
+
+      def publish(env)
+        FileUtils.mkdir_p(@bus_dir)
+        snapshot = env[:messages].map do |message|
+          entry = { "role" => message.role.to_s, "content" => truncate(message.content.to_s) }
+          calls = Array(message.tool_calls).map(&:name)
+          entry["tool_calls"] = calls unless calls.empty?
+          entry
+        end
+        path = PrimeAgent::AgentFamily.transcript_path(@bus_dir, @agent_id)
+        tmp = "#{path}.#{Process.pid}.tmp"
+        File.write(tmp, "#{JSON.pretty_generate(snapshot)}\n")
+        File.rename(tmp, path)
+      rescue StandardError
+        nil # observation must never break a turn
+      end
+
+      def truncate(content)
+        return content if content.length <= MAX_STORED_CHARS
+
+        "#{content[0...MAX_STORED_CHARS]}\n[... #{content.length - MAX_STORED_CHARS} more characters truncated]"
       end
     end
   end
@@ -33,10 +65,36 @@ end
 __END__
 
 describe "prime_agent/middleware/agent_observe" do
-  it "passes env through to the inner app (scaffold)" do
-    app = ->(env) { env[:inner] = true; env }
-    env = {}
-    PrimeAgent::Middleware::AgentObserve.new(app).call(env)
-    env[:inner].should.be.true
+  require "brute/messages"
+  require "json"
+  require "tmpdir"
+
+  it "publishes the transcript snapshot after each turn" do
+    Dir.mktmpdir do |dir|
+      app = lambda do |env|
+        env[:messages] << Brute::Message.new(role: :assistant, content: "working", tool_calls: [
+          { id: "t1", name: "iruby", arguments: { "code" => "1" } },
+        ])
+        env
+      end
+      env = { messages: Brute.log }
+      env[:messages].user("task")
+      PrimeAgent::Middleware::AgentObserve.new(app, bus_dir: dir, agent_id: "ka_1").call(env)
+
+      transcript = JSON.parse(File.read(PrimeAgent::AgentFamily.transcript_path(dir, "ka_1")))
+      transcript.map { |m| m["role"] }.should == %w[user assistant]
+      transcript.last["tool_calls"].should == ["iruby"]
+    end
+  end
+
+  it "caps stored message contents" do
+    Dir.mktmpdir do |dir|
+      app = ->(env) { env[:messages].assistant("x" * 5000); env }
+      env = { messages: Brute.log }
+      PrimeAgent::Middleware::AgentObserve.new(app, bus_dir: dir, agent_id: "ka_2").call(env)
+      content = JSON.parse(File.read(PrimeAgent::AgentFamily.transcript_path(dir, "ka_2"))).last["content"]
+      content.length.should.be < 2200
+      content.should.include "more characters truncated"
+    end
   end
 end

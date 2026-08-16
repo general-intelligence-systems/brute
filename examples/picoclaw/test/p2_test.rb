@@ -198,7 +198,7 @@ test "evolution_cold_path: cluster, merge patterns, draft, apply" do
                             skills_dir: File.join(w, "skills"),
                             generate_draft: ->(_prompt) { "# Do the disk checks\n\nRun df -h regularly." * 3 })
     .call(env_with([msg(:user, "hb")]))
-  patterns = JSON.parse(File.read(File.join(dir, "pattern-records.jsonl")))
+  patterns = File.readlines(File.join(dir, "pattern-records.jsonl")).map { |l| JSON.parse(l) }
   assert_equal 1, patterns.size
   assert_equal "check-disk-usage", patterns.first["label"]
   assert_equal "ready", patterns.first["status"]

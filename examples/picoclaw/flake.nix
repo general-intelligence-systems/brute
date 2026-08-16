@@ -19,6 +19,14 @@
           gemfile = ./Gemfile;
           lockfile = ./Gemfile.lock;
           gemset = ./gemset.nix;
+          # extralite is a native extension — it needs sqlite headers/lib.
+          gemConfig = pkgs.defaultGemConfig // {
+            extralite = attrs: {
+              buildInputs = [ pkgs.sqlite pkgs.sqlite.dev ];
+              dontUseBundlerConfigure = true;
+              buildFlags = [ "--with-sqlite3-dir=${pkgs.sqlite.dev}" ];
+            };
+          };
         };
 
 

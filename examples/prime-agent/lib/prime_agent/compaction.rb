@@ -37,6 +37,13 @@ module PrimeAgent
     # Maximum characters for a tool result in serialized summaries (utils.ts:83).
     TOOL_RESULT_MAX_CHARS = 2000
 
+    # Branch summaries (branch-summarization.ts:248-280 + messages.ts:21-26):
+    # the preamble rides inside the summary; the PREFIX/SUFFIX wrap the
+    # injected user message.
+    BRANCH_SUMMARY_PREAMBLE = "The user explored a different conversation branch before returning here.\nSummary of that exploration:\n\n"
+    BRANCH_SUMMARY_PREFIX = "The following is a summary of a branch that this conversation came back from:\n\n<summary>\n"
+    BRANCH_SUMMARY_SUFFIX = "\n</summary>"
+
     # ------------------------------------------------------------------
     # Token calculation (compaction.ts:138-233)
     # ------------------------------------------------------------------
@@ -373,6 +380,66 @@ module PrimeAgent
       {
         summary: summary,
         tokens_before: preparation.tokens_before,
+        read_files: lists[:read_files],
+        modified_files: lists[:modified_files],
+      }
+    end
+
+    # ------------------------------------------------------------------
+    # Branch summarization (branch-summarization.ts:190-359)
+    # ------------------------------------------------------------------
+
+    # prepareBranchEntries: walk NEWEST to OLDEST under the token budget,
+    # keeping recent context; tool results are skipped (context is in the
+    # assistant's tool call); summary messages (compaction/branch wrappers)
+    # squeeze in when under 90% of the budget. Modified files are collected
+    # from ALL entries regardless of budget (cumulative tracking).
+    def self.prepare_branch_entries(messages, token_budget)
+      modified_files = extract_modified_files(messages)
+      kept = []
+      total = 0
+      (messages.length - 1).downto(0) do |i|
+        message = messages[i]
+        next if message.role == :tool || message.role == :system
+
+        tokens = estimate_tokens(message)
+        if token_budget.positive? && total + tokens > token_budget
+          if summary_message?(message) && total < token_budget * 0.9
+            kept.unshift(message)
+            total += tokens
+          end
+          break
+        end
+
+        kept.unshift(message)
+        total += tokens
+      end
+      { messages: kept, modified_files: modified_files, total_tokens: total }
+    end
+
+    def self.summary_message?(message)
+      content = message.content.to_s
+      content.start_with?(SUMMARY_PREFIX) || content.start_with?(BRANCH_SUMMARY_PREFIX)
+    end
+
+    # generateBranchSummary: budget = context_window - reserve_tokens (128000
+    # fallback); one user-role call with maxTokens 2048; preamble prepended;
+    # file lists appended. custom_instructions join as "Additional focus:".
+    def self.generate_branch_summary(messages, llm:, context_window:, reserve_tokens: 16_384, custom_instructions: nil)
+      budget = (context_window || 128_000) - reserve_tokens
+      prepared = prepare_branch_entries(messages, budget)
+      return { summary: "No content to summarize" } if prepared[:messages].empty?
+
+      instructions = Prompts.load("branch_summarize")
+      instructions = "#{instructions}\n\nAdditional focus: #{custom_instructions}" if custom_instructions
+      prompt = "<conversation>\n#{serialize_conversation(prepared[:messages])}\n</conversation>\n\n#{instructions}"
+      summary = llm.call(system: Prompts.load("compact_summarize_system"), user: prompt, max_tokens: 2048)
+
+      summary = BRANCH_SUMMARY_PREAMBLE + summary
+      lists = compute_file_lists(prepared[:modified_files])
+      summary += format_file_operations(lists[:read_files], lists[:modified_files])
+      {
+        summary: summary.empty? ? "No summary generated" : summary,
         read_files: lists[:read_files],
         modified_files: lists[:modified_files],
       }

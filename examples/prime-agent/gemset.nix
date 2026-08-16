@@ -165,6 +165,16 @@
     };
     version = "6.0.7";
   };
+  event_stream_parser = {
+    groups = ["default"];
+    platforms = [];
+    source = {
+      remotes = ["https://rubygems.org"];
+      sha256 = "1j73glgif3f97q3znq9ih67h5i7zd1wqzj2d33w8cqhjf2mkns52";
+      type = "gem";
+    };
+    version = "1.0.0";
+  };
   faraday = {
     dependencies = ["faraday-net_http" "json" "logger"];
     groups = ["default"];
@@ -387,6 +397,17 @@
       type = "gem";
     };
     version = "1.7.0";
+  };
+  mcp = {
+    dependencies = ["json_schemer"];
+    groups = ["default"];
+    platforms = [];
+    source = {
+      remotes = ["https://rubygems.org"];
+      sha256 = "19jbanghx95vj8av7aczz2kjlzpy9ikd1qcj96vmvzybzdqa4xdg";
+      type = "gem";
+    };
+    version = "1.2.0";
   };
   mime-types = {
     dependencies = ["logger" "mime-types-data"];

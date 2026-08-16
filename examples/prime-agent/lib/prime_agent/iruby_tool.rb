@@ -86,14 +86,14 @@ describe "prime_agent/iruby_tool" do
 
   it "renders stdout, stderr and result like the ipython tool" do
     result = Result.new(stdout: "out", stderr: "err", result: "42",
-                        status: "ok", error: nil, duration_ms: 1, diffs: [])
+                        status: "ok", error: nil, duration_ms: 1, diffs: [], attachments: [])
     tool_with(result).call("code" => "40 + 2").should == "out\nerr\n42"
   end
 
   it "renders edit-skill diffs as a +/- block after the cell output" do
     diff = { "path" => "/abs/a.rb", "old_str" => "two\n", "new_str" => "TWO\n", "start_line" => 2 }
     result = Result.new(stdout: "", stderr: "", result: '"Edited /abs/a.rb"',
-                        status: "ok", error: nil, duration_ms: 1, diffs: [diff])
+                        status: "ok", error: nil, duration_ms: 1, diffs: [diff], attachments: [])
     text = tool_with(result).call("code" => "Edit.run(path: 'a.rb', old_str: 'two', new_str: 'TWO')")
     text.should.include '"Edited /abs/a.rb"'
     text.should.include "diff /abs/a.rb:2"
@@ -104,7 +104,7 @@ describe "prime_agent/iruby_tool" do
   it "renders ANSI-stripped tracebacks on error" do
     result = Result.new(stdout: "", stderr: "", result: nil, status: "error",
                         error: { "traceback" => ["\e[31mRuntimeError\e[0m: boom", "cell:3"] },
-                        duration_ms: 1, diffs: [])
+                        duration_ms: 1, diffs: [], attachments: [])
     text = tool_with(result).call("code" => "raise 'boom'")
     text.should.include "RuntimeError: boom"
     text.should.not.include "\e[31m"
@@ -112,7 +112,7 @@ describe "prime_agent/iruby_tool" do
 
   it "returns a placeholder for silent cells" do
     result = Result.new(stdout: "", stderr: "", result: nil,
-                        status: "ok", error: nil, duration_ms: 1, diffs: [])
+                        status: "ok", error: nil, duration_ms: 1, diffs: [], attachments: [])
     tool_with(result).call("code" => "x = 1").should == "(no output)"
   end
 end

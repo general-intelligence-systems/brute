@@ -24,36 +24,42 @@ no-op files wired into `main.rb`; tick a box when the body is filled in.
 - [x] `spawn` — `spawn.go:20` — async subturn, critical (joined before turn end; results injected by Drain)
 - [x] `subagent` — `subagent.go:347` — sync subturn
 - [x] `spawn_status` — `spawn_status.go:19` — listing (channel-scoping N/A here)
-- [ ] `delegate` — `delegate.go:21` — only when ≥2 agents configured
+- [x] `delegate` — `delegate.go:21` — registered when agents.list is non-empty (main + ≥1); target's model/workspace, allowlist, `[Response from agent "id"]` prefix
 
 ## Tools — P1: skills registry
 
 - [x] `find_skills` — `integration/skills_search.go:27` — clawhub+github registries, trigram cache
 - [x] `install_skill` — `integration/skills_install.go:43` — into `<workspace>/skills/<slug>/`, moderation flags
 
-## Tools — P2: channel-dependent (skeleton now; no-op until a message bus exists)
+## Tools — P2: channel-dependent (delivered to `outbound.jsonl`, the port's bus)
 
-- [ ] `message` — `integration/message.go:57` — per-round send tracking → final-response dedup
-- [ ] `reaction` — `integration/reaction.go:18`
-- [ ] `send_file` — `fs/send_file.go:31` — MediaStore + `ResponseHandled`
-- [ ] `send_tts` — `integration/tts_send.go:23` — only with a TTS provider
-- [ ] `load_image` — `fs/load_image.go:35` — needs `media_resolver`
+- [x] `message` — `integration/message.go:57` — outbox delivery + per-round send tracking → final-response dedup in the driver; media attachments gated by `tools.message.media_enabled`
+- [x] `reaction` — `integration/reaction.go:18` — always errors (no ReactionCapable channel in this port, upstream parity)
+- [x] `send_file` — `fs/send_file.go:31` — MediaStore + outbox
+- [x] `send_tts` — `integration/tts_send.go:23` — registered only with a TTS model (`voice.tts_model_name` or a *tts* model)
+- [x] `load_image` — `fs/load_image.go:35` — magic-byte validation + media:// ref (path tag next pass; base64 inline blocked on brute transport)
 
-## Tools — P2: hardware (skeleton only; Linux SBC, default-off upstream)
+## Tools — P2: hardware (Linux SBC; default-off, ioctl via Fiddle)
 
-- [ ] `i2c` — `hardware/i2c.go:15`
-- [ ] `spi` — `hardware/spi.go:15`
-- [ ] `serial` — `hardware/serial.go:51`
+- [x] `i2c` — `hardware/i2c.go:15` — SMBus ioctls; i2cdetect MODE_AUTO scan strategy
+- [x] `spi` — `hardware/spi.go:15` — SPI_IOC_MESSAGE full-duplex; mode/bits/speed config
+- [x] `serial` — `hardware/serial.go:51` — termios config, poll read/write, port whitelist
 
-## Tools — P3: MCP (needs an MCP manager + hidden-tool TTL registry)
+## Tools — P3: MCP (via the official `mcp` gem)
 
-- [ ] `mcp_tool` wrapper — `integration/mcp_tool.go:92` — name sanitization, artifact spill >16k chars
-- [ ] `tool_search_tool_regex` — `search_tool.go:17` — promotes hidden tools (TTL 5 turns)
-- [ ] `tool_search_tool_bm25` — `search_tool.go:100`
+- [x] `mcp_tool` wrapper — `integration/mcp_tool.go:92` — name sanitization + FNV suffix, artifact spill >16k chars, media store, audience filter
+- [x] `tool_search_tool_regex` — `search_tool.go:17` — promotes hidden tools (TTL 5 turns)
+- [x] `tool_search_tool_bm25` — `search_tool.go:100` — BM25 engine port (k1=1.2, b=0.75)
 
-## Tools — skip (seahorse-only)
+## Context managers
 
-- [ ] `short_grep` / `short_expand` — `pkg/seahorse/` — only if the seahorse context manager is ever ported
+- [x] legacy (default) — SessionStore + Compaction + ContextBudget + EmergencyCompression
+- [x] seahorse — `pkg/seahorse/` on extralite (SQLite): schema, ingest, budget assembly, leaf/condensed compaction, FTS5 (LIKE fallback)
+
+## Tools — seahorse (active when `context_manager: "seahorse"`)
+
+- [x] `short_grep` — `pkg/seahorse/tool_grep.go` — FTS5/LIKE search over summaries+messages
+- [x] `short_expand` — `pkg/seahorse/tool_expand.go` — full messages by id (tool_result content omitted)
 
 ## Middleware — P0: core loop parity
 
@@ -82,12 +88,12 @@ no-op files wired into `main.rb`; tick a box when the body is filled in.
 
 - [x] `subturns` — depth/concurrency/timeout guards; Drain injects results per-iteration; end-of-turn join (one-shot process can't orphan children; token budget N/A) — `pkg/agent/subturn.go`
 - [x] `hooks` — **brute `.on()` lifecycle hooks + `hooks.rb` HookManager**: 5 points (before/after_llm, before/after_tool, approve_tool) + observers; decision contract (continue/modify/respond/deny_tool/abort_turn/hard_abort); JSON-RPC stdio process hooks; fail-open interceptors / fail-closed approval; prompt-mutation revert — `pkg/agent/hooks.go`
-- [ ] `evolution_cold_path` — clustering + skill drafts (observe/draft/apply); `evolution_log` hot path already done — `pkg/evolution/runtime.go`
-- [ ] `runtime_events` — event bus + `agent.*` logging subscriber — `pkg/events/`
-- [ ] `turn_profile` — history/system_prompt/skills/tools gating per turn — `turn_profile_policy.go`
+- [x] `evolution_cold_path` — heuristic clustering + pattern merge + LLM drafts (observe/draft/apply); `evolution_log` hot path (records now carry summary/final_output) — `pkg/evolution/runtime.go`, `pattern_clusterer.go`
+- [x] `runtime_events` — turn-span events + `.on()`-wired llm/tool events; `events.logging` filter config — `pkg/events/`
+- [x] `turn_profile` — history/system_prompt/skills/tools gating in main.rb (`off` skips SessionStore/Compaction/prompt/skills; tools `custom` filters) — `turn_profile_policy.go`
 
 ## Not extracting
 
 Concrete channels, gateway/WebUI, streaming publisher, ASR/TTS, typing/placeholder cosmetics,
-webhooks; seahorse context manager (initially); built-in hooks (none exist upstream); cron `tz`
+webhooks; built-in hooks (none exist upstream); cron `tz`
 (stored-but-unused upstream).

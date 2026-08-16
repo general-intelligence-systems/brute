@@ -43,12 +43,19 @@ module PrimeAgent
     # Keep in sync with DIFF_DISPLAY_MIME in work/.brute/skills/edit/lib/edit.rb
     # (mirrors prime-agent's kernel/index.ts <-> skills/edit pair).
     DIFF_DISPLAY_MIME = "application/vnd.prime-agent.diff+json"
+    # Keep in sync with _ATTACHMENT_DISPLAY_MIME in
+    # work/.brute/skills/attach-image/lib/attach_image.rb.
+    ATTACHMENT_DISPLAY_MIME = "application/vnd.prime-agent.attachment+json"
+    # kernel/index.ts:200 MAX_ATTACHMENT_DATA_CHARS.
+    MAX_ATTACHMENT_DATA_CHARS = 10_000_000
 
     # One execution's outcome. `status` is "ok" or "error"; `error` carries
     # { "ename", "evalue", "traceback" } when the cell raised; `diffs` carries
     # the edit skill's diff displays (DIFF_DISPLAY_MIME) in emission order —
-    # prime-agent's KernelDiffDisplay { path, old_str, new_str, start_line }.
-    Result = Data.define(:stdout, :stderr, :result, :status, :error, :duration_ms, :diffs)
+    # prime-agent's KernelDiffDisplay { path, old_str, new_str, start_line };
+    # `attachments` carries attach-image payloads { "mime_type", "data",
+    # "path" } (upstream's KernelAttachment).
+    Result = Data.define(:stdout, :stderr, :result, :status, :error, :duration_ms, :diffs, :attachments)
 
     # Collects one cell's streamed output with prime-agent's cap semantics
     # (kernel/index.ts:1055-1119, 1139-1161): a stream buffer stops growing
@@ -68,6 +75,7 @@ module PrimeAgent
         @result = nil
         @error = nil
         @diffs = []
+        @attachments = []
       end
 
       def add_stream(name, text)
@@ -115,6 +123,26 @@ module PrimeAgent
         }
       end
 
+      # Collect one attachment display payload {mime_type, data(base64),
+      # path} — parseAttachmentDisplay (kernel/index.ts:261+): strings
+      # required; over-cap payloads are dropped (the skill caps at 350k
+      # chars, an order below this safety bound).
+      def add_attachment(payload)
+        return unless payload.is_a?(Hash)
+
+        mime_type = payload["mime_type"]
+        data = payload["data"]
+        return unless mime_type.is_a?(String) && data.is_a?(String)
+        return if data.length > MAX_ATTACHMENT_DATA_CHARS
+
+        path = payload["path"]
+        @attachments << {
+          "mime_type" => mime_type,
+          "data" => data,
+          "path" => path.is_a?(String) ? path : nil,
+        }
+      end
+
       def finish(status:, duration_ms:)
         stdout = @stdout.dup
         stderr = @stderr.dup
@@ -132,6 +160,7 @@ module PrimeAgent
           error: @error,
           duration_ms: duration_ms,
           diffs: @diffs,
+          attachments: @attachments,
         )
       end
     end
@@ -316,7 +345,9 @@ module PrimeAgent
           data = incoming["content"]["data"] || {}
           output.result = data["text/plain"] if data["text/plain"]
         when "display_data", "update_display_data"
-          output.add_display(incoming["content"]["data"] || {})
+          data = (incoming["content"]["data"] || {})
+          output.add_display(data)
+          output.add_attachment(data[ATTACHMENT_DISPLAY_MIME]) if data.key?(ATTACHMENT_DISPLAY_MIME)
         when "error"
           content = incoming["content"]
           output.set_error(content["ename"], content["evalue"], content["traceback"])

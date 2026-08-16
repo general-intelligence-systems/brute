@@ -10,3 +10,10 @@ gem "open_router_enhanced"
 # it (no libzmq on the host side; the kernel pulls in its own ffi-rzmq).
 gem "iruby"
 gem "omq"
+
+# Stage 11 — MCP integrations (linear/notion): the official Ruby SDK's client
+# (streamable HTTP transport needs faraday; SSE responses need
+# event_stream_parser).
+gem "mcp"
+gem "faraday", ">= 2.0"
+gem "event_stream_parser", ">= 1.0"

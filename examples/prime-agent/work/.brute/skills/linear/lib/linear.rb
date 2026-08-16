@@ -1,36 +1,28 @@
 # frozen_string_literal: true
 
-require "json"
-
-# Linear — prime-agent bundled skill `linear`. SCAFFOLD: no-op
-# (FEATURES.md S12). Port of prime-agent
-# `packages/coding-agent/skills/linear/src/linear/__init__.py` (an
-# McpIntegration subclass, server https://mcp.linear.app/mcp): MCP tools are
-# auto-discovered from the server at runtime — thin wrappers over the host
-# bridge (Middleware::McpManager owns OAuth + credentials).
-# Loaded into IRuby via require "linear".
-# Returns the scaffold error payload until filled in.
+# Linear — prime-agent bundled skill `linear` (FEATURES.md S12): read and
+# write Linear issues, projects, cycles, comments, and more via Linear's
+# official hosted MCP server (https://mcp.linear.app/mcp). The protocol
+# client is the `mcp` gem; credentials come from the shared auth.json via
+# PrimeAgent::Mcp (loaded into the kernel by the bootstrap). Tools are
+# auto-discovered from the server — discover before you call:
+#
+#   require "linear"
+#   Linear.list_tools.each { |t| puts "#{t["name"]} - #{t["description"]}" }
+#   Linear.call_tool("list_issues", team: "Engineering")
+#
+# Raises PrimeAgent::Mcp::NotEnabled when the user isn't logged in (walk them
+# through `ruby mcp_login.rb linear` — don't ask for environment variables).
 module Linear
+  INTEGRATION = PrimeAgent::Mcp::Integration.new(server: "linear")
+
   module_function
 
-  SERVER = "linear"
-  URL = "https://mcp.linear.app/mcp"
-
-  # Discover the server's tools (names + JSON schemas).
-  # Fill-in: raise a NotEnabled-style error telling the model to ask the
-  # user to log in when no credential exists.
   def list_tools
-    not_implemented("list_tools")
+    INTEGRATION.list_tools
   end
 
-  # Call one discovered tool by name with keyword arguments.
-  # Fill-in: one fresh HTTP session per call with the OAuth bearer token;
-  # refresh via the host bridge on expiry (30s skew); raise on isError.
   def call_tool(name, **arguments)
-    not_implemented("call_tool")
-  end
-
-  def not_implemented(function)
-    JSON.dump("error" => "not implemented", "skill" => "linear", "function" => function)
+    INTEGRATION.call_tool(name, **arguments)
   end
 end
