@@ -48,23 +48,56 @@ module Brute
                 name = tool_call.name.to_sym
                 args = tool_call.arguments
 
-                available_tools[name].call(args).then do |result|
+                # Lifecycle hooks (Brute::Hooks): before_tool may rewrite
+                # :arguments or short-circuit with a :result; approve_tool
+                # denies on a false (or String) return; after_tool may
+                # rewrite :result.
+                call_env = {
+                  name:      name.to_s,
+                  arguments: args,
+                  result:    nil,
+                  events:    env[:events],
+                  metadata:  {},
+                  turn_env:  env,
+                }
+                if (hooks = env[:hooks])
+                  responses = hooks.emit(:before_tool, call_env).compact
+                  call_env[:result] = responses.last if call_env[:result].nil? && !responses.empty?
 
-                  # Coerce to String so Hash results (e.g. Shell's
-                  # {stdout:, stderr:, exit_code:}) serialize predictably.
-                  if result.is_a?(String)
-                    content = result
-                  else
-                    content = result.to_s
+                  if call_env[:result].nil?
+                    denial = hooks.emit(:approve_tool, call_env).find { |r| r == false || r.is_a?(String) }
+                    unless denial.nil?
+                      call_env[:result] = denial.is_a?(String) ? denial : %(Tool call to "#{name}" was denied.)
+                    end
                   end
-
-                  # Universal truncation safety net — skip if already truncated
-                  unless Brute::Truncation.already_truncated?(content)
-                    content = Brute::Truncation.truncate(content)
-                  end
-
-                  results << [tool_call, content]
                 end
+
+                result = if call_env[:result].nil?
+                           available_tools[name].call(call_env[:arguments])
+                         else
+                           call_env[:result]
+                         end
+
+                if (hooks = env[:hooks])
+                  call_env[:result] = result
+                  hooks.emit(:after_tool, call_env)
+                  result = call_env[:result]
+                end
+
+                # Coerce to String so Hash results (e.g. Shell's
+                # {stdout:, stderr:, exit_code:}) serialize predictably.
+                if result.is_a?(String)
+                  content = result
+                else
+                  content = result.to_s
+                end
+
+                # Universal truncation safety net — skip if already truncated
+                unless Brute::Truncation.already_truncated?(content)
+                  content = Brute::Truncation.truncate(content)
+                end
+
+                results << [tool_call, content]
               rescue => e
                 # Capture the error as a tool result so the LLM can see it
                 # and reason about the failure, rather than crashing the
@@ -139,6 +172,70 @@ describe "brute/middleware/070_tool_pipeline" do
     env[:messages].user("hi")
     mw.call(env)
     seen.should == [tool]
+  end
+
+  # --- lifecycle hooks (Brute::Hooks) ---
+
+  def hook_env(hooks)
+    { messages: Brute.log, events: [], hooks: hooks }
+  end
+
+  it "before_tool may rewrite arguments and short-circuit with a result" do
+    tool = { name: "echo", description: "", execute: ->(text:) { "ran:#{text}" } }
+    inner = ->(env) do
+      env[:messages] << Brute::Message.new(role: :assistant, content: "",
+        tool_calls: [{ id: "tc1", name: "echo", arguments: { "text" => "orig" } }])
+    end
+    hooks = Brute::Hooks.new
+    hooks.on(:before_tool) { |call| call[:arguments] = { text: "rewritten" }; nil }
+    mw = Brute::Middleware::ToolPipeline.new(inner, tools: [tool])
+    env = hook_env(hooks)
+    env[:messages].user("hi")
+    mw.call(env)
+    env[:messages].last.content.should == "ran:rewritten"
+
+    hooks2 = Brute::Hooks.new
+    hooks2.on(:before_tool) { |_call| "canned" }
+    mw2 = Brute::Middleware::ToolPipeline.new(inner, tools: [tool])
+    env2 = hook_env(hooks2)
+    env2[:messages].user("hi")
+    mw2.call(env2)
+    env2[:messages].last.content.should == "canned" # never executed
+  end
+
+  it "approve_tool denies on false (generic message) or String (custom)" do
+    tool = { name: "exec", description: "", execute: ->(**) { "ran" } }
+    inner = ->(env) do
+      env[:messages] << Brute::Message.new(role: :assistant, content: "",
+        tool_calls: [{ id: "tc1", name: "exec", arguments: {} }])
+    end
+    hooks = Brute::Hooks.new
+    hooks.on(:approve_tool) { |_call| false }
+    env = hook_env(hooks)
+    env[:messages].user("hi")
+    Brute::Middleware::ToolPipeline.new(inner, tools: [tool]).call(env)
+    env[:messages].last.content.should == %(Tool call to "exec" was denied.)
+
+    hooks2 = Brute::Hooks.new
+    hooks2.on(:approve_tool) { |_call| "denied by policy" }
+    env2 = hook_env(hooks2)
+    env2[:messages].user("hi")
+    Brute::Middleware::ToolPipeline.new(inner, tools: [tool]).call(env2)
+    env2[:messages].last.content.should == "denied by policy"
+  end
+
+  it "after_tool may rewrite the result" do
+    tool = { name: "echo", description: "", execute: ->(**) { "raw" } }
+    inner = ->(env) do
+      env[:messages] << Brute::Message.new(role: :assistant, content: "",
+        tool_calls: [{ id: "tc1", name: "echo", arguments: {} }])
+    end
+    hooks = Brute::Hooks.new
+    hooks.on(:after_tool) { |call| call[:result] = "rewrote(#{call[:result]})" }
+    env = hook_env(hooks)
+    env[:messages].user("hi")
+    Brute::Middleware::ToolPipeline.new(inner, tools: [tool]).call(env)
+    env[:messages].last.content.should == "rewrote(raw)"
   end
 
   # --- Universal output truncation ---

@@ -45,10 +45,15 @@ module Brute
           events:            events,
           metadata:          {},
           current_iteration: 1,
+          hooks:             hooks,
         }
-        env.tap do
+        hooks.emit(:turn_start, env)
+        begin
           build.call(env)
+        ensure
+          hooks.emit(:turn_end, env)
         end
+        env
       end
 
       private
@@ -119,6 +124,27 @@ describe "brute/turn/agent_pipeline" do
     agent.start("hi")[:messages].last.content.should == "from ru"
   end
 
+  it ".on chains off the builder and fires turn hooks around the turn" do
+    fired = []
+    agent = Brute.agent
+      .run(->(env) { env[:messages].assistant("done") })
+      .on(:turn_start) { |env| fired << [:start, env[:messages].last.content] }
+      .on(:turn_end) { |env| fired << [:end, env[:messages].last.content] }
+
+    env = agent.start("go")
+    env[:messages].last.content.should == "done"
+    fired.should == [[:start, "go"], [:end, "done"]]
+  end
+
+  it "fires turn_end on error (ensure)" do
+    fired = []
+    agent = Brute.agent
+      .run(->(_env) { raise "boom" })
+      .on(:turn_end) { |_env| fired << :end }
+
+    lambda { agent.start("go") }.should.raise(RuntimeError)
+    fired.should == [:end]
+  end
   it "use in a ru string wraps the terminal" do
     script = <<~RUBY
       use AgentStubMW

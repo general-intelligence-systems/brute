@@ -19,6 +19,16 @@ module Brute
         #
         def use(...) = tap { super }
         def run(...) = tap { super }
+
+        # Subscribe a lifecycle hook (see Brute::Hooks):
+        #
+        #   Brute.agent
+        #     .use(MaxProfit)
+        #     .run(->(env) { ... })
+        #     .on(:before_llm) { |env| ... }
+        #     .on(:approve_tool) { |call| call[:name] != "exec" }
+        #
+        def on(...) = tap { hooks.on(...) }
       end
 
       include Chainable
@@ -39,6 +49,11 @@ module Brute
       # terminal app and return the runnable callable. Raises (via `to_app`)
       # when `run` was never called.
       alias_method :build, :to_app
+
+      # The lifecycle-hook registry for this pipeline (see Brute::Hooks).
+      def hooks
+        @hooks ||= Brute::Hooks.new
+      end
 
       # Default null sink for env[:events] — swallows anything pushed to it.
       class NullSink
