@@ -5,6 +5,8 @@ All notable changes to Brute are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-08-20
+
 ### Added
 
 - The release toolchain moved out to the
