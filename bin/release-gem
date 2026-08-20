@@ -1,13 +1,35 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-require_relative "../lib/brute/version"
+require_relative "../lib/brute"
 
 local_version = Brute::VERSION
 gem_name = "brute"
 gemspec = "brute.gemspec"
 
 puts "Local version: #{local_version}"
+
+# A release with no changelog entry is a release nobody can read. Gate on it
+# before anything is built or pushed.
+changelog_problems = Brute::Changelog.load.release_problems(local_version)
+unless changelog_problems.empty?
+  warn "ERROR: CHANGELOG.md is not ready to release #{local_version}:"
+  warn ""
+  changelog_problems.each { |problem| warn "  #{problem}" }
+  warn ""
+  abort "Run bin/update-changelog (then bin/lint-changelog #{local_version}) and try again."
+end
+
+# Same promise, other artefact: a version cannot ship past a removal deadline
+# while the deprecated name is still in the tree.
+due = Brute::Deprecate.pending(local_version)
+unless due.empty?
+  warn "ERROR: #{due.size} deprecation(s) come due in #{local_version} and are still present:"
+  warn ""
+  due.each { |entry| warn "  #{entry.removed_in.to_s.ljust(8)} #{entry}" }
+  warn ""
+  abort "Remove them (see bin/deprecations) and try again."
+end
 
 remote_output = `gem specification #{gem_name} version --remote 2>&1`
 

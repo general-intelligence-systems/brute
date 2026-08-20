@@ -65,6 +65,13 @@ project under `docs/`. Serve it locally:
 docs/bin/serve.sh          # http://localhost:4000/brute/
 ```
 
+## Contributing
+
+- [DEPRECATIONS.md](DEPRECATIONS.md) — how public names are deprecated and
+  removed. Read this before renaming or deleting anything public.
+- [RELEASE.md](RELEASE.md) — the release process and the versioning rules.
+- [CHANGELOG.md](CHANGELOG.md) — what changed in each version.
+
 ## See Also
 
 - [Examples directory](https://github.com/general-intelligence-systems/brute/tree/main/examples) — the same agent on four LLM libraries, plus sub-agents, sessions, and HTTP serving.

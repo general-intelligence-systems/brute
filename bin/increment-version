@@ -1,13 +1,18 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+# Load the library first: it sets up Bundler, and requiring anything from the
+# default gems (erb) ahead of that activates the wrong version.
+require_relative "../lib/brute"
 require "erb"
-require_relative "../lib/brute/version"
 
-USAGE = "Usage: bin/increment-version <major|minor|patch>"
+USAGE = "Usage: bin/increment-version <major|minor|patch> [--force]"
 
-segment = ARGV[0]
-unless %w[major minor patch].include?(segment)
+args    = ARGV.dup
+force   = !args.delete("--force").nil?
+segment = args.shift
+
+unless %w[major minor patch].include?(segment) && args.empty?
   warn USAGE
   exit 1
 end
@@ -23,6 +28,29 @@ end
 
 version = "#{major}.#{minor}.#{patch}"
 
+# A deprecation names the version it will be removed in. Bumping to that
+# version while the old name is still here breaks that promise, so the release
+# is gated on it: remove the deprecated code first (or --force past it).
+pending = Brute::Deprecate.pending(version)
+unless pending.empty?
+  warn "Refusing to bump #{current} -> #{version}: #{pending.size} deprecation(s) come due in #{version}."
+  warn ""
+  pending.sort_by { |entry| [entry.removed_in, entry.name] }.each do |entry|
+    warn "  #{entry.removed_in.to_s.ljust(8)} #{entry}"
+    warn "  #{" " * 8} #{entry.declared_at}" if entry.declared_at
+  end
+  warn ""
+  warn "Remove them, then bump. See bin/deprecations. Override with --force."
+  exit 1 unless force
+  warn "--force given; bumping anyway."
+end
+
+# Not due yet, but the deadline is worth seeing on the way past.
+upcoming = Brute::Deprecate.upcoming(version)
+unless upcoming.empty?
+  puts "#{upcoming.size} deprecation(s) still outstanding (none due in #{version}); see bin/deprecations."
+end
+
 template_path = File.expand_path("../lib/brute/version.rb.erb", __dir__)
 output_path   = File.expand_path("../lib/brute/version.rb", __dir__)
 
@@ -35,3 +63,7 @@ File.write(output_path, result)
 `bundle install`
 
 puts "#{current} -> #{version}"
+puts ""
+# The changelog is the one release artefact nothing regenerates, and the one
+# most easily forgotten — so say so loudly. bin/release-gem enforces it.
+puts "now run bin/update-changelog".red

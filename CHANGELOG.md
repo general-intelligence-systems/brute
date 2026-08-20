@@ -75,7 +75,10 @@ release as the real 3.0.0 for integration purposes.
   `net_fetch`, `question`, `shell`, `skill_load`, `sub_agent`,
   `todo_read`, `todo_write`, and `brute_cli/providers/shell_response`.
 
-### Migration from 3.0.0
+### Changed
+
+**Migration from 3.0.0:**
+
 - Replace `Brute.rubyllm_tools(tools)` with `Brute.tools(tools)` and
   translate the resulting adapters' `#to_h` output for your LLM
   library, or use one of the bundled `Brute::MessageTransport::*`
@@ -85,4 +88,6 @@ release as the real 3.0.0 for integration purposes.
 
 ## [3.0.0] - 2026-07-05
 
-Initial 3.0.0 gem release (superseded by 3.0.1 — see above).
+### Added
+
+- Initial 3.0.0 gem release (superseded by 3.0.1 — see above).

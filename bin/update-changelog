@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+#
+# Write the changelog entry for the current version, using Claude.
+#
+#   bin/update-changelog
+#
+# Nothing to do with Brute — this is just the `claude` CLI with a prompt.
+
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+VERSION=$(ruby -r./lib/brute/version -e 'print Brute::VERSION')
+PREVIOUS=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+RANGE=${PREVIOUS:+$PREVIOUS..HEAD}
+
+read -r -d '' PROMPT <<PROMPT || true
+Update CHANGELOG.md for the release of version $VERSION.
+
+The changes to document are the commits in \`git log ${RANGE:-HEAD}\` plus any
+uncommitted work in \`git status\` and \`git diff\`. Read them first.
+
+Rules:
+- Follow Keep a Changelog (https://keepachangelog.com/en/1.1.0/) exactly. The
+  file must pass \`bin/lint-changelog $VERSION\`; run it when you are done and
+  fix anything it reports.
+- Add one \`## [$VERSION] - $(date +%Y-%m-%d)\` section directly below
+  \`## [Unreleased]\`, and move anything already sitting under [Unreleased]
+  that shipped in this version into it. Leave [Unreleased] in place, empty.
+- Group entries only under: Added, Changed, Deprecated, Removed, Fixed,
+  Security. Omit the groups with nothing in them.
+- Write for someone upgrading the gem: what changed in the public API, what
+  they must now do differently. Name the constants and methods involved.
+  Skip internal refactors, test-only changes and typo fixes.
+- Anything deprecated this cycle goes under Deprecated, naming the
+  replacement and the version it will be removed in (see \`bin/deprecations\`).
+- Match the voice and level of detail of the existing entries in the file.
+- Edit CHANGELOG.md only. Do not touch any other file, and do not commit.
+PROMPT
+
+echo "Updating CHANGELOG.md for $VERSION${PREVIOUS:+ (changes since $PREVIOUS)}..."
+claude "$PROMPT"
