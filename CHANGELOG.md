@@ -5,19 +5,6 @@ All notable changes to Brute are documented in this file. The format follows
 
 ## [Unreleased]
 
-### Added
-
-- `Brute::Hooks` + `.on()` — lifecycle hooks on the agent builder:
-  `Brute.agent.use(...).run(...).on(:before_llm) { ... }.on(:approve_tool) { ... }`.
-  Emission points: `:turn_start`/`:turn_end` (AgentPipeline#start; turn_end
-  fires from an ensure), `:before_llm`/`:after_llm` (around every LLM call in
-  Middleware::OpenRouter::Completion), and `:before_tool`/`:approve_tool`/
-  `:after_tool` around every tool execution in Middleware::ToolPipeline.
-  before_tool may rewrite `:arguments` or short-circuit with a `:result`
-  ("respond"); approve_tool denies on a false return (or a String, which
-  becomes the denial message); after_tool may rewrite `:result`. Tool call
-  payloads are {name:, arguments:, result:, events:, metadata:, turn_env:}.
-
 ## [4.1.0] - 2026-08-20
 
 ### Added
@@ -65,6 +52,96 @@ All notable changes to Brute are documented in this file. The format follows
 - `Brute::Middleware::OpenRouter::Completion` — use
   `Brute::Completion::OpenRouter` instead. The old name remains a working
   subclass and warns on use; it will be removed in 5.0.
+
+## [4.0.0] - 2026-08-16
+
+### Added
+
+- `Brute::Hooks` + `.on()` — lifecycle hooks on the agent builder:
+  `Brute.agent.use(...).run(...).on(:before_llm) { ... }.on(:approve_tool) { ... }`.
+  Emission points: `:turn_start`/`:turn_end` (AgentPipeline#start; turn_end
+  fires from an ensure), `:before_llm`/`:after_llm` (around every LLM call in
+  Middleware::OpenRouter::Completion), and `:before_tool`/`:approve_tool`/
+  `:after_tool` around every tool execution in Middleware::ToolPipeline.
+  before_tool may rewrite `:arguments` or short-circuit with a `:result`
+  ("respond"); approve_tool denies on a false return (or a String, which
+  becomes the denial message); after_tool may rewrite `:result`. Tool call
+  payloads are {name:, arguments:, result:, events:, metadata:, turn_env:}.
+
+- `Brute::Middleware::Skills` — loads skill objects into the turn. Discovery
+  stays the caller's job (`Brute::Skill.all(cwd: Dir.pwd)`); the middleware
+  puts them on `env[:skills]` for downstream middleware and tools, and mirrors
+  them into `env[:metadata][:skills]` so `Middleware::SystemPrompt` renders the
+  `<available_skills>` section. Place it before `Middleware::SystemPrompt`.
+- `Brute::PromptTemplate` — an ERB-backed system prompt for
+  `Middleware::SystemPrompt`, the open alternative to `Brute::SystemPrompt`'s
+  built-in section stacks. Every keyword becomes an `attr_accessor` and an ERB
+  local; proc values are re-evaluated and template files re-read on every
+  prepare, so file-backed sections hot-reload between turns.
+- `Brute::Prompts::Base` — provider-specific prompt text resolution
+  (`section/<provider>.txt`, falling back to `section/default.txt`), named
+  agent prompts, and an ERB `Context` that turns context-hash keys into
+  template methods.
+- `Brute::Skill.all` and `.get` accept an explicit `paths:` list alongside
+  `cwd:`, and `Skill.load` takes a `source:`. Skills may now declare
+  `disable-model-invocation` in their frontmatter, which hides them from the
+  model while leaving them loadable by name.
+- Provider usage is exposed on `env[:metadata][:last_llm_usage]` after every
+  OpenRouter call, for downstream budget, iteration-limit and compaction
+  accounting.
+
+### Changed
+
+- `AgentPipeline#start` now puts the pipeline's hook registry on `env[:hooks]`
+  and always returns the env, with `:turn_end` firing from an `ensure` so it
+  runs even when the turn raises.
+- `Brute::Prompts::Skills` renders from an ERB template
+  (`lib/brute/prompts/text/skills/default.erb`) instead of an inline heredoc,
+  and the gem now ships `lib/**/*.erb`.
+
+### Removed
+
+- **`Brute::Skill.fmt(skills)`** — the skills section is rendered by
+  `Brute::Prompts::Skills` from its ERB template instead.
+- **`Brute::Skill.scan_dirs(cwd)`** — superseded by the `paths:` argument to
+  `Skill.all`.
+
+## [3.2.2] - 2026-08-14
+
+### Fixed
+
+- `Brute::MessageTransport::OpenRouter` now reads an `OpenRouter::Response`
+  properly: it takes messages from `#choices`, symbolises roles, slices away
+  provider extras (`refusal`, `reasoning`, `model`, …) that `Brute::Message`
+  does not model, and unwraps OpenAI-wire tool calls
+  (`{id:, type:, function: {name:, arguments: "<json>"}}`) into the flat
+  `{id:, name:, arguments: Hash}` shape, parsing the JSON arguments.
+
+## [3.2.1] - 2026-08-13
+
+### Fixed
+
+- `Brute::Middleware::OpenRouter::Completion` referenced `OpenRouter::*`
+  unqualified, which resolved to the enclosing `Brute::Middleware::OpenRouter`
+  module instead of the gem's top-level namespace. Now root-scoped (`::OpenRouter`).
+
+## [3.2.0] - 2026-08-13
+
+### Added
+
+- **OpenRouter support.** `Brute::Middleware::OpenRouter::Completion` — the
+  first completion middleware, a drop-in terminal app for the pipeline that
+  makes the LLM call for you instead of leaving it to a hand-written `run`
+  proc — plus `Brute::MessageTransport::OpenRouter`. Needs the
+  `open_router_enhanced` gem, which Brute does not depend on.
+- `Brute::MessageTransport::RubyOpenAI` — transport for the `ruby-openai` gem.
+- `Brute::Message#has_tool_calls?` as an alias of `#tool_call?`.
+
+### Changed
+
+- `Brute::Middleware::ToolPipeline` accepts tool calls as either an array or
+  the id-keyed hash some libraries return, and resolves tools through
+  `Brute::Tools::Adapter.wrap_all`.
 
 ## [3.1.0] - 2026-07-18
 
