@@ -18,6 +18,54 @@ All notable changes to Brute are documented in this file. The format follows
   becomes the denial message); after_tool may rewrite `:result`. Tool call
   payloads are {name:, arguments:, result:, events:, metadata:, turn_env:}.
 
+## [4.1.0] - 2026-08-20
+
+### Added
+
+- `Brute.load_agent(path)` — load an agent from a `.ru` file, the Brute
+  analogue of `rackup`: `Brute.load_agent("agent.ru").start(prompt)`. The path
+  defaults to `./agent.ru`. What comes back is the `AgentPipeline` itself, so
+  it can be started, further `.use`d, or served through `Brute::Rack::Adapter`.
+- `Brute::Completion` — a namespace for completion middlewares, the terminal
+  step of a turn. Each one is a ready-made replacement for the hand-written
+  `run` proc: it takes `env[:messages]`, calls one provider, and appends the
+  reply back onto the log. `Brute::Completion::OpenRouter` is the first.
+- `Brute::Deprecate` — the project's deprecation policy in code, built on
+  `Gem::Deprecate`. `brute_deprecate` deprecates a method,
+  `brute_deprecate_constant` a renamed or moved constant; both name their
+  replacement and the version the old name will be removed in, and both
+  register themselves so the outstanding set is queryable
+  (`registry`, `pending(version)`, `upcoming(version)`). See DEPRECATIONS.md.
+- `Brute::Changelog` — a parser and linter for CHANGELOG.md against
+  [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Checks headings,
+  dates, ordering, duplicates and section types, and answers whether a given
+  version is ready to release.
+- `Brute::Contrib::LogFile` — a line-oriented append-only log file that doubles
+  as a work queue. `append` folds newlines so an entry is always one line;
+  `pop` takes the newest line off the end, `drain` yields every line
+  oldest-first and empties the file. Safe across threads (a mutex) and
+  processes (an exclusive `flock`).
+- `bin/deprecations`, `bin/lint-changelog`, `bin/update-changelog` — list
+  outstanding deprecations, check the changelog format, and have the `claude`
+  CLI write the release entry.
+- `DEPRECATIONS.md` and `RELEASE.md` — the deprecation policy and the release
+  process, including the versioning rules.
+
+### Changed
+
+- `bin/increment-version` refuses to bump onto a deprecation deadline, listing
+  what is due with its source line (`--force` overrides), and points at
+  `bin/update-changelog` when it is done.
+- `bin/release-gem` refuses to build or push without a changelog entry for the
+  version being released, or with a deprecation still due in it.
+- Brute now depends on `file-tail` (used by `Brute::Contrib::LogFile`).
+
+### Deprecated
+
+- `Brute::Middleware::OpenRouter::Completion` — use
+  `Brute::Completion::OpenRouter` instead. The old name remains a working
+  subclass and warns on use; it will be removed in 5.0.
+
 ## [3.1.0] - 2026-07-18
 
 ### Added
