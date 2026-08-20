@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-cd "$(dirname "$0")/.."
-
-if [ ! -f .git/hooks/pre-commit ]; then
-  bundle install
-  bundle exec lefthook install
-fi

@@ -27,6 +27,11 @@
             export BUNDLE_GEMFILE="$PWD/Gemfile"
             export BUNDLE_PATH="$GEM_HOME"
             export BUNDLE_BIN="$GEM_HOME/bin"
+
+            if [ ! -f .git/hooks/pre-commit ]; then
+              bundle install
+              bundle exec lefthook install
+            fi
           '';
         };
       }
