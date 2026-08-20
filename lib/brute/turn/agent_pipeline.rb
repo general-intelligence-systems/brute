@@ -124,6 +124,22 @@ describe "brute/turn/agent_pipeline" do
     agent.start("hi")[:messages].last.content.should == "from ru"
   end
 
+  it "Brute.load_agent loads an agent from a .ru file and starts it" do
+    require "tmpdir"
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "agent.ru")
+      File.write(path, 'run ->(env) { env[:messages].assistant("from file") }')
+
+      agent = Brute.load_agent(path)
+      agent.should.be.kind_of?(Brute::Turn::AgentPipeline)
+      agent.start("hi")[:messages].last.content.should == "from file"
+    end
+  end
+
+  it "Brute.load_agent raises for a missing file" do
+    lambda { Brute.load_agent("definitely/not/here.ru") }.should.raise(ArgumentError)
+  end
+
   it ".on chains off the builder and fires turn hooks around the turn" do
     fired = []
     agent = Brute.agent

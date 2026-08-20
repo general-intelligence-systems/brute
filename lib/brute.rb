@@ -57,6 +57,22 @@ module Brute
     Brute::Turn::AgentPipeline.new(&block)
   end
 
+  # Load an agent from a brute.ru file — the Brute analogue of `rackup`.
+  # The file is a rackup-style script using the same `use` / `run` / `map`
+  # DSL as `Brute.agent`, and what comes back is the AgentPipeline itself,
+  # so it can be started, further `.use`d, or served through
+  # Brute::Rack::Adapter:
+  #
+  #   Brute.load_agent.start("what changed?")               # ./agent.ru
+  #   Brute.load_agent("examples/agents/brute.ru").start("hi")
+  #
+  def self.load_agent(path = "agent.ru")
+    path = File.expand_path(path)
+    raise ArgumentError, "no such agent file: #{path}" unless File.file?(path)
+
+    Brute::Turn::AgentPipeline.parse_file(path)
+  end
+
   # Adapt any Brute tools (hashes, Brute::Tool, Brute::Turn::ToolPipeline,
   # SubAgent …) into a { name_sym => Brute::Tools::Adapter } hash. Each
   # adapter exposes #to_h — a neutral JSON-Schema-ish definition the inline
