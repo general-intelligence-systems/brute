@@ -185,6 +185,16 @@
     };
     version = "2.2.3";
   };
+  dry-cli = {
+    groups = ["default" "development"];
+    platforms = [];
+    source = {
+      remotes = ["https://rubygems.org"];
+      sha256 = "0x6qlxk6zp3jw748k6x3zkpywx9yjyagdyinb9qai2khdjvmn0dq";
+      type = "gem";
+    };
+    version = "1.4.1";
+  };
   erb = {
     groups = ["default"];
     platforms = [];
@@ -301,6 +311,17 @@
       type = "gem";
     };
     version = "1.4.0";
+  };
+  gem_kit-release = {
+    dependencies = ["dry-cli"];
+    groups = ["development"];
+    platforms = [];
+    source = {
+      remotes = ["https://rubygems.org"];
+      sha256 = "1w3vwj9w1g5maw1siql4lrjfxzp18cqsyhqyrx0zx842qw9ll05f";
+      type = "gem";
+    };
+    version = "0.1.0";
   };
   google-protobuf = {
     dependencies = ["bigdecimal" "rake"];

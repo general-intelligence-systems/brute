@@ -12,11 +12,14 @@
 - Read [DEPRECATIONS.md](DEPRECATIONS.md) before removing or renaming any public name.
 - Never delete a public name outright — deprecate it with `Brute::Deprecate`,
   naming the replacement and the version it will be removed in.
-- Removals land in major versions only. `bin/deprecations` lists what is outstanding.
+- Removals land in major versions only. `gem kit deprecations` lists what is outstanding.
 
 ## Releasing
 
 - The process, and the versioning rules, are in [RELEASE.md](RELEASE.md).
-- Never edit `lib/brute/version.rb` by hand; use `bin/increment-version <major|minor|patch>`.
-- Every release needs a `CHANGELOG.md` entry — `bin/update-changelog` writes it,
-  `bin/lint-changelog` checks it, and `bin/release-gem` refuses without it.
+- The toolchain is the [gem_kit-release](https://rubygems.org/gems/gem_kit-release)
+  gem, a development dependency: `gem kit bump|changelog|deprecations|release|tag`.
+  Run `gem kit` for the list, `gem kit <subcommand> --help` for one.
+- Never edit `lib/brute/version.rb` by hand; use `gem kit bump <major|minor|patch>`.
+- Every release needs a `CHANGELOG.md` entry — `gem kit changelog --write` writes it,
+  `gem kit changelog` checks it, and `gem kit release` refuses without it.

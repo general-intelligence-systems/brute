@@ -5,6 +5,28 @@ All notable changes to Brute are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The release toolchain moved out to the
+  [gem_kit-release](https://rubygems.org/gems/gem_kit-release) gem, now a
+  development dependency. It registers one RubyGems command:
+  `gem kit bump|changelog|deprecations|release|tag`, plus `gem kit setup`.
+  `Brute::Deprecate` mirrors every registration into its registry when it is
+  loaded, so `gem kit deprecations` sees Brute's promises — and Brute itself
+  gains no runtime dependency on release tooling.
+
+### Deprecated
+
+- `Brute::Changelog` — use `GemKit::Release::Changelog` instead. The
+  implementation stays here and keeps working; it will be removed in 5.0.
+
+### Removed
+
+- `bin/increment-version`, `bin/deprecations`, `bin/lint-changelog`,
+  `bin/update-changelog`, `bin/release-gem` and `bin/tag-version`, superseded
+  by the `gem kit` subcommands of the same names. These were repository
+  scripts, not part of the gem's public API.
+
 ## [4.1.0] - 2026-08-20
 
 ### Added

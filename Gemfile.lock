@@ -57,6 +57,7 @@ GEM
     diff-lcs (2.0.0)
     dotenv (3.2.0)
     drb (2.2.3)
+    dry-cli (1.4.1)
     erb (6.0.7)
     event_stream_parser (1.0.0)
     faraday (2.14.3)
@@ -81,6 +82,8 @@ GEM
     fiber-storage (1.0.1)
     file-tail (1.4.0)
       tins (~> 1.0)
+    gem_kit-release (0.1.0)
+      dry-cli (~> 1.0)
     google-protobuf (4.34.1)
       bigdecimal
       rake (~> 13.3)
@@ -201,6 +204,7 @@ DEPENDENCIES
   anthropic
   brute!
   ferrum
+  gem_kit-release (~> 0.1)
   langchainrb
   lefthook (~> 2.1)
   llm.rb

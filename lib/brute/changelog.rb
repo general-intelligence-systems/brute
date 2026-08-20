@@ -2,6 +2,8 @@
 
 require "date"
 
+require_relative "deprecate"
+
 module Brute
   # A parser and linter for CHANGELOG.md, which follows
   # [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
@@ -29,6 +31,12 @@ module Brute
   #   - Something that happened.
   #
   class Changelog
+    # Deprecated. This moved out to the gem_kit-release gem, where the rest of
+    # the release toolchain now lives — `gem kit changelog` is the CLI over it.
+    # The implementation stays here, working, until the deadline.
+    extend Brute::Deprecate
+    brute_deprecate_constant "GemKit::Release::Changelog", "5.0"
+
     # The six change types Keep a Changelog defines. Anything else under a
     # version is a typo or an invention, and both are worth catching.
     SECTIONS = %w[Added Changed Deprecated Removed Fixed Security].freeze
@@ -211,9 +219,10 @@ end
 __END__
 
 describe "brute/changelog" do
-  # Build a changelog from a body, with the standard title already in place.
+  # These specs exercise a deprecated class on purpose; skip_during keeps the
+  # warning out of the suite's output (see DEPRECATIONS.md).
   changelog = lambda do |body|
-    Brute::Changelog.new("# Changelog\n\n#{body}")
+    Gem::Deprecate.skip_during { Brute::Changelog.new("# Changelog\n\n#{body}") }
   end
 
   good = <<~MD
@@ -250,12 +259,14 @@ describe "brute/changelog" do
   end
 
   it "requires the `# Changelog` title" do
-    Brute::Changelog.new("## [1.0.0] - 2026-01-01\n\n### Added\n\n- x\n")
-      .problems.first.should.match(/must start with the title/)
+    Gem::Deprecate.skip_during do
+      Brute::Changelog.new("## [1.0.0] - 2026-01-01\n\n### Added\n\n- x\n")
+        .problems.first.should.match(/must start with the title/)
+    end
   end
 
   it "reports a missing file" do
-    log = Brute::Changelog.new(nil, path: "nope.md")
+    log = Gem::Deprecate.skip_during { Brute::Changelog.new(nil, path: "nope.md") }
     log.missing?.should.be.true
     log.problems.first.should.match(/does not exist/)
   end
@@ -306,6 +317,6 @@ describe "brute/changelog" do
   end
 
   it "loads the repo's own CHANGELOG.md" do
-    Brute::Changelog.load.missing?.should.be.false
+    Gem::Deprecate.skip_during { Brute::Changelog.load.missing?.should.be.false }
   end
 end

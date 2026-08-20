@@ -17,8 +17,8 @@ The mechanism is [`Brute::Deprecate`](lib/brute/deprecate.rb), built on
    period should be longer.
 3. **Removals happen in major versions only.** A minor or patch release never
    takes a name away.
-4. **The deadline is enforced, not remembered.** `bin/increment-version` and
-   `bin/release-gem` both refuse to move to a version that has a deprecation
+4. **The deadline is enforced, not remembered.** `gem kit bump` and
+   `gem kit release` both refuse to move to a version that has a deprecation
    coming due.
 5. **Deprecating something is a changelog entry** — under `### Deprecated`,
    naming the replacement and the removal version.
@@ -95,8 +95,13 @@ wrapping anything.
 ## Finding what is outstanding
 
 ```sh
-bin/deprecations
+gem kit deprecations
 ```
+
+(From the [gem_kit-release](https://rubygems.org/gems/gem_kit-release) gem, a
+development dependency. `Brute::Deprecate` mirrors every registration into its
+registry when it is loaded, so the two stay in step without Brute depending on
+release tooling at runtime.)
 
 ```
 1 outstanding deprecation(s) (current version 4.1.0):
@@ -108,7 +113,7 @@ Pass a version to ask "what comes due here?" — it exits non-zero if anything
 does, which is what makes it usable as a gate in CI:
 
 ```sh
-bin/deprecations 5.0.0
+gem kit deprecations 5.0.0
 ```
 
 Programmatically, the same data:
@@ -128,23 +133,23 @@ When a major version comes around, the bump is blocked until the deprecated
 code is actually gone:
 
 ```
-$ bin/increment-version major
+$ gem kit bump major
 Refusing to bump 4.1.0 -> 5.0.0: 1 deprecation(s) come due in 5.0.0.
 
   5.0      Brute::Middleware::OpenRouter::Completion -> Brute::Completion::OpenRouter
            lib/brute/middleware/open_router.rb:19
 
-Remove them, then bump. See bin/deprecations. Override with --force.
+Remove them, then bump. Override with --force.
 ```
 
 So the order of work is:
 
-1. `bin/deprecations 5.0.0` — read the list.
+1. `gem kit deprecations 5.0.0` — read the list.
 2. Delete each deprecated name and its specs. For a constant shim, that means
    deleting the whole file.
 3. Update anything in `examples/` and `docs/` still using the old name.
 4. Record the removals in the changelog under `### Removed`.
-5. `bin/increment-version major` — now it goes through.
+5. `gem kit bump major` — now it goes through.
 
 `--force` exists for the case where you have decided to extend a grace period,
 and it prints what it is overriding. It is not the normal path: extending a

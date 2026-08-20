@@ -2,6 +2,16 @@
 
 require "rubygems/deprecate"
 
+# gem_kit-release is a *development* dependency: the release tooling reads the
+# registry below, but the library itself must not depend on release tooling to
+# load. So mirror into its registry when it happens to be there, and carry on
+# when it is not.
+begin
+  require "gem_kit/release/deprecate"
+rescue LoadError
+  # Not installed — this is a normal production install of Brute.
+end
+
 module Brute
   # Brute's deprecation policy, built on Gem::Deprecate.
   #
@@ -59,6 +69,13 @@ module Brute
           declared_at: declared_at || caller_locations(1, 1)&.first&.then { |l| "#{l.path}:#{l.lineno}" },
         )
         registry << entry
+
+        # Same shape (name, replacement, removed_in, declared_at), so
+        # `gem kit deprecations` can read Brute's entries directly.
+        if defined?(::GemKit::Release::Deprecate)
+          ::GemKit::Release::Deprecate.registry << entry
+        end
+
         entry
       end
 
@@ -241,6 +258,25 @@ describe "brute/deprecate" do
       entry.replacement.should == "Other#kept"
       entry.removed_in.should == Gem::Version.new("9.0")
       entry.declared_at.should.match(/deprecate\.rb:\d+/)
+    end
+  end
+
+  it "mirrors registrations into gem_kit-release's registry when it is present" do
+    # Conditional by design: gem_kit-release is a development dependency, so
+    # in a production install of Brute there is nothing to mirror into. (Also
+    # true inside a pre-commit hook, whose flake snapshot is HEAD's.)
+    next unless defined?(::GemKit::Release::Deprecate)
+
+    around_each.call do
+      saved = GemKit::Release::Deprecate.registry.dup
+      begin
+        Brute::Deprecate.register(name: "Mirrored", replacement: "New", removed_in: "9.0")
+
+        GemKit::Release::Deprecate.registry.last.name.should == "Mirrored"
+        GemKit::Release::Deprecate.registry.last.removed_in.should == Gem::Version.new("9.0")
+      ensure
+        GemKit::Release::Deprecate.registry.replace(saved)
+      end
     end
   end
 
