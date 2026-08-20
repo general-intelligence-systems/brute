@@ -2,33 +2,31 @@
 #
 # Idempotent project setup: gems installed, git hooks installed.
 #
-#   bin/setup
+#   bin/setup            # a no-op once the hooks are in place
+#   bin/setup --force    # run both steps regardless (e.g. Gemfile.lock moved)
 #
-# Run from .envrc on every shell entry, so the happy path has to be cheap —
-# it is two guards (~0.2s) and no output when there is nothing to do.
+# Called from .envrc on every shell entry, so the check has to be free: the
+# installed pre-commit hook is the marker that setup has run. .git/hooks is not
+# version-controlled, so a fresh clone has neither hooks nor gems — and no
+# hooks is exactly how the pre-commit secret scan and test run went missing.
 
 set -euo pipefail
 IFS=$'\n\t'
 
 cd "$(dirname "$0")/.."
 
-# Gems. `bundle check` exits 0 when everything in Gemfile.lock is already
-# installed, so the (much slower) bundler run only happens when the lock has
-# actually moved — after a pull, a branch switch, or bin/increment-version.
+if [ "${1:-}" != "--force" ] && [ -f .git/hooks/pre-commit ]; then
+  exit 0
+fi
+
 if command -v bundle >/dev/null 2>&1; then
-  if ! bundle check >/dev/null 2>&1; then
-    echo "brute: installing gems…"
-    bundle install
-  fi
+  echo "brute: installing gems…"
+  bundle install
 else
   echo "brute: bundler not on PATH; skipping gem install" >&2
 fi
 
-# Git hooks. lefthook.yml is version-controlled but .git/hooks is not, so a
-# fresh clone has no hooks at all until this runs — which is how the pre-commit
-# checks silently stopped happening. `lefthook install` is idempotent; the grep
-# is just to keep the common case free.
-if [ -d .git ] && ! grep -qs lefthook .git/hooks/pre-commit; then
+if [ -d .git ]; then
   if command -v lefthook >/dev/null 2>&1; then
     echo "brute: installing git hooks…"
     lefthook install
