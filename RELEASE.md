@@ -4,7 +4,7 @@ The whole process, in order:
 
 ```sh
 bin/test                      # 1. green suite
-gem kit bump minor            # 2. bump  (prints: now run gem kit changelog --write)
+gem kit bump minor            # 2. bump  (prints what to run next)
 gem kit changelog --write     # 3. write the entry
 gem kit changelog <VERSION>   # 4. check it
 git commit -am "Release ..."  # 5. commit the bump + changelog
@@ -29,7 +29,7 @@ brute is [semver](https://semver.org/). The version lives in one place —
 Two rules follow from this, and both are enforced in code:
 
 - **Removals only ever land in a major version.** A name promised to disappear
-  in 5 disappears in 5.0.0, not in a patch.
+  in 5.0 disappears in 5.0.0, not in a patch.
 - **Deprecating is a minor.** Adding a deprecation puts no obligation on the
   user *yet*, so it does not need a major — but it starts the clock. See
   [DEPRECATIONS.md](DEPRECATIONS.md).
@@ -90,7 +90,7 @@ The format is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
 
 ### Deprecated
 
-- `Old::Name` — use `New::Name` instead. Removed in 5.
+- `Old::Name` — use `New::Name` instead. Removed in 5.0.
 ```
 
 Entries go under `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed` or

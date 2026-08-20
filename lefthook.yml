@@ -1,11 +1,15 @@
 # Git hooks (managed by lefthook). Install with `bundle exec lefthook install`.
 #
+# `nix develop path:.` rather than `nix develop`: inside a pre-commit hook the
+# git form evaluates a stale tree, so a commit that adds a dependency could
+# never pass the suite that needs it.
+#
 # pre-commit: scan for secrets (trufflehog) and run the test suite (bin/test).
-# Both are wrapped in `nix develop --command` because the hook fires outside the
+# Both are wrapped in `nix develop path:. --command` because the hook fires outside the
 # flake devshell, so trufflehog / bundler / scampi wouldn't otherwise be on PATH.
 pre-commit:
   commands:
     secrets:
-      run: nix develop --command trufflehog git file://. --since-commit HEAD --only-verified --fail
+      run: nix develop path:. --command trufflehog git file://. --since-commit HEAD --only-verified --fail
     tests:
-      run: nix develop --command bin/test
+      run: nix develop path:. --command bin/test

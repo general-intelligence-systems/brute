@@ -11,12 +11,20 @@ All notable changes to Brute are documented in this file. The format follows
   [gem_kit-release](https://rubygems.org/gems/gem_kit-release) gem, now a
   development dependency. It registers one RubyGems command:
   `gem kit bump|changelog|deprecations|release|tag`, plus `gem kit setup`.
-  `Brute::Deprecate` mirrors every registration into its registry when it is
-  loaded, so `gem kit deprecations` sees Brute's promises — and Brute itself
-  gains no runtime dependency on release tooling.
+  Brute's own deprecations are declared with `GemKit::Deprecate` from the
+  `gem_kit` gem, so `gem kit deprecations` reads them directly. The release
+  half stays a development dependency: enforcing a deadline is not something a
+  library should carry.
 
 ### Deprecated
 
+- `Brute::Deprecate` — use `GemKit::Deprecate` instead, from the
+  [gem_kit](https://rubygems.org/gems/gem_kit) gem, which is now a runtime
+  dependency. It is the same code, extracted so other gems can use it and so
+  the tooling reads one registry rather than two. `extend Brute::Deprecate`
+  still works — it warns, extends `GemKit::Deprecate` for you, and aliases
+  `brute_deprecate` to `deprecate` and `brute_deprecate_constant` to
+  `superseded_by` — until 5.0.
 - `Brute::Changelog` — use `GemKit::Release::Changelog` instead. The
   implementation stays here and keeps working; it will be removed in 5.0.
 

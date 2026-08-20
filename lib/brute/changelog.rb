@@ -2,7 +2,7 @@
 
 require "date"
 
-require_relative "deprecate"
+require "gem_kit"
 
 module Brute
   # A parser and linter for CHANGELOG.md, which follows
@@ -34,8 +34,8 @@ module Brute
     # Deprecated. This moved out to the gem_kit-release gem, where the rest of
     # the release toolchain now lives — `gem kit changelog` is the CLI over it.
     # The implementation stays here, working, until the deadline.
-    extend Brute::Deprecate
-    brute_deprecate_constant "GemKit::Release::Changelog", "5.0"
+    extend GemKit::Deprecate
+    superseded_by "GemKit::Release::Changelog", "5.0"
 
     # The six change types Keep a Changelog defines. Anything else under a
     # version is a typo or an invention, and both are worth catching.

@@ -74,7 +74,7 @@
     version = "4.1.2";
   };
   brute = {
-    dependencies = ["activesupport" "async" "colorize-extended" "diff-lcs" "file-tail" "google-protobuf" "json_schemer" "net-http-persistent" "rack"];
+    dependencies = ["activesupport" "async" "colorize-extended" "diff-lcs" "file-tail" "gem_kit" "google-protobuf" "json_schemer" "net-http-persistent" "rack"];
     groups = ["default"];
     platforms = [];
     source = {
@@ -184,16 +184,6 @@
       type = "gem";
     };
     version = "2.2.3";
-  };
-  dry-cli = {
-    groups = ["default" "development"];
-    platforms = [];
-    source = {
-      remotes = ["https://rubygems.org"];
-      sha256 = "0x6qlxk6zp3jw748k6x3zkpywx9yjyagdyinb9qai2khdjvmn0dq";
-      type = "gem";
-    };
-    version = "1.4.1";
   };
   erb = {
     groups = ["default"];
@@ -312,16 +302,26 @@
     };
     version = "1.4.0";
   };
+  gem_kit = {
+    groups = ["default" "development"];
+    platforms = [];
+    source = {
+      remotes = ["https://rubygems.org"];
+      sha256 = "0dx9w041lqzr4jd0m9as0v5v6n3fj2hcg74p2gyswr2y2a6zc5v9";
+      type = "gem";
+    };
+    version = "0.2.0";
+  };
   gem_kit-release = {
-    dependencies = ["dry-cli"];
+    dependencies = ["gem_kit" "thor"];
     groups = ["development"];
     platforms = [];
     source = {
       remotes = ["https://rubygems.org"];
-      sha256 = "1w3vwj9w1g5maw1siql4lrjfxzp18cqsyhqyrx0zx842qw9ll05f";
+      sha256 = "0ia0nv35vn2kcgvd4hlkj2c2fgqjh5w1vski544g7vq9pmn984fi";
       type = "gem";
     };
-    version = "0.1.0";
+    version = "0.2.2";
   };
   google-protobuf = {
     dependencies = ["bigdecimal" "rake"];
@@ -759,6 +759,16 @@
       type = "gem";
     };
     version = "0.5.0";
+  };
+  thor = {
+    groups = ["default" "development"];
+    platforms = [];
+    source = {
+      remotes = ["https://rubygems.org"];
+      sha256 = "0wsy88vg2mazl039392hqrcwvs5nb9kq8jhhrrclir2px1gybag3";
+      type = "gem";
+    };
+    version = "1.5.0";
   };
   tins = {
     dependencies = ["bigdecimal" "irb" "mize" "readline" "sync"];
