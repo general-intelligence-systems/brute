@@ -1,36 +1,9 @@
 #!/usr/bin/env bash
-#
-# Idempotent project setup: gems installed, git hooks installed.
-#
-#   bin/setup            # a no-op once the hooks are in place
-#   bin/setup --force    # run both steps regardless (e.g. Gemfile.lock moved)
-#
-# Called from .envrc on every shell entry, so the check has to be free: the
-# installed pre-commit hook is the marker that setup has run. .git/hooks is not
-# version-controlled, so a fresh clone has neither hooks nor gems — and no
-# hooks is exactly how the pre-commit secret scan and test run went missing.
-
 set -euo pipefail
-IFS=$'\n\t'
 
 cd "$(dirname "$0")/.."
 
-if [ "${1:-}" != "--force" ] && [ -f .git/hooks/pre-commit ]; then
-  exit 0
-fi
-
-if command -v bundle >/dev/null 2>&1; then
-  echo "brute: installing gems…"
+if [ ! -f .git/hooks/pre-commit ]; then
   bundle install
-else
-  echo "brute: bundler not on PATH; skipping gem install" >&2
-fi
-
-if [ -d .git ]; then
-  if command -v lefthook >/dev/null 2>&1; then
-    echo "brute: installing git hooks…"
-    lefthook install
-  else
-    echo "brute: lefthook not on PATH; run 'bundle exec lefthook install'" >&2
-  fi
+  bundle exec lefthook install
 fi
