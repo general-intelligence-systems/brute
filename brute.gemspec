@@ -39,5 +39,5 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency 'scampi', '~> 1.0'
   spec.add_development_dependency "lefthook", "~> 2.1"
   # The release toolchain: `gem kit bump|changelog|deprecations|release|tag`.
-  spec.add_development_dependency "gem_kit-release", "~> 0.2"
+  spec.add_development_dependency "gem_kit-release", "~> 0.3"
 end

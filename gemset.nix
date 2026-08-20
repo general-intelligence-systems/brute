@@ -318,10 +318,10 @@
     platforms = [];
     source = {
       remotes = ["https://rubygems.org"];
-      sha256 = "0ia0nv35vn2kcgvd4hlkj2c2fgqjh5w1vski544g7vq9pmn984fi";
+      sha256 = "0ysk554pnxc5f7za3x8i75pycy4jc3qp5za4rs22ls6fyypy0680";
       type = "gem";
     };
-    version = "0.2.2";
+    version = "0.3.0";
   };
   google-protobuf = {
     dependencies = ["bigdecimal" "rake"];

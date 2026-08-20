@@ -16,7 +16,8 @@ All notable changes to Brute are documented in this file. The format follows
   Brute's own deprecations are declared with `GemKit::Deprecate` from the
   `gem_kit` gem, so `gem kit deprecations` reads them directly. The release
   half stays a development dependency: enforcing a deadline is not something a
-  library should carry.
+  library should carry. On `gem_kit-release ~> 0.3`, so `gem kit release`
+  refuses while anything is uncommitted and tags the release itself.
 
 ### Deprecated
 
