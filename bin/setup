@@ -1,5 +1,38 @@
 #!/usr/bin/env bash
+#
+# Idempotent project setup: gems installed, git hooks installed.
+#
+#   bin/setup
+#
+# Run from .envrc on every shell entry, so the happy path has to be cheap —
+# it is two guards (~0.2s) and no output when there is nothing to do.
+
 set -euo pipefail
 IFS=$'\n\t'
 
-bundle install
+cd "$(dirname "$0")/.."
+
+# Gems. `bundle check` exits 0 when everything in Gemfile.lock is already
+# installed, so the (much slower) bundler run only happens when the lock has
+# actually moved — after a pull, a branch switch, or bin/increment-version.
+if command -v bundle >/dev/null 2>&1; then
+  if ! bundle check >/dev/null 2>&1; then
+    echo "brute: installing gems…"
+    bundle install
+  fi
+else
+  echo "brute: bundler not on PATH; skipping gem install" >&2
+fi
+
+# Git hooks. lefthook.yml is version-controlled but .git/hooks is not, so a
+# fresh clone has no hooks at all until this runs — which is how the pre-commit
+# checks silently stopped happening. `lefthook install` is idempotent; the grep
+# is just to keep the common case free.
+if [ -d .git ] && ! grep -qs lefthook .git/hooks/pre-commit; then
+  if command -v lefthook >/dev/null 2>&1; then
+    echo "brute: installing git hooks…"
+    lefthook install
+  else
+    echo "brute: lefthook not on PATH; run 'bundle exec lefthook install'" >&2
+  fi
+fi
