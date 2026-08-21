@@ -5,6 +5,19 @@ All notable changes to Brute are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-08-21
+
+### Added
+
+- `Brute::Middleware::Loop::BackgroundJobs` — a `Loop` that keeps the turn
+  alive while background jobs are running. Use it outside the tool loop
+  (`use Brute::Middleware::Loop::BackgroundJobs` above
+  `use Brute::Middleware::Loop::ToolResult`): the inner loop ends when the
+  model answers with text, and this one sends control back in for another pass
+  while `env[:background_jobs]` is truthy, which is how a finished job gets
+  reported. Whatever spawns the jobs — say, a middleware running a subagent in
+  the background — keeps `env[:background_jobs]` current.
+
 ## [4.2.0] - 2026-08-20
 
 ### Added

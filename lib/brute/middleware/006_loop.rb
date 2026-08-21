@@ -71,6 +71,24 @@ module Brute
           super(app, CONDITION)
         end
       end
+
+      # Keeps the turn alive while background jobs are running. Sit it
+      # OUTSIDE the tool loop: the inner loop ends when the model answers
+      # with text, and this one sends control back in for another pass while
+      # jobs are still running — which is how a finished job gets reported.
+      # Whatever spawns the jobs (say, a middleware running a subagent in
+      # the background) keeps env[:background_jobs] current.
+      #
+      #   use Brute::Middleware::Loop::BackgroundJobs
+      #   use Brute::Middleware::Loop::ToolResult
+      #
+      class BackgroundJobs < Loop
+        CONDITION = ->(env) { env[:background_jobs] }
+
+        def initialize(app)
+          super(app, CONDITION)
+        end
+      end
     end
   end
 end
@@ -165,5 +183,32 @@ describe "brute/middleware/006_loop" do
 
     call_count.should == 1
     env[:current_iteration].should == 1
+  end
+
+  # --- Loop::BackgroundJobs ---
+
+  it "BackgroundJobs runs the inner stack once when nothing is running" do
+    calls = 0
+    Brute::Middleware::Loop::BackgroundJobs.new(->(_env) { calls += 1 }).call({})
+
+    calls.should == 1
+  end
+
+  it "BackgroundJobs loops while jobs are running" do
+    calls = 0
+    inner = ->(env) do
+      calls += 1
+      env[:background_jobs] = calls < 3
+    end
+    Brute::Middleware::Loop::BackgroundJobs.new(inner).call({})
+
+    calls.should == 3
+  end
+
+  it "BackgroundJobs stops once the jobs are done" do
+    env = { background_jobs: true }
+    Brute::Middleware::Loop::BackgroundJobs.new(->(e) { e[:background_jobs] = false }).call(env)
+
+    env[:background_jobs].should.be.false
   end
 end

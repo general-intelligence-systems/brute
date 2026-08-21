@@ -81,7 +81,7 @@
       path = ./.;
       type = "path";
     };
-    version = "4.2.0";
+    version = "4.3.0";
   };
   cgi = {
     groups = ["completions" "default"];
@@ -318,10 +318,10 @@
     platforms = [];
     source = {
       remotes = ["https://rubygems.org"];
-      sha256 = "0ysk554pnxc5f7za3x8i75pycy4jc3qp5za4rs22ls6fyypy0680";
+      sha256 = "0f2n3kfvmsssdnizybbsiiwlycnk8lf8x70vh61f0aszmxbid9vn";
       type = "gem";
     };
-    version = "0.3.0";
+    version = "0.3.1";
   };
   google-protobuf = {
     dependencies = ["bigdecimal" "rake"];
