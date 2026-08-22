@@ -51,91 +51,25 @@ __END__
 describe "brute/middleware/004_summarize" do
   require "brute/messages"
 
-  it "produces a final assistant message after tool loop" do
-    call_count = 0
-
-    # Fake inner app: first call simulates a tool loop ending with a tool message,
-    # second call (summary) produces an assistant message.
+  it "reruns the stack tool-free with a summary prompt, then restores the tools" do
+    seen = []
     inner = ->(env) do
-      call_count += 1
-      if call_count == 1
-        env[:messages] << Brute::Message.new(role: :tool, content: "some result", tool_call_id: "tc1")
-      else
-        env[:messages] << Brute::Message.new(role: :assistant, content: "Here is my complete summary.")
-      end
+      seen << [env[:tools], env[:current_iteration], env[:messages].last.content]
+      env[:messages] << Brute::Message.new(role: :assistant, content: "done")
     end
 
-    mw = Brute::Middleware::Summarize.new(inner)
-    session = Brute.log
-    session.user("explore the codebase")
-    env = { messages: session, tools: [:some_tool], current_iteration: 5 }
-    mw.call(env)
+    env = { messages: Brute.log.tap { |l| l.user("explore the codebase") },
+            tools: [:read, :search], current_iteration: 5 }
+    Brute::Middleware::Summarize.new(inner).call(env)
 
-    env[:messages].last.role.should == :assistant
-    env[:messages].last.content.should =~ /summary/i
-  end
+    seen.should == [
+      [[:read, :search], 5, "explore the codebase"],
+      [[], 1, Brute::Middleware::Summarize::DEFAULT_PROMPT],
+    ]
+    env[:tools].should == [:read, :search]
 
-  it "restores tools after summary call" do
-    inner = ->(env) {
-      env[:messages] << Brute::Message.new(role: :assistant, content: "done")
-    }
-
-    mw = Brute::Middleware::Summarize.new(inner)
-    tools = [:read, :search]
-    env = { messages: Brute.log, tools: tools.dup, current_iteration: 1 }
-    env[:messages].user("hi")
-    mw.call(env)
-
-    env[:tools].should == tools
-  end
-
-  it "resets current_iteration for the summary call" do
-    captured_iteration = nil
-    inner = ->(env) {
-      captured_iteration = env[:current_iteration]
-      env[:messages] << Brute::Message.new(role: :assistant, content: "done")
-    }
-
-    mw = Brute::Middleware::Summarize.new(inner)
-    env = { messages: Brute.log, tools: [], current_iteration: 99 }
-    env[:messages].user("hi")
-    mw.call(env)
-
-    # The second call (summary) should have iteration reset to 1
-    captured_iteration.should == 1
-  end
-
-  it "injects a summary prompt message" do
-    messages_at_second_call = nil
-    call_count = 0
-    inner = ->(env) {
-      call_count += 1
-      messages_at_second_call = env[:messages].map(&:content) if call_count == 2
-      env[:messages] << Brute::Message.new(role: :assistant, content: "done")
-    }
-
-    mw = Brute::Middleware::Summarize.new(inner)
-    env = { messages: Brute.log, tools: [], current_iteration: 1 }
-    env[:messages].user("hi")
-    mw.call(env)
-
-    messages_at_second_call.last.should =~ /findings/i
-  end
-
-  it "accepts a custom prompt" do
-    messages_at_second_call = nil
-    call_count = 0
-    inner = ->(env) {
-      call_count += 1
-      messages_at_second_call = env[:messages].map(&:content) if call_count == 2
-      env[:messages] << Brute::Message.new(role: :assistant, content: "done")
-    }
-
-    mw = Brute::Middleware::Summarize.new(inner, prompt: "Give me the TL;DR.")
-    env = { messages: Brute.log, tools: [], current_iteration: 1 }
-    env[:messages].user("hi")
-    mw.call(env)
-
-    messages_at_second_call.last.should == "Give me the TL;DR."
+    seen.clear
+    Brute::Middleware::Summarize.new(inner, prompt: "Give me the TL;DR.").call(env)
+    seen.last.last.should == "Give me the TL;DR."
   end
 end

@@ -98,117 +98,54 @@ __END__
 describe "brute/middleware/006_loop" do
   require "brute/messages"
 
-  it "runs the inner app once when the condition is immediately false" do
-    calls = 0
-    mw = Brute::Middleware::Loop.new(->(_env) { calls += 1 }, ->(_env) { false })
-    mw.call({})
-    calls.should == 1
-  end
-
-  it "loops while the condition is truthy" do
-    calls = 0
-    mw = Brute::Middleware::Loop.new(->(_env) { calls += 1 }, ->(_env) { calls < 3 })
-    mw.call({})
-    calls.should == 3
-  end
-
-  it "accepts a block condition and passes env to it" do
-    seen = []
-    mw = Brute::Middleware::Loop.new(->(env) { env[:n] += 1 }) { |env| seen << env[:n]; env[:n] < 2 }
+  it "runs the app until the condition turns false, passing it env" do
+    passes = []
     env = { n: 0 }
-    mw.call(env)
-    env[:n].should == 2
-    seen.should == [1, 2]
-  end
+    returned = Brute::Middleware::Loop.new(->(e) { e[:n] += 1; passes << e[:n]; e }) { |e| e[:n] < 3 }.call(env)
 
-  it "returns env" do
-    env = { a: 1 }
-    Brute::Middleware::Loop.new(->(_e) {}, ->(_e) { false }).call(env).should == env
-  end
+    passes.should == [1, 2, 3]
+    returned.should.be.identical_to env
 
-  it "raises without a proc or block" do
     lambda { Brute::Middleware::Loop.new(->(_e) {}) }.should.raise(ArgumentError)
   end
 
   # --- Loop::ToolResult (reimplements the old ToolResultLoop) ---
 
-  it "ToolResult loops until the last message is not a tool result" do
-    call_count = 0
+  it "ToolResult reruns while the last message is a tool result, unless should_exit" do
+    calls = []
     inner = ->(env) do
-      call_count += 1
-      if call_count == 1
-        env[:messages] << Brute::Message.new(role: :tool, content: "result", tool_call_id: "tc1")
-      else
-        env[:messages] << Brute::Message.new(role: :assistant, content: "done")
-      end
+      calls << env[:current_iteration]
+      env[:messages] << Brute::Message.new(role: :tool, content: "result", tool_call_id: "tc#{calls.size}")
+      env[:should_exit] = { reason: "max" } if calls.size >= 2
     end
 
-    mw = Brute::Middleware::Loop::ToolResult.new(inner)
-    env = { messages: Brute.log, current_iteration: 1 }
-    env[:messages].user("hi")
-    mw.call(env)
+    env = { messages: Brute.log.tap { |l| l.user("hi") }, current_iteration: 1 }
+    Brute::Middleware::Loop::ToolResult.new(inner).call(env)
+    calls.should == [1, 2]
 
-    call_count.should == 2
-    env[:current_iteration].should == 2
-    env[:messages].last.role.should == :assistant
-  end
-
-  it "ToolResult stops when should_exit is set" do
-    call_count = 0
-    inner = ->(env) do
-      call_count += 1
-      env[:messages] << Brute::Message.new(role: :tool, content: "result", tool_call_id: "tc#{call_count}")
-      env[:should_exit] = { reason: "max" } if call_count >= 2
+    calls.clear
+    text_only = ->(env) do
+      calls << env[:current_iteration]
+      env[:messages] << Brute::Message.new(role: :assistant, content: "done")
     end
-
-    mw = Brute::Middleware::Loop::ToolResult.new(inner)
-    env = { messages: Brute.log, current_iteration: 1 }
-    env[:messages].user("hi")
-    mw.call(env)
-
-    call_count.should == 2
-  end
-
-  it "ToolResult does not loop when last message is assistant" do
-    call_count = 0
-    inner = ->(env) do
-      call_count += 1
-      env[:messages] << Brute::Message.new(role: :assistant, content: "hello")
-    end
-
-    mw = Brute::Middleware::Loop::ToolResult.new(inner)
-    env = { messages: Brute.log, current_iteration: 1 }
-    env[:messages].user("hi")
-    mw.call(env)
-
-    call_count.should == 1
+    env = { messages: Brute.log.tap { |l| l.user("hi") }, current_iteration: 1 }
+    Brute::Middleware::Loop::ToolResult.new(text_only).call(env)
+    calls.should == [1]
     env[:current_iteration].should == 1
   end
 
   # --- Loop::BackgroundJobs ---
 
-  it "BackgroundJobs runs the inner stack once when nothing is running" do
-    calls = 0
-    Brute::Middleware::Loop::BackgroundJobs.new(->(_env) { calls += 1 }).call({})
+  it "BackgroundJobs reruns while jobs are running" do
+    seen = []
+    inner = ->(env) { seen << env[:background_jobs]; env[:background_jobs] = seen.size < 3 }
 
-    calls.should == 1
-  end
-
-  it "BackgroundJobs loops while jobs are running" do
-    calls = 0
-    inner = ->(env) do
-      calls += 1
-      env[:background_jobs] = calls < 3
-    end
     Brute::Middleware::Loop::BackgroundJobs.new(inner).call({})
+    seen.should == [nil, true, true]
 
-    calls.should == 3
-  end
-
-  it "BackgroundJobs stops once the jobs are done" do
-    env = { background_jobs: true }
-    Brute::Middleware::Loop::BackgroundJobs.new(->(e) { e[:background_jobs] = false }).call(env)
-
-    env[:background_jobs].should.be.false
+    seen.clear
+    Brute::Middleware::Loop::BackgroundJobs.new(->(e) { seen << e[:background_jobs]; e[:background_jobs] = false })
+      .call({ background_jobs: true })
+    seen.should == [true]
   end
 end

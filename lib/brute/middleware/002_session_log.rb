@@ -71,30 +71,24 @@ describe "brute/middleware/002_session_log" do
     Dir.mktmpdir do |dir|
       path = File.join(dir, "session.jsonl")
 
-      # Turn 1: no file yet; terminal appends an assistant reply.
-      turn = ->(env) { env[:messages].assistant("first reply") }
-      Brute::Middleware::SessionLog.new(turn, path: path).call(
-        { messages: Brute.log.tap { |l| l.user("hi") } }
-      )
+      Brute::Middleware::SessionLog.new(->(e) { e[:messages].assistant("first reply") }, path: path)
+        .call({ messages: Brute.log.tap { |l| l.user("hi") } })
 
-      File.exist?(path).should.be.true
-
-      # Turn 2: fresh log with a new user message; history is prepended.
       env = { messages: Brute.log.tap { |l| l.user("again") } }
       Brute::Middleware::SessionLog.new(->(e) { }, path: path).call(env)
 
+      File.exist?(path).should.be.true
       env[:messages].map(&:content).should == ["hi", "first reply", "again"]
     end
   end
 
   it "does not persist the system message" do
     Dir.mktmpdir do |dir|
-      path = File.join(dir, "s.jsonl")
-      env = { messages: Brute.log.tap { |l| l.system("secret prompt"); l.user("hi") } }
-      Brute::Middleware::SessionLog.new(->(e) { }, path: path).call(env)
+      path = File.join(dir, "session.jsonl")
+      Brute::Middleware::SessionLog.new(->(e) { }, path: path)
+        .call({ messages: Brute.log.tap { |l| l.system("secret prompt"); l.user("hi") } })
 
-      reloaded = File.readlines(path).map(&:strip).reject(&:empty?)
-      reloaded.any? { |line| line.include?("secret prompt") }.should.be.false
+      File.read(path).should.not.match(/secret prompt/)
     end
   end
 end

@@ -45,30 +45,15 @@ __END__
 describe "brute/middleware/010_max_iterations" do
   require "brute/messages"
 
-  it "can be added to a stack" do
-    called = false
-    inner = ->(env) { called = true }
-    mw = Brute::Middleware::MaxIterations.new(inner)
-    mw.call({ current_iteration: 1, messages: Brute.log })
-    called.should.be.true
-  end
+  it "lets the turn run under the max, then blocks the stack and injects a notice" do
+    ran = []
+    env = { messages: Brute.log.tap { |l| l.user("hi") }, current_iteration: 1 }
 
-  it "prevents execution after given max" do
-    called = false
-    inner = ->(env) { called = true }
-    mw = Brute::Middleware::MaxIterations.new(inner, max_iterations: 0)
-    env = { current_iteration: 1, messages: Brute.log }
-    mw.call(env)
-    called.should.be.false
-  end
+    Brute::Middleware::MaxIterations.new(->(e) { ran << e[:current_iteration] }).call(env)
+    ran.should == [1]
 
-  it "injects a user message when max is hit" do
-    inner = ->(env) { }
-    mw = Brute::Middleware::MaxIterations.new(inner, max_iterations: 0)
-    session = Brute.log
-    session.user("hi")
-    env = { current_iteration: 1, messages: session }
-    mw.call(env)
+    Brute::Middleware::MaxIterations.new(->(e) { ran << e[:current_iteration] }, max_iterations: 0).call(env)
+    ran.should == [1]
     env[:messages].last.role.should == :user
     env[:messages].last.content.should =~ /Maximum iterations reached/
   end
