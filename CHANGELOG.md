@@ -5,6 +5,18 @@ All notable changes to Brute are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [4.3.2] - 2026-08-23
+
+### Fixed
+
+- `Brute::Completion::OpenRouter.new` no longer takes a leading `app`
+  positional argument. It never used it — the class is a completion
+  middleware, the terminal step of a turn, not a passthrough to a next app —
+  so the parameter was dead weight that just made the constructor look
+  chainable. Drop it from call sites: `Brute::Completion::OpenRouter.new(model:
+  "anthropic/claude-sonnet-4")` instead of `Brute::Completion::OpenRouter.new(app,
+  model: "anthropic/claude-sonnet-4")`.
+
 ## [4.3.1] - 2026-08-23
 
 ### Added
