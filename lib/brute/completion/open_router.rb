@@ -18,8 +18,7 @@ module Brute
       #           Defaults to OpenRouter.configuration's global settings.
       # options:  keyword arguments for OpenRouter::CompletionOptions.new
       #           (model:, temperature:, tools:, ...).
-      def initialize(app, config: {}, **options)
-        @app = app
+      def initialize(config: {}, **options)
         @config = config
         @options = ::OpenRouter::CompletionOptions.new(**options)
       end
