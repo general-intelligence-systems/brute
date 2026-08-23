@@ -5,6 +5,21 @@ All notable changes to Brute are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [4.3.1] - 2026-08-23
+
+### Added
+
+- Failure hooks around the provider call in `Brute::Completion::OpenRouter`.
+  A call that raises no longer propagates up the stack: the middleware emits
+  `:llm_failure` with the turn env, then one of `:faraday_error` (for a
+  `Faraday::Error`), `:open_router_server_error` (for an
+  `OpenRouter::ServerError`) or `:standard_error` for anything else, each with
+  the exception itself, and returns the env with no assistant message
+  appended. Subscribe as you would to any other hook —
+  `.on(:llm_failure) { |env| ... }`. If you relied on a provider error
+  reaching your own `rescue`, re-raise from an `:llm_failure` subscriber. The
+  four names are listed in `Brute::Hooks::EVENTS`.
+
 ## [4.3.0] - 2026-08-21
 
 ### Added

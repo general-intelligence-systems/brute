@@ -17,6 +17,10 @@ module Brute
   #   :turn_start, :turn_end  → the turn env (AgentPipeline#start; turn_end
   #                             fires from an ensure, so it also fires on error)
   #   :before_llm, :after_llm → the turn env, around every LLM call
+  #   :llm_failure            → the turn env, when the LLM call raises; the
+  #                             completion middleware then emits one of
+  #                             :faraday_error, :open_router_server_error or
+  #                             :standard_error with the exception itself
   #   :before_tool            → call env {name:, arguments:, result:, events:,
   #                             metadata:, turn_env:} — mutate :arguments to
   #                             rewrite the call, or set :result (or return a
@@ -29,7 +33,9 @@ module Brute
   # Exceptions propagate to the caller — layers that want fail-open semantics
   # rescue in their own subscriber.
   class Hooks
-    EVENTS = %i[turn_start turn_end before_llm after_llm before_tool approve_tool after_tool].freeze
+    EVENTS = %i[turn_start turn_end before_llm after_llm llm_failure faraday_error
+                open_router_server_error standard_error before_tool approve_tool
+                after_tool].freeze
 
     def initialize
       @subscribers = Hash.new { |hash, key| hash[key] = [] }

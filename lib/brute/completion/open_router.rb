@@ -49,21 +49,25 @@ module Brute
 
         env[:hooks]&.emit(:after_llm, env)
         env
-      end
-    rescue => error
-      env[:hooks]&.emit(:llm_failure, env)
+      # A provider call that raises is reported through the hooks rather than
+      # up the stack: :llm_failure with the turn env, then one hook naming the
+      # kind of failure. The classes are looked up defensively — the provider
+      # gem is only a dependency of the app that uses this middleware.
+      rescue => error
+        env[:hooks]&.emit(:llm_failure, env)
 
-      case error
+        if defined?(::Faraday::Error) && error.is_a?(::Faraday::Error)
+          env[:hooks]&.emit(:faraday_error, error)
 
-      in Faraday::Error => failure
-        env[:hooks]&.emit(:faraday_error, failure)
+        elsif defined?(::OpenRouter::ServerError) && error.is_a?(::OpenRouter::ServerError)
+          env[:hooks]&.emit(:open_router_server_error, error)
 
-      in OpenRouter::ServerError
-        env[:hooks]&.emit(:open_router_server_error, error)
+        else
+          env[:hooks]&.emit(:standard_error, error)
 
-      else
-        env[:hooks]&.emit(:standard_error, error)
+        end
 
+        env
       end
     end
   end
@@ -119,6 +123,33 @@ describe "brute/completion/open_router" do
     env = with_fake_client.call(Brute::Completion::OpenRouter.new(->(e) { e }), FakeUsageResponse.new(nil))
 
     env.key?(:metadata).should.be.false
+  end
+
+  it "reports a failed provider call through the hooks instead of raising" do
+    seen = []
+    hooks = Brute::Hooks.new
+    %i[llm_failure standard_error after_llm].each do |event|
+      hooks.on(event) { |payload| seen << [event, payload] }
+    end
+
+    boom = RuntimeError.new("no route to host")
+    fake_client = Object.new
+    fake_client.define_singleton_method(:complete) { |_messages, _options| raise boom }
+    original = OpenRouter::Client.method(:new)
+    OpenRouter::Client.define_singleton_method(:new) { |**_config| fake_client }
+
+    begin
+      env = { messages: Brute.log, hooks: hooks }
+      env[:messages].user("hi")
+      returned = Brute::Completion::OpenRouter.new(->(e) { e }).call(env)
+
+      returned.should.be.identical_to env
+      seen.map(&:first).should == [:llm_failure, :standard_error]
+      seen.first.last.should.be.identical_to env
+      seen.last.last.should.be.identical_to boom
+    ensure
+      OpenRouter::Client.define_singleton_method(:new, original)
+    end
   end
 
   it "still answers to the deprecated Middleware::OpenRouter::Completion name" do
