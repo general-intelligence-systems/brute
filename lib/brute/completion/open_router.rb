@@ -50,6 +50,21 @@ module Brute
         env[:hooks]&.emit(:after_llm, env)
         env
       end
+    rescue => error
+      env[:hooks]&.emit(:llm_failure, env)
+
+      case error
+
+      in Faraday::Error => failure
+        env[:hooks]&.emit(:faraday_error, failure)
+
+      in OpenRouter::ServerError
+        env[:hooks]&.emit(:open_router_server_error, error)
+
+      else
+        env[:hooks]&.emit(:standard_error, error)
+
+      end
     end
   end
 end

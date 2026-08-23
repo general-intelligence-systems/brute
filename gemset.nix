@@ -81,7 +81,7 @@
       path = ./.;
       type = "path";
     };
-    version = "4.3.0";
+    version = "4.3.1";
   };
   cgi = {
     groups = ["completions" "default"];
