@@ -74,14 +74,14 @@
     version = "4.1.2";
   };
   brute = {
-    dependencies = ["activesupport" "async" "colorize-extended" "diff-lcs" "file-tail" "gem_kit" "google-protobuf" "json_schemer" "net-http-persistent" "rack"];
+    dependencies = ["activesupport" "async" "colorize-extended" "diff-lcs" "file-tail" "gem_kit" "google-protobuf" "json" "json_schemer" "net-http-persistent" "rack"];
     groups = ["default"];
     platforms = [];
     source = {
       path = ./.;
       type = "path";
     };
-    version = "5.0.3";
+    version = "5.0.4";
   };
   cgi = {
     groups = ["completions" "default"];
@@ -387,14 +387,14 @@
     version = "1.18.0";
   };
   json = {
-    groups = ["completions" "default"];
+    groups = ["default" "development"];
     platforms = [];
     source = {
       remotes = ["https://rubygems.org"];
-      sha256 = "0ay31y1yl208xrpcsw6b0k4q309magq7q5prmdbb0lm9ampbqqlk";
+      sha256 = "0shwgjqbj856mb6m9kgkpy08nhym2gdvc2yaprlimfmky9y3n78z";
       type = "gem";
     };
-    version = "2.20.0";
+    version = "2.21.2";
   };
   json-schema = {
     dependencies = ["addressable"];
@@ -834,14 +834,14 @@
   };
   websocket-driver = {
     dependencies = ["base64" "websocket-extensions"];
-    groups = ["browser" "default"];
+    groups = ["browser"];
     platforms = [];
     source = {
       remotes = ["https://rubygems.org"];
-      sha256 = "15idgibqpdaj97f734drx8a7k1jcc8wvxlk2nbafac72ihikicjs";
+      sha256 = "0ij19k6034x0c4hw0ywa7wnk5s912r8aq0hhjss10d5z36q5dicp";
       type = "gem";
     };
-    version = "0.8.1";
+    version = "0.8.2";
   };
   websocket-extensions = {
     groups = ["browser" "default"];

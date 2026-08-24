@@ -15,6 +15,7 @@ end
 # Chrome-over-CDP driver for examples/ports/browser-agent.
 group :browser, optional: true do
 	gem "ferrum"
+	gem "websocket-driver", ">= 0.8.2" # DoS via malformed Host header
 end
 
 # Docs live under docs/ as a standalone Just the Docs (Jekyll) project with its

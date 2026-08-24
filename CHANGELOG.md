@@ -5,6 +5,22 @@ All notable changes to Brute are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [5.0.4] - 2026-08-24
+
+### Security
+
+- A new runtime dependency, `json >= 2.21.2`, on the gemspec. Brute does not
+  use json directly — activesupport, async's console and faraday each pull it
+  in — but nothing in that chain requires a version above the use-after-free in
+  the resumable parser on a truncated stream, so the floor is declared here.
+  Installing or updating Brute now raises json for you; the dependency can go
+  once the parents require the fixed version themselves.
+
+- `websocket-driver >= 0.8.2` (denial of service on a malformed `Host` header)
+  in the Gemfile's optional `browser` group, which only the
+  `examples/ports/browser-agent` example uses. This one is not a gem
+  dependency and does not reach an app installing Brute.
+
 ## [5.0.3] - 2026-08-24
 
 ### Fixed

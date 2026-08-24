@@ -30,6 +30,10 @@ Gem::Specification.new do |spec|
   spec.add_dependency "net-http-persistent"
   spec.add_dependency "json_schemer", "~> 2.5"
   spec.add_dependency "google-protobuf", "~> 4.34"
+  # Not used directly — activesupport, async's console and faraday each pull
+  # json in. The floor is a security one (a use-after-free in the resumable
+  # parser on a truncated stream) and can go once those require it themselves.
+  spec.add_dependency "json", ">= 2.21.2"
   # The deprecation DSL. Tiny and dependency-free on purpose: declaring a
   # deprecation is runtime work, and the toolchain that enforces the deadline
   # (gem_kit-release, below) is not.
