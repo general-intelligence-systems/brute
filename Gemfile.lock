@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    brute (4.4.1)
+    brute (5.0.0)
       activesupport
       async (~> 2.0)
       async-http-faraday
