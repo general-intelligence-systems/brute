@@ -28,6 +28,25 @@ All notable changes to Brute are documented in this file. The format follows
   `description`, `params_schema`, `provider_params` and `call`; a tool already
   written against `RubyLLM::Tool` is passed through untouched.
 
+## [5.0.2] - 2026-08-24
+
+### Removed
+
+- `Brute::Completion.async_faraday!`, and with it the runtime dependency on
+  `async-http-faraday`. 5.0.0 had `Completion::OpenRouter`, `Completion::RubyLLM`
+  and `Completion::LangChain` call it after requiring their provider gem, to
+  point Faraday's default adapter at async-http for persistent connections and
+  HTTP/2. Choosing the HTTP adapter is not a decision a completion middleware
+  should be making for the host app, so it is gone: the completions no longer
+  touch `Faraday.default_adapter`, and Brute no longer pulls in async-http.
+  Faraday falls back to Net::HTTP, which works under Async but opens a fresh
+  connection per request; an app that wants the old behaviour requires
+  `async/http/faraday/default` itself (and adds `async-http-faraday` to its own
+  Gemfile).
+
+  A public name removed outside a major version, against the usual rule: 5.0.0
+  shipped the same day, so nothing has had the chance to depend on it.
+
 ## [5.0.1] - 2026-08-24
 
 ### Removed
