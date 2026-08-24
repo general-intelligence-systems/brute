@@ -35,8 +35,6 @@ module Brute
           raise LoadError, "#{self.class} needs the 'langchainrb' gem — add `gem \"langchainrb\"` to your Gemfile."
         end
 
-        Brute::Completion.async_faraday!
-
         @llm = llm || client or
           raise ArgumentError, "#{self.class} needs an llm: option, e.g. Langchain::LLM::OpenAI.new(api_key: ...)"
 

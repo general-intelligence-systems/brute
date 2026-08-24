@@ -36,8 +36,6 @@ module Brute
           raise LoadError, "#{self.class} needs the 'ruby_llm' gem — add `gem \"ruby_llm\"` to your Gemfile."
         end
 
-        Brute::Completion.async_faraday!
-
         @options = options
       end
 

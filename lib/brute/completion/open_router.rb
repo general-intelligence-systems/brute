@@ -29,8 +29,6 @@ module Brute
           raise LoadError, "#{self.class} needs the 'open_router_enhanced' gem — add `gem \"open_router_enhanced\"` to your Gemfile."
         end
 
-        Brute::Completion.async_faraday!
-
         @config = config
         @options = ::OpenRouter::CompletionOptions.new(**options)
       end

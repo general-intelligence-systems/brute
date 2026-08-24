@@ -28,10 +28,6 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'colorize-extended'
   spec.add_dependency 'rack', "~> 3.0"
   spec.add_dependency "net-http-persistent"
-  # Faraday's own default adapter is Net::HTTP, which works under Async but
-  # opens a fresh connection per request. The completions point Faraday at
-  # async-http instead, for persistent connections and HTTP/2.
-  spec.add_dependency "async-http-faraday"
   spec.add_dependency "json_schemer", "~> 2.5"
   spec.add_dependency "google-protobuf", "~> 4.34"
   # The deprecation DSL. Tiny and dependency-free on purpose: declaring a
