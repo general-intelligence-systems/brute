@@ -309,7 +309,7 @@ build_agent = lambda do
     # Stage 1 — the persistent IRuby kernel as the single model-facing tool
     # (prime-agent's "everything is programmatic" one-tool design).
     .use(Brute::Middleware::ToolPipeline, tools: [PrimeAgent::IrubyTool.new(provisioner: provisioner)])
-    .run(Brute::Middleware::OpenRouter::Completion.new({}, **options))
+    .run(Brute::Completion::OpenRouter.new(**options))
 end
 
 task = ARGV.empty? ? "What files are in the current directory? List them." : ARGV.join(" ")
@@ -324,7 +324,7 @@ if ENV["BRUTE_BTW"]
   answer, = PrimeAgent::SideQuestion.ask(
     messages: env[:messages],
     question: ENV["BRUTE_BTW"],
-    terminal: Brute::Middleware::OpenRouter::Completion.new({}, **options),
+    terminal: Brute::Completion::OpenRouter.new(**options),
   )
   puts answer
 end

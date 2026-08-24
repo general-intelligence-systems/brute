@@ -170,11 +170,4 @@ describe "brute/completion/open_router" do
     end
   end
 
-  it "still answers to the deprecated Middleware::OpenRouter::Completion name" do
-    deprecated = Brute::Middleware::OpenRouter::Completion.new
-    deprecated.should.be.kind_of?(Brute::Completion::OpenRouter)
-
-    env = with_fake_client.call(deprecated, FakeUsageResponse.new(nil))
-    env[:messages].last.content.should == "hello"
-  end
 end

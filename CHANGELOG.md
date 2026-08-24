@@ -17,6 +17,11 @@ All notable changes to Brute are documented in this file. The format follows
 
 ### Removed
 
+- The three deprecations that came due in 5.0: `Brute::Changelog` (use
+  `GemKit::Release::Changelog`), `Brute::Deprecate` (use `GemKit::Deprecate`)
+  and `Brute::Middleware::OpenRouter::Completion` (use
+  `Brute::Completion::OpenRouter`).
+
 - **`env[:hooks]` is gone.** `AgentPipeline#start` no longer seeds it and
   nothing reads it: emitters get their store from the builder that made them.
   Anything that instantiated a middleware directly and passed `hooks:` in env

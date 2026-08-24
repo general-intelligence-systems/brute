@@ -317,7 +317,7 @@ module PrimeAgent
         ensure_openrouter!
         options = {}
         options[:model] = model || ENV["BRUTE_MODEL"] if model || ENV["BRUTE_MODEL"]
-        Brute::Middleware::OpenRouter::Completion.new({}, **options)
+        Brute::Completion::OpenRouter.new(**options)
       end
 
       def capture_eval(eval_binding, code)

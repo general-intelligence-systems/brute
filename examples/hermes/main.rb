@@ -81,7 +81,7 @@ terminal = lambda do |env|
   options = env[:tool_free] ? {} : { tools: advertised }
   model = env[:model] || ENV["HERMES_MODEL"]
   options[:model] = model if model
-  Brute::Middleware::OpenRouter::Completion.new({}, **options).call(env)
+  Brute::Completion::OpenRouter.new(**options).call(env)
 end
 
 # One-off LLM call for the Compactor — no tools, no middleware (the aux
@@ -109,7 +109,7 @@ review_agent = ->(prompt:, history:) do
     .use(Brute::Middleware::Loop::ToolResult)
     .use(Brute::Middleware::MaxIterations, max_iterations: 16)
     .use(Hermes::Middleware::ToolPipeline, tools: review_tools, pipeline: tool_pipeline)
-    .run(Brute::Middleware::OpenRouter::Completion.new({}, **options))
+    .run(Brute::Completion::OpenRouter.new(**options))
     .start(history + [Brute::Message.new(role: :user, content: prompt)])
 end
 

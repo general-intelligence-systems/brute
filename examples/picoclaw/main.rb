@@ -132,7 +132,7 @@ def summarizer(config)
 
   lambda do |prompt|
     env = Brute.agent
-      .run(Brute::Middleware::OpenRouter::Completion.new({}, **options))
+      .run(Brute::Completion::OpenRouter.new(**options))
       .start(prompt)
     env[:messages].last.content.to_s
   end
@@ -458,7 +458,7 @@ def build_agent(config, session: "heartbeat", outbox: Outbox.new)
     opts = options.dup
     opts[:model] = env[:metadata][:llm_model] if env[:metadata][:llm_model]
     opts[:tools] = advertised_for(tool_list, mcp_manager) if mcp_manager
-    Brute::Middleware::OpenRouter::Completion.new({}, **opts).call(env)
+    Brute::Completion::OpenRouter.new(**opts).call(env)
   end
 
   pipeline = Brute.agent
@@ -619,7 +619,7 @@ def build_subturn_registry(config, &tool_list_proc)
       .use(Brute::Middleware::ToolPipeline, tools: sub_tools)
       .use(EmergencyCompression, summary_path: nil, tool_defs: sub_advertised,
                                  max_tokens: config["max_tokens"], context_window: config["context_window"])
-      .run(Brute::Middleware::OpenRouter::Completion.new({}, **sub_options))
+      .run(Brute::Completion::OpenRouter.new(**sub_options))
 
     env = { messages: Brute.log, events: [], metadata: {}, current_iteration: 1 }
     env[:messages] << Brute::Message.new(role: :system, content: "#{Subturns::SYSTEM_PROMPT}\n\nTask: #{task_text}")

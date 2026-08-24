@@ -4,7 +4,7 @@
 # Brute + open_router_enhanced (https://github.com/estiens/open_router_enhanced)
 # — the minimal OpenRouter agent.
 #
-# The terminal app is Brute::Middleware::OpenRouter::Completion: one chat
+# The terminal app is Brute::Completion::OpenRouter: one chat
 # completion per pass, tools advertised (not executed); Brute's ToolPipeline +
 # Loop::ToolResult middleware run the tools and loop. Model defaults to the
 # open_router_enhanced default; override with BRUTE_MODEL.
@@ -29,7 +29,7 @@ agent = Brute.agent
   .use(Brute::Middleware::Loop::ToolResult)
   .use(Brute::Middleware::MaxIterations)
   .use(Brute::Middleware::ToolPipeline, tools: Brute::Tools::ALL)
-  .run(Brute::Middleware::OpenRouter::Completion.new({}, **options))
+  .run(Brute::Completion::OpenRouter.new(**options))
 
 task = ARGV.empty? ? "What files are in the current directory? List them." : ARGV.join(" ")
 puts agent.start(task)
