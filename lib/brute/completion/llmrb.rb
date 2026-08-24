@@ -168,6 +168,23 @@ describe "brute/completion/llmrb" do
     call[:params][:temperature].should == 0.1
     call[:params][:model].should == "env-model" # falls back to env
 
+    # env[:tools] — what the ToolPipeline put there — becomes llm.rb functions.
+    tooled = FakeLLMrbClient.new
+    tool = {
+      name:        "echo",
+      description: "Echo the input back",
+      params:      { msg: { type: "string", desc: "what to echo", required: true } },
+      execute:     ->(msg:) { msg },
+    }
+    tools_env = { messages: Brute.log, provider: :stub, model: "m", tools: [tool], events: [] }
+    tools_env[:messages].user("hi")
+    Brute::Turn::Pipeline.new.tap { |p| p.run Brute::Completion::LLMrb.new(client: tooled) }.call(tools_env)
+
+    functions = tooled.calls.first[:params][:tools]
+    functions.size.should == 1
+    functions.first.name.should == "echo"
+    functions.first.description.should == "Echo the input back"
+
     # Without a client, a provider is required to build one.
     no_provider = Brute::Turn::Pipeline.new
     no_provider.run Brute::Completion::LLMrb.new

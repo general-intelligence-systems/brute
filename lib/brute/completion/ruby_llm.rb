@@ -27,6 +27,25 @@ module Brute
 
       DEFAULT_TEMPERATURE = 0.7
 
+      # A Brute tool adapter wearing the interface ruby_llm's providers read
+      # off a RubyLLM::Tool: name, description, and a params_schema (they fall
+      # back to #parameters only when that is nil), plus #provider_params to
+      # deep-merge into the declaration. Brute's own ToolPipeline runs the
+      # tool, so this mostly has to describe it — #call is here for a caller
+      # that hands the same list to ruby_llm's dispatch.
+      class Tool
+        def initialize(adapter)
+          @adapter = adapter
+        end
+
+        def name            = @adapter.name
+        def description     = @adapter.description
+        def params_schema   = @adapter.to_h[:parameters]
+        def parameters      = {}
+        def provider_params = {}
+        def call(args)      = @adapter.call(args)
+      end
+
       def initialize(**options)
         # Brute depends on no LLM library: the provider gem is required here,
         # at point of use, and only for this completion.
@@ -79,7 +98,7 @@ module Brute
         def complete(env, messages)
           kwargs = {
             model:       resolve_model(option(env, :model), option(env, :provider)),
-            tools:       tool_adapters(env).transform_values(&:to_ruby_llm),
+            tools:       ruby_llm_tools(env),
             temperature: temperature(env),
           }
 
@@ -125,6 +144,15 @@ module Brute
 
         def tool_adapters(env) = Brute::Tools::Adapter.wrap_all(option(env, :tools) || [])
 
+        # ruby_llm wants { name => tool }, which is the shape wrap_all already
+        # returns; only the values need presenting as ruby_llm tools. A tool
+        # written against ruby_llm goes through untouched.
+        def ruby_llm_tools(env)
+          tool_adapters(env).transform_values do |adapter|
+            adapter.original.is_a?(::RubyLLM::Tool) ? adapter.original : Tool.new(adapter)
+          end
+        end
+
         def streaming?(env) = options.fetch(:streaming) { env[:streaming] } == true
     end
   end
@@ -152,6 +180,31 @@ describe "brute/completion/ruby_llm" do
   # A completion only gets its emit from the pipeline that runs it.
   running = lambda do |completion|
     Brute::Turn::Pipeline.new.tap { |pipeline| pipeline.run completion }
+  end
+
+  it "advertises env[:tools] as ruby_llm tools" do
+    client = FakeRubyLLMClient.new
+    tool = {
+      name:        "echo",
+      description: "Echo the input back",
+      params:      { msg: { type: "string", desc: "what to echo", required: true } },
+      execute:     ->(msg:) { msg },
+    }
+
+    env = { messages: Brute.log, provider: :stub, model: "m", tools: [tool], events: [] }
+    env[:messages].user("hi")
+    Brute::Turn::Pipeline.new.tap { |p| p.run Brute::Completion::RubyLLM.new(client: client) }.call(env)
+
+    tools = client.calls.first[:kwargs][:tools]
+    tools.keys.should == [:echo]
+
+    advertised = tools[:echo]
+    advertised.name.should == "echo"
+    advertised.description.should == "Echo the input back"
+    advertised.params_schema[:properties][:msg][:type].should == "string"
+    advertised.params_schema[:required].should == ["msg"]
+    advertised.provider_params.should == {}
+    advertised.call(msg: "back").should == "back"
   end
 
   it "completes a turn, prefers point-of-use options over env, and reports failure through the hooks" do

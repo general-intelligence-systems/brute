@@ -5,6 +5,29 @@ All notable changes to Brute are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [5.0.3] - 2026-08-24
+
+### Fixed
+
+- `Brute::Completion::OpenRouter` advertises `env[:tools]` to the provider.
+  The `ToolPipeline` middleware puts the tools it executes on the env for
+  exactly this reason; the OpenRouter completion was the one that ignored them,
+  so every pipeline had to serialize its tool list a second time by hand and
+  pass it as a `tools:` option. A `tools:` option given at point of use still
+  wins, so a pipeline that serialized its own list keeps working.
+
+- `Brute::Completion::OpenRouter` falls back to `env[:model]`, the way the
+  other completions do, so a middleware can route a turn to another model.
+  A `model:` option given at point of use still wins, and with neither the
+  gem's own `openrouter/auto` default stands.
+
+- `Brute::Completion::RubyLLM` no longer raises `NoMethodError` when there are
+  tools to advertise: it called `to_ruby_llm` on the tool adapter, which does
+  not exist. Adapters are now presented to ruby_llm's providers through
+  `Brute::Completion::RubyLLM::Tool`, a wrapper answering `name`,
+  `description`, `params_schema`, `provider_params` and `call`; a tool already
+  written against `RubyLLM::Tool` is passed through untouched.
+
 ## [5.0.1] - 2026-08-24
 
 ### Removed

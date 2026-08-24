@@ -155,6 +155,23 @@ describe "brute/completion/lang_chain" do
     llm.calls.first[:temperature].should == 0.7
     llm.calls.first[:messages].first[:role].should == "user"
 
+    # env[:tools] — what the ToolPipeline put there — is advertised as-is.
+    tooled = FakeLangChainLLM.new(FakeLangChainResponse.new("ok", []))
+    tool = {
+      name:        "echo",
+      description: "Echo the input back",
+      params:      { msg: { type: "string", desc: "what to echo", required: true } },
+      execute:     ->(msg:) { msg },
+    }
+    tools_env = { messages: Brute.log, tools: [tool], events: [] }
+    tools_env[:messages].user("hi")
+    Brute::Turn::Pipeline.new.tap { |p| p.run Brute::Completion::LangChain.new(llm: tooled) }.call(tools_env)
+
+    advertised = tooled.calls.first[:tools]
+    advertised.first[:type].should == "function"
+    advertised.first[:function][:name].should == "echo"
+    advertised.first[:function][:parameters][:required].should == ["msg"]
+
     # A tool call comes back in the OpenAI shape and lands as a ToolCall.
     calling = FakeLangChainLLM.new(FakeLangChainResponse.new(nil, [
       { "id" => "tc1", "type" => "function", "function" => { "name" => "echo", "arguments" => { "text" => "hi" } } },
