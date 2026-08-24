@@ -8,6 +8,12 @@ module Brute
   class MessageTransport
     class RubyLLM < MessageTransport
 
+      # What the provider reported about this call — the transport knows its
+      # own library's shape, so it knows which detector to ask.
+      def self.usage_metrics(message)
+        Brute::UsageDetection::RubyLLM.detect(message)
+      end
+
       # Brute::Message -> RubyLLM::Message (tool calls as ruby_llm's id-keyed hash).
       def self.dump(message)
         tool_calls = message.tool_calls&.to_h do |tc|

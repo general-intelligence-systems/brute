@@ -22,7 +22,7 @@ module Brute
     #   use ToolPipeline
     #   run ->(env) { ... }   # inline LLM call proc (see Brute.agent)
     #
-    class Summarize
+    class Summarize < Brute::Middleware::Base
       DEFAULT_PROMPT = "Provide your complete findings based on everything you've explored."
 
       def initialize(app, prompt: DEFAULT_PROMPT)

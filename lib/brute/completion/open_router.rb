@@ -13,29 +13,45 @@ module Brute
   # its own provider, and only when you use it.
   module Completion
     class OpenRouter
+      include Brute::Hooks
+
       # config:   keyword arguments for OpenRouter::Client.new
       #           (access_token:, request_timeout:, uri_base:, extra_headers:).
       #           Defaults to OpenRouter.configuration's global settings.
       # options:  keyword arguments for OpenRouter::CompletionOptions.new
       #           (model:, temperature:, tools:, ...).
       def initialize(config: {}, **options)
+        # Brute depends on no LLM library: the provider gem is required here,
+        # at point of use, and only for this completion.
+        begin
+          require "open_router"
+        rescue LoadError
+          raise LoadError, "#{self.class} needs the 'open_router_enhanced' gem — add `gem \"open_router_enhanced\"` to your Gemfile."
+        end
+
+        Brute::Completion.async_faraday!
+
         @config = config
         @options = ::OpenRouter::CompletionOptions.new(**options)
       end
 
       def call(env)
-        env[:hooks]&.emit(:before_llm, env)
+        emit(BEFORE_LLM_EVENT, env)
 
         messages = Brute::MessageTransport::OpenRouter.dump_all(env[:messages])
 
         ::OpenRouter::Client.new(**@config).then do |client|
-          client.complete(messages, @options).then do |response|
+          response = nil
+          emit(LLM_DURATION_EVENT, env) { response = client.complete(messages, @options) }
+
+          response.then do |response|
 
             # Expose the provider's usage for downstream accounting
-            # middleware (goal budgets, autonomous limits, compaction
-            # thresholds, usage attribution) — additive metadata only.
-            if response.respond_to?(:usage) && response.usage
-              (env[:metadata] ||= {})[:last_llm_usage] = response.usage
+            # (goal budgets, autonomous limits, compaction thresholds, usage
+            # attribution) — additive metadata only, normalised so a reader
+            # does not have to know which provider answered.
+            if (usage = Brute::MessageTransport::OpenRouter.usage_metrics(response))
+              (env[:metadata] ||= {})[:last_llm_usage] = usage
             end
 
             # OpenRouter in fact only returns a single message...
@@ -46,23 +62,23 @@ module Brute
           end
         end
 
-        env[:hooks]&.emit(:after_llm, env)
+        emit(AFTER_LLM_EVENT, env)
         env
       # A provider call that raises is reported through the hooks rather than
       # up the stack: :llm_failure with the turn env, then one hook naming the
       # kind of failure. The classes are looked up defensively — the provider
       # gem is only a dependency of the app that uses this middleware.
       rescue => error
-        env[:hooks]&.emit(:llm_failure, env)
+        emit(LLM_FAILURE_EVENT, env)
 
         if defined?(::Faraday::Error) && error.is_a?(::Faraday::Error)
-          env[:hooks]&.emit(:faraday_error, error)
+          emit(FARADAY_ERROR_EVENT, env, error)
 
         elsif defined?(::OpenRouter::ServerError) && error.is_a?(::OpenRouter::ServerError)
-          env[:hooks]&.emit(:open_router_server_error, error)
+          emit(OPEN_ROUTER_SERVER_ERROR_EVENT, env, error)
 
         else
-          env[:hooks]&.emit(:standard_error, error)
+          emit(STANDARD_ERROR_EVENT, env, error)
 
         end
 
@@ -77,25 +93,23 @@ __END__
 describe "brute/completion/open_router" do
   require "brute/messages"
 
-  # The repo suite has no open_router gem; stub the two constants the
-  # middleware touches (the transport wraps duck-typed responses fine).
-  begin
-    require "open_router"
-  rescue LoadError
-    module OpenRouter
-      CompletionOptions = Class.new { def initialize(**_opts); end }
-      Client = Class.new
-    end
-  end
-
   FakeUsageResponse = Struct.new(:usage) do
     def choices
       [{ "message" => { "role" => "assistant", "content" => "hello" } }]
     end
   end unless defined?(FakeUsageResponse)
 
+  # A completion only gets its emit from the pipeline that runs it, so every
+  # turn here goes through a builder rather than calling the object directly.
+  running = lambda do |completion, &block|
+    pipeline = Brute::Turn::Pipeline.new
+    pipeline.run completion
+    block&.call(pipeline)
+    pipeline
+  end
+
   # Run one turn against a stubbed OpenRouter::Client and hand back the env.
-  with_fake_client = lambda do |middleware, response|
+  with_fake_client = lambda do |completion, response|
     fake_client = Object.new
     fake_client.define_singleton_method(:complete) { |_messages, _options| response }
     original = OpenRouter::Client.method(:new)
@@ -103,7 +117,7 @@ describe "brute/completion/open_router" do
     begin
       env = { messages: Brute.log }
       env[:messages].user("hi")
-      middleware.call(env)
+      running.call(completion).call(env)
       env
     ensure
       OpenRouter::Client.define_singleton_method(:new, original)
@@ -112,24 +126,23 @@ describe "brute/completion/open_router" do
 
   it "records the provider usage into env metadata and appends the message" do
     response = FakeUsageResponse.new({ "prompt_tokens" => 10, "completion_tokens" => 5, "total_tokens" => 15 })
-    env = with_fake_client.call(Brute::Completion::OpenRouter.new(->(e) { e }), response)
+    env = with_fake_client.call(Brute::Completion::OpenRouter.new, response)
 
     env[:messages].last.role.should == :assistant
-    env[:metadata][:last_llm_usage]["total_tokens"].should == 15
+    # Normalised, not the provider's raw hash.
+    env[:metadata][:last_llm_usage].total.should == 15
+    env[:metadata][:last_llm_usage].input.should == 10
+    env[:metadata][:last_llm_usage].output.should == 5
   end
 
   it "leaves metadata alone when the response has no usage" do
-    env = with_fake_client.call(Brute::Completion::OpenRouter.new(->(e) { e }), FakeUsageResponse.new(nil))
+    env = with_fake_client.call(Brute::Completion::OpenRouter.new, FakeUsageResponse.new(nil))
 
     env.key?(:metadata).should.be.false
   end
 
   it "reports a failed provider call through the hooks instead of raising" do
     seen = []
-    hooks = Brute::Hooks.new
-    %i[llm_failure standard_error after_llm].each do |event|
-      hooks.on(event) { |payload| seen << [event, payload] }
-    end
 
     boom = RuntimeError.new("no route to host")
     fake_client = Object.new
@@ -138,21 +151,27 @@ describe "brute/completion/open_router" do
     OpenRouter::Client.define_singleton_method(:new) { |**_config| fake_client }
 
     begin
-      env = { messages: Brute.log, hooks: hooks }
+      env = { messages: Brute.log }
       env[:messages].user("hi")
-      returned = Brute::Completion::OpenRouter.new(->(e) { e }).call(env)
+      pipeline = Brute::Turn::Pipeline.new
+      pipeline.run Brute::Completion::OpenRouter.new
+      %i[llm_failure standard_error after_llm].each do |event|
+        pipeline.on(event) { |hook_env, extra| seen << [event, hook_env, extra] }
+      end
+      returned = pipeline.call(env)
 
       returned.should.be.identical_to env
       seen.map(&:first).should == [:llm_failure, :standard_error]
-      seen.first.last.should.be.identical_to env
-      seen.last.last.should.be.identical_to boom
+      seen.first[1].should.be.identical_to env
+      seen.last[1].should.be.identical_to env
+      seen.last[2].should.be.identical_to boom
     ensure
       OpenRouter::Client.define_singleton_method(:new, original)
     end
   end
 
   it "still answers to the deprecated Middleware::OpenRouter::Completion name" do
-    deprecated = Brute::Middleware::OpenRouter::Completion.new(->(e) { e })
+    deprecated = Brute::Middleware::OpenRouter::Completion.new
     deprecated.should.be.kind_of?(Brute::Completion::OpenRouter)
 
     env = with_fake_client.call(deprecated, FakeUsageResponse.new(nil))

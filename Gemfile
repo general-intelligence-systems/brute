@@ -8,12 +8,8 @@ gemspec
 # the terminal `run` proc of an agent pipeline is written by the user with
 # whichever library they prefer. Only needed to run the matching example.
 group :completions, optional: true do
-	gem "ruby_llm"       # examples/ruby-llm/
-	gem "llm.rb"         # examples/llm-rb/
 	gem "openai"         # examples/openai/
 	gem "anthropic"      # examples/anthropic/
-	gem "open_router_enhanced"
-	gem "langchainrb"
 end
 
 # Chrome-over-CDP driver for examples/ports/browser-agent.

@@ -5,7 +5,7 @@ require "brute"
 
 module Brute
   module Middleware
-    class Question
+    class Question < Brute::Middleware::Base
       def initialize(app)
         @app = app
       end

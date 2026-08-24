@@ -5,7 +5,7 @@ require "brute"
 
 module Brute
   module Middleware
-    class UserQueue
+    class UserQueue < Brute::Middleware::Base
 
       # Useful for testing...
       # App will keep looping till all inputs are drained.

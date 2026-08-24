@@ -21,7 +21,7 @@ module Brute
     #     !env[:should_exit] && env[:messages].last&.role == :tool
     #   end
     #
-    class Loop
+    class Loop < Brute::Middleware::Base
       def initialize(app, condition = nil, &block)
         @app       = app
         @condition = condition || block

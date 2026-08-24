@@ -37,7 +37,7 @@ describe "brute/middleware/open_router" do
     original = GemKit::Deprecate.method(:warn)
     GemKit::Deprecate.define_singleton_method(:warn) { |message| captured << message }
     begin
-      Brute::Middleware::OpenRouter::Completion.new(->(env) { env })
+      Brute::Middleware::OpenRouter::Completion.new
     ensure
       GemKit::Deprecate.define_singleton_method(:warn, original)
     end

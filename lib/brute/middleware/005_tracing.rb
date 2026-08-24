@@ -21,7 +21,7 @@ module Brute
     #   llm_call_count:    number of LLM calls so far
     #   last_call_elapsed: duration of the most recent LLM call
     #
-    class Tracing
+    class Tracing < Brute::Middleware::Base
       def initialize(app, logger:)
         @app = app
 

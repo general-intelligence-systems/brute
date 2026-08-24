@@ -28,12 +28,25 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'colorize-extended'
   spec.add_dependency 'rack', "~> 3.0"
   spec.add_dependency "net-http-persistent"
+  # Faraday's own default adapter is Net::HTTP, which works under Async but
+  # opens a fresh connection per request. The completions point Faraday at
+  # async-http instead, for persistent connections and HTTP/2.
+  spec.add_dependency "async-http-faraday"
   spec.add_dependency "json_schemer", "~> 2.5"
   spec.add_dependency "google-protobuf", "~> 4.34"
   # The deprecation DSL. Tiny and dependency-free on purpose: declaring a
   # deprecation is runtime work, and the toolchain that enforces the deadline
   # (gem_kit-release, below) is not.
   spec.add_dependency "gem_kit", "~> 0.2"
+
+  # The providers Brute ships a Completion class for. Development only: each
+  # completion requires its own gem at point of use, so an app that installs
+  # Brute pulls in neither, but the specs can exercise the real classes.
+  # (RubyGems has no optional-dependency concept — this is the closest thing.)
+  spec.add_development_dependency "ruby_llm"
+  spec.add_development_dependency "open_router_enhanced"
+  spec.add_development_dependency "llm.rb"
+  spec.add_development_dependency "langchainrb"
 
   spec.add_development_dependency 'rake', '~> 13.0'
   spec.add_development_dependency 'scampi', '~> 1.0'

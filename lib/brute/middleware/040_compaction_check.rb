@@ -15,7 +15,7 @@ module Brute
     # Or an LLM that doesn't support it can just use the messages
     # that come after the compaction
     #
-    class CompactionCheck
+    class CompactionCheck < Brute::Middleware::Base
       def initialize(app, compactor: nil, system_prompt:, **compactor_opts)
         @app = app
         @compactor = compactor

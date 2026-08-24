@@ -5,7 +5,7 @@ require 'brute'
 
 module Brute
   module Middleware
-    class EventHandler
+    class EventHandler < Brute::Middleware::Base
       def initialize(app, handler_class:, **opts)
         @app = app
         @handler_class = handler_class

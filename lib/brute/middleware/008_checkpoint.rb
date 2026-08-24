@@ -33,7 +33,7 @@ module Brute
     # System messages are not persisted (SystemPrompt re-adds them each
     # turn); restored history is inserted after any leading system message
     # and before the current turn's input.
-    class Checkpoint
+    class Checkpoint < Brute::Middleware::Base
       def initialize(app, path:, resume: nil)
         @app    = app
         @path   = path

@@ -17,6 +17,12 @@ module Brute
     #   response = llm.complete(messages.pop, role: nil, messages: messages, tools: ...)
     #   Brute::MessageTransport::LLM.wrap_each(response) { |m| env[:messages] << m }
     class LLM < MessageTransport
+
+      # What the provider reported about this call — the transport knows its
+      # own library's shape, so it knows which detector to ask.
+      def self.usage_metrics(response)
+        Brute::UsageDetection::LLMrb.detect(response)
+      end
       # Brute::Message -> LLM::Message. Assistant tool calls carry llm.rb's
       # `original_tool_calls` extra (the provider wire format); tool results
       # become an LLM::Function::Return so llm.rb's request adapters emit

@@ -25,7 +25,7 @@ module Brute
     # message (e.g. from session.system(...)), so manually-set system
     # prompts are respected.
     #
-    class SystemPrompt
+    class SystemPrompt < Brute::Middleware::Base
       def initialize(app, system_prompt: Brute::SystemPrompt.default)
         @app = app
         @system_prompt = system_prompt

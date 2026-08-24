@@ -11,7 +11,7 @@ module Brute
     # stating that maximum iterations have been reached. This causes
     # Loop::ToolResult to exit its loop naturally (last message is not :tool).
     #
-    class MaxIterations
+    class MaxIterations < Brute::Middleware::Base
 
       DEFAULT_MAX_ITERATIONS = 100
 

@@ -40,7 +40,16 @@ Files are numeric-prefixed by stack position (`002_session_log.rb`, `070_tool_pi
 | `Question` | Interactive-question plumbing (works with the `question` tool). |
 | `Tracing` | Logs per-call timing and token usage; accumulates timing into `env[:metadata][:timing]`. |
 | `CompactionCheck` | Hook point for context compaction when the conversation grows large. |
-| `OTel::*` | OpenTelemetry spans, token usage, and tool-call events — pure pass-throughs unless `opentelemetry-sdk` is loaded. |
+
+## Brute::Contrib
+
+Optional extras live outside `Brute::Middleware`, which is reserved for what
+an agent turn actually needs. OpenTelemetry is the current example, and it is
+not middleware at all: telemetry only ever observes, so it subscribes.
+
+```ruby
+Brute::Contrib::Otel.subscribe(agent)   # spans, usage, tool events
+```
 
 ## Loop::ToolResult
 

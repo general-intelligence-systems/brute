@@ -23,7 +23,7 @@ module Brute
     #
     # Place it before Middleware::SystemPrompt in the stack. It never touches
     # env[:messages] itself.
-    class Skills
+    class Skills < Brute::Middleware::Base
       def initialize(app, skills: [])
         @app = app
         @skills = skills

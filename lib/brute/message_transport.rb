@@ -21,6 +21,14 @@ module Brute
       messages.map { |message| dump(message) }
     end
 
+    # Inbound: what the provider reported about this call, as a
+    # Brute::UsageDetection::Usage. Each transport knows its own library's
+    # response shape, so it is the one that knows which detector to ask.
+    # Answers nil for a library that reports no usage at all.
+    def self.usage_metrics(_result)
+      nil
+    end
+
     def initialize(result)
       @result = result
     end

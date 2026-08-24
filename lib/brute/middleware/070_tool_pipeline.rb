@@ -8,7 +8,7 @@ require "async/barrier"
 
 module Brute
   module Middleware
-    class ToolPipeline
+    class ToolPipeline < Brute::Middleware::Base
       def initialize(app, tools: [])
         @app   = app
         @tools = tools
@@ -56,33 +56,36 @@ module Brute
                   name:      name.to_s,
                   arguments: args,
                   result:    nil,
+                  denied:    nil,
                   events:    env[:events],
                   metadata:  {},
                   turn_env:  env,
                 }
-                if (hooks = env[:hooks])
-                  responses = hooks.emit(:before_tool, call_env).compact
-                  call_env[:result] = responses.last if call_env[:result].nil? && !responses.empty?
+                # A subscriber takes part by mutating the call env: set
+                # :result to answer without executing, set :denied to refuse.
+                emit(BEFORE_TOOL_EVENT, env, call_env)
 
-                  if call_env[:result].nil?
-                    denial = hooks.emit(:approve_tool, call_env).find { |r| r == false || r.is_a?(String) }
-                    unless denial.nil?
-                      call_env[:result] = denial.is_a?(String) ? denial : %(Tool call to "#{name}" was denied.)
-                    end
+                if call_env[:result].nil?
+                  emit(APPROVE_TOOL_EVENT, env, call_env)
+
+                  if (denial = call_env[:denied])
+                    call_env[:result] = denial.is_a?(String) ? denial : %(Tool call to "#{name}" was denied.)
                   end
                 end
 
-                result = if call_env[:result].nil?
-                           available_tools[name].call(call_env[:arguments])
-                         else
-                           call_env[:result]
-                         end
+                # Only the tool's own execution is timed: a call that
+                # before_tool answered, or approve_tool denied, never ran.
+                result = call_env[:result]
 
-                if (hooks = env[:hooks])
-                  call_env[:result] = result
-                  hooks.emit(:after_tool, call_env)
-                  result = call_env[:result]
+                if result.nil?
+                  emit(TOOL_DURATION_EVENT, env, call_env) do
+                    result = available_tools[name].call(call_env[:arguments])
+                  end
                 end
+
+                call_env[:result] = result
+                emit(AFTER_TOOL_EVENT, env, call_env)
+                result = call_env[:result]
 
                 # Coerce to String so Hash results (e.g. Shell's
                 # {stdout:, stderr:, exit_code:}) serialize predictably.
@@ -176,8 +179,18 @@ describe "brute/middleware/070_tool_pipeline" do
 
   # --- lifecycle hooks (Brute::Hooks) ---
 
-  def hook_env(hooks)
-    { messages: Brute.log, events: [], hooks: hooks }
+  # A layer only gets its emit from the builder that made it, so a hook spec
+  # builds a real pipeline rather than instantiating the middleware alone.
+  def hooked(inner, tools:, &subscribe)
+    pipeline = Brute::Turn::Pipeline.new
+    pipeline.use Brute::Middleware::ToolPipeline, tools: tools
+    pipeline.run(Object.new.tap { |o| o.define_singleton_method(:call, &inner) })
+    subscribe.call(pipeline)
+    pipeline
+  end
+
+  def hook_env
+    { messages: Brute.log, events: [] }
   end
 
   it "before_tool may rewrite arguments and short-circuit with a result" do
@@ -186,20 +199,19 @@ describe "brute/middleware/070_tool_pipeline" do
       env[:messages] << Brute::Message.new(role: :assistant, content: "",
         tool_calls: [{ id: "tc1", name: "echo", arguments: { "text" => "orig" } }])
     end
-    hooks = Brute::Hooks.new
-    hooks.on(:before_tool) { |call| call[:arguments] = { text: "rewritten" }; nil }
-    mw = Brute::Middleware::ToolPipeline.new(inner, tools: [tool])
-    env = hook_env(hooks)
+
+    pipeline = hooked(inner, tools: [tool]) do |p|
+      p.on(:before_tool) { |_env, call| call[:arguments] = { text: "rewritten" } }
+    end
+    env = hook_env
     env[:messages].user("hi")
-    mw.call(env)
+    pipeline.call(env)
     env[:messages].last.content.should == "ran:rewritten"
 
-    hooks2 = Brute::Hooks.new
-    hooks2.on(:before_tool) { |_call| "canned" }
-    mw2 = Brute::Middleware::ToolPipeline.new(inner, tools: [tool])
-    env2 = hook_env(hooks2)
+    canned = hooked(inner, tools: [tool]) { |p| p.on(:before_tool) { |_env, call| call[:result] = "canned" } }
+    env2 = hook_env
     env2[:messages].user("hi")
-    mw2.call(env2)
+    canned.call(env2)
     env2[:messages].last.content.should == "canned" # never executed
   end
 
@@ -209,18 +221,17 @@ describe "brute/middleware/070_tool_pipeline" do
       env[:messages] << Brute::Message.new(role: :assistant, content: "",
         tool_calls: [{ id: "tc1", name: "exec", arguments: {} }])
     end
-    hooks = Brute::Hooks.new
-    hooks.on(:approve_tool) { |_call| false }
-    env = hook_env(hooks)
+
+    denied = hooked(inner, tools: [tool]) { |p| p.on(:approve_tool) { |_env, call| call[:denied] = true } }
+    env = hook_env
     env[:messages].user("hi")
-    Brute::Middleware::ToolPipeline.new(inner, tools: [tool]).call(env)
+    denied.call(env)
     env[:messages].last.content.should == %(Tool call to "exec" was denied.)
 
-    hooks2 = Brute::Hooks.new
-    hooks2.on(:approve_tool) { |_call| "denied by policy" }
-    env2 = hook_env(hooks2)
+    by_policy = hooked(inner, tools: [tool]) { |p| p.on(:approve_tool) { |_env, call| call[:denied] = "denied by policy" } }
+    env2 = hook_env
     env2[:messages].user("hi")
-    Brute::Middleware::ToolPipeline.new(inner, tools: [tool]).call(env2)
+    by_policy.call(env2)
     env2[:messages].last.content.should == "denied by policy"
   end
 
@@ -230,11 +241,13 @@ describe "brute/middleware/070_tool_pipeline" do
       env[:messages] << Brute::Message.new(role: :assistant, content: "",
         tool_calls: [{ id: "tc1", name: "echo", arguments: {} }])
     end
-    hooks = Brute::Hooks.new
-    hooks.on(:after_tool) { |call| call[:result] = "rewrote(#{call[:result]})" }
-    env = hook_env(hooks)
+
+    pipeline = hooked(inner, tools: [tool]) do |p|
+      p.on(:after_tool) { |_env, call| call[:result] = "rewrote(#{call[:result]})" }
+    end
+    env = hook_env
     env[:messages].user("hi")
-    Brute::Middleware::ToolPipeline.new(inner, tools: [tool]).call(env)
+    pipeline.call(env)
     env[:messages].last.content.should == "rewrote(raw)"
   end
 
@@ -262,13 +275,13 @@ describe "brute/middleware/070_tool_pipeline" do
     inner = ->(env) {
       env[:messages] << Brute::Message.new(role: :assistant, content: "", tool_calls: tool_calls)
     }
-    mw = Brute::Middleware::ToolPipeline.new(inner, tools: [big_tool])
+    pipeline = hooked(inner, tools: [big_tool]) { |_p| nil }
     env = {
       messages: Brute.log,
       events: [],
     }
     env[:messages].user("hello")
-    mw.call(env)
+    pipeline.call(env)
 
     tool_msg = env[:messages].select { |m| m.role == :tool }.last
     tool_msg.content.lines.size.should.be < 2100
@@ -299,13 +312,13 @@ describe "brute/middleware/070_tool_pipeline" do
     inner = ->(env) {
       env[:messages] << Brute::Message.new(role: :assistant, content: "", tool_calls: tool_calls)
     }
-    mw = Brute::Middleware::ToolPipeline.new(inner, tools: [pre_truncated_tool])
+    pipeline = hooked(inner, tools: [pre_truncated_tool]) { |_p| nil }
     env = {
       messages: Brute.log,
       events: [],
     }
     env[:messages].user("hello")
-    mw.call(env)
+    pipeline.call(env)
 
     tool_msg = env[:messages].select { |m| m.role == :tool }.last
     # Should contain exactly one truncation marker, not two

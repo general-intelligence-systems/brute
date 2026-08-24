@@ -23,7 +23,7 @@ module Brute
     #     .use(Brute::Middleware::SystemPrompt)
     #     ...
     #
-    class SessionLog
+    class SessionLog < Brute::Middleware::Base
       def initialize(app, path:)
         @app  = app
         @path = path

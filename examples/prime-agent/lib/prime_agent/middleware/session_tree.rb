@@ -160,7 +160,8 @@ describe "prime_agent/middleware/session_tree" do
   require "brute/messages"
   require "tmpdir"
 
-  LLM = ->(system:, user:, max_tokens:) { "branch summary text" }
+  # Not LLM: that is llm.rb's own top-level module.
+  FAKE_LLM = ->(system:, user:, max_tokens:) { "branch summary text" }
 
   def build(dir, **opts)
     app = lambda do |env|
@@ -168,7 +169,7 @@ describe "prime_agent/middleware/session_tree" do
       env
     end
     PrimeAgent::Middleware::SessionTree.new(
-      app, llm: LLM, log_path: File.join(dir, "logs", "run.jsonl"), **opts,
+      app, llm: FAKE_LLM, log_path: File.join(dir, "logs", "run.jsonl"), **opts,
     )
   end
 

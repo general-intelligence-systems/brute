@@ -45,13 +45,12 @@ module Brute
           events:            events,
           metadata:          {},
           current_iteration: 1,
-          hooks:             hooks,
         }
-        hooks.emit(:turn_start, env)
+        hooks.emit(TURN_START_EVENT, env)
         begin
-          build.call(env)
+          hooks.emit(TURN_DURATION_EVENT, env) { build.call(env) }
         ensure
-          hooks.emit(:turn_end, env)
+          hooks.emit(TURN_END_EVENT, env)
         end
         env
       end

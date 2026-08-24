@@ -5,6 +5,111 @@ All notable changes to Brute are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- OpenTelemetry is no longer middleware. The four `Middleware::Otel*` classes
+  (all of them commented-out pass-throughs against a long-dead env shape) are
+  replaced by `Brute::Contrib::Otel.subscribe(agent)`, which registers hooks:
+  `turn_start`/`turn_end` open and finish the span, `after_llm` records usage,
+  `before_tool`/`after_tool` add a span event each. Telemetry only observes,
+  and observation needs no stack position. The tracer is injectable, and
+  without the OpenTelemetry SDK loaded `subscribe` does nothing.
+
+### Removed
+
+- **`env[:hooks]` is gone.** `AgentPipeline#start` no longer seeds it and
+  nothing reads it: emitters get their store from the builder that made them.
+  Anything that instantiated a middleware directly and passed `hooks:` in env
+  has to go through a pipeline now — a bare `Middleware.new(app).call(env)`
+  raises `NoMethodError` on `emit` instead of silently emitting nothing.
+
+### Changed
+
+- **`emit` answers nothing.** It is an emitter: it announces, and a
+  subscriber's return value is not a signal. `ToolPipeline` used to read the
+  array of subscriber results as a control channel — the last truthy return
+  from `:before_tool` became the tool's answer, and a `false` or String from
+  `:approve_tool` denied the call — which made every observer of those events
+  an accidental participant, since anything a block happens to evaluate to
+  (`span.add_event`, a `Logger#info`, an `<<`) is truthy. A subscriber now
+  takes part by mutating the call env it was handed: set `call[:result]` to
+  answer without executing, set `call[:denied]` to `true` or a String to
+  refuse. The block form answers nothing either: the block is the work, and a
+  caller that needs the work's value takes it inside the block.
+
+- **Breaking for tool and error subscribers.** `Brute::Hooks#emit` now takes
+  the turn env first and any event-specific extras after it, and calls every
+  subscriber the same way: `subscriber.call(env, *extras)`. `:before_tool`,
+  `:approve_tool` and `:after_tool` now yield `(env, call_env)` instead of just
+  the call env; `:faraday_error`, `:open_router_server_error` and
+  `:standard_error` now yield `(env, error)` instead of the bare exception.
+  Subscribers to `:turn_start`, `:turn_end`, `:before_llm`, `:after_llm` and
+  `:llm_failure` are unaffected. Update tool subscribers from `{ |call| ... }`
+  to `{ |_env, call| ... }` — the turn env is now available at every event, so
+  a listener can log the system prompt, the outgoing messages and the tool
+  arguments without threading state through the stack.
+
+### Added
+
+- `Brute::Completion::RubyLLM`, `Brute::Completion::LangChain` and
+  `Brute::Completion::LLMrb`, restoring the ruby_llm, langchainrb and llm.rb
+  backends that went with the old `Middleware::Completion` family, in the
+  current shape: terminal `run` apps that emit through the pipeline's hooks
+  and convert messages with the matching `MessageTransport`. Each requires
+  its own provider gem at point of use, so installing Brute pulls in none of
+  them.
+- `Brute::UsageDetection` — a strategy per provider (`OpenRouter`, `RubyLLM`,
+  `LLMrb`, `LangChain`), each answering the same `UsageDetection::Usage`
+  (`input`, `output`, `total`, `reasoning`, `cache_read`, `cache_write`,
+  `cost`, `raw`), or nil when the provider reported nothing. A strategy
+  extracts and nothing else — no deriving, summing or accumulating. Every completion
+  now records one at `env[:metadata][:last_llm_usage]`, where before only
+  OpenRouter did, and it stored that provider's raw hash. **A reader of
+  `last_llm_usage` must move from `usage["total_tokens"]` to `usage.total`.**
+- Faraday-backed completions now run on async-http. `Brute::Completion.async_faraday!`
+  requires `async/http/faraday/default` when Faraday is in play, and OpenRouter,
+  RubyLLM and LangChain call it after requiring their provider gem. Faraday's own
+  default is Net::HTTP, which works under Async but opens a fresh connection per
+  request; async-http keeps them persistent and speaks HTTP/2. Adds a runtime
+  dependency on `async-http-faraday`.
+- Timed events. `emit` now takes an optional block: the block is the work, and
+  subscribers fire once it is done, called as
+  `|env, started, finished, *extras|` rather than `|env, *extras|`. Both
+  stamps are monotonic, and they are reported from an `ensure` so work that
+  raises is still timed. `emit` returns the block's own value, so a caller
+  wraps work in place:
+  `emit(DURATION_EVENT, env, self) { @app.call(env) }`. Every pair of events
+  now has one: `:turn_duration` between `:turn_start` and `:turn_end`,
+  `:duration` between `:enter` and `:exit`, `:llm_duration` between
+  `:before_llm` and `:after_llm`, and `:tool_duration` between
+  `:before_tool` and `:after_tool` — the last wrapping only the tool's own
+  execution, so a call answered by `before_tool` or denied by `approve_tool`
+  never fires it.
+- `:middleware_added`, `:enter`, `:duration` and `:exit`. `use` now emits
+  `:middleware_added` with an empty env, the middleware and every argument it
+  was given; each layer then emits `:enter` before its work, `:duration`
+  wrapping that work (so subscribers are handed `started` and `finished`
+  without correlating anything by hand — which recursion through
+  `Loop::ToolResult` made unreliable), and `:exit` when it is done, each
+  handing the subscriber the layer itself. A turn used to be opaque between
+  the LLM calls. `:exit` fires from an ensure, so a layer that raises is still
+  reported.
+- `use` and `run` bind an `emit(event, env, *extras)` onto the object they are
+  given, tied to that builder's own store, so a layer fires events at the
+  pipeline it belongs to: `emit(ENTER_EVENT, env, self)`. A lambda cannot
+  carry one, so `run ->(env) { ... }` warns that its events will not fire; an
+  object that already answers to `emit` raises rather than being shadowed.
+- A constant per event name — `Brute::Hooks::TURN_START_EVENT`,
+  `ENTER_EVENT`, `BEFORE_TOOL_EVENT` and so on — replacing the unused
+  `Hooks::EVENTS` array. Emit and subscribe through those rather than bare
+  symbols.
+
+### Fixed
+
+- Specs that still constructed `Brute::Completion::OpenRouter` and
+  `Brute::Middleware::OpenRouter::Completion` with the `app` positional
+  dropped in 4.3.2, which errored rather than asserting.
+
 ## [4.3.2] - 2026-08-23
 
 ### Fixed

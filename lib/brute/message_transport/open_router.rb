@@ -13,6 +13,12 @@ module Brute
     #
     #   require "open_router"
     class OpenRouter < MessageTransport
+
+      # What the provider reported about this call — the transport knows its
+      # own library's shape, so it knows which detector to ask.
+      def self.usage_metrics(response)
+        Brute::UsageDetection::OpenRouter.detect(response)
+      end
       def self.dump(message)
         message.to_h
       end
