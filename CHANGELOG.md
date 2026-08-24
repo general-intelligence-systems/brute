@@ -5,6 +5,32 @@ All notable changes to Brute are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [5.0.1] - 2026-08-24
+
+### Removed
+
+- `Brute::Middleware::Tracing`. Telemetry only ever observes, and a middleware
+  earns its place in the stack by being able to alter or skip what is below it,
+  so it belongs outside `Brute::Middleware` — use `Brute::Contrib::Otel`, or
+  your own subscriber on the hooks the layer wrapped. Everything it measured is
+  already an event: `:llm_duration` around every provider call, `:duration`
+  around every middleware, `:turn_duration` around the whole turn, and token
+  usage at `env[:metadata][:last_llm_usage]`. Its token half had measured
+  nothing since 5.0 in any case — it read `usage` off what the app below
+  returned, and every completion returns the turn env, so the tokens it logged
+  were always `?` and `env[:metadata][:tokens]` was never written.
+
+  This is a public name removed outside a major version, against the usual
+  rule: 5.0.0 shipped the same day, so nothing has had the chance to depend on
+  it. To keep the log lines, subscribe:
+
+  ```ruby
+  agent.on(Brute::Hooks::LLM_DURATION_EVENT) do |env, started, finished|
+    usage = env.dig(:metadata, :last_llm_usage)
+    logger.debug("[brute] LLM response: #{usage&.total || "?"} tokens, #{(finished - started).round(2)}s")
+  end
+  ```
+
 ## [5.0.0] - 2026-08-24
 
 ### Added

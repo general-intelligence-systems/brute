@@ -38,7 +38,6 @@ Files are numeric-prefixed by stack position (`002_session_log.rb`, `070_tool_pi
 | `Summarize` | Runs one final tool-free completion after the loop, so the agent ends on a clean text answer. |
 | `EventHandler` | Wraps `env[:events]` in a handler class (e.g. terminal output). See [Events]({% link _advanced/events.md %}). |
 | `Question` | Interactive-question plumbing (works with the `question` tool). |
-| `Tracing` | Logs per-call timing and token usage; accumulates timing into `env[:metadata][:timing]`. |
 | `CompactionCheck` | Hook point for context compaction when the conversation grows large. |
 
 ## Brute::Contrib

@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    brute (5.0.0)
+    brute (5.0.1)
       activesupport
       async (~> 2.0)
       async-http-faraday
@@ -246,4 +246,4 @@ DEPENDENCIES
   scampi (~> 1.0)
 
 BUNDLED WITH
-   2.6.9
+   2.7.2
