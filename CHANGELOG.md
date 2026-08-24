@@ -5,6 +5,18 @@ All notable changes to Brute are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [5.0.5] - 2026-08-24
+
+### Added
+
+- `Brute::Middleware::SlashCommands`, the head of every agent chain — put
+  there by the builder, not by a `use` anyone writes. It runs the first of
+  `env[:commands]` whose check passes on the newest user message, before the
+  rest of the stack.
+
+- `env[:commands]`, the registry `start` carries into every turn, so anything
+  below the head can see what was mapped.
+
 ### Changed
 
 - **Breaking.** `AgentPipeline#map` no longer registers a prompt template. It
@@ -20,18 +32,8 @@ All notable changes to Brute are documented in this file. The format follows
   ```
 
   Checks are tried in registration order and the first to pass runs. Only a
-  user message is offered to them.
-
-  The old form — `map("/weather", "... $ARGUMENTS")` and its `$ARGUMENTS`
-  substitution — is gone, and with it the `generate_map` override. It could
-  not survive: the layer it built was written against a prompt String while
-  `start` hands the built app an env, so `start("/weather London")` split the
-  env's `to_s`, matched nothing, and left the command in the log verbatim.
-  Templates only ever expanded through `agent.call("a string")`, which
-  bypasses the turn, its hooks and its message log. Rack's `generate_map` also
-  builds a sub-*Builder* per entry (`self.class.new(default_app, &block)`),
-  which runs a command's own block at build time — harmless for a zero-arity
-  template block, fatal for one taking `|env|`.
+  user message is offered to them. A String registered without its slash grows
+  one, as before.
 
   A block that rewrote the prompt through a template now does it directly:
 
@@ -42,15 +44,18 @@ All notable changes to Brute are documented in this file. The format follows
 - `AgentPipeline#to_app` (and `#build`) returns the chain with
   `Brute::Middleware::SlashCommands` at its head rather than the chain itself.
 
-### Added
+### Removed
 
-- `Brute::Middleware::SlashCommands`, the head of every agent chain — put
-  there by the builder, not by a `use` anyone writes. It runs the first of
-  `env[:commands]` whose check passes on the newest user message, before the
-  rest of the stack.
-
-- `env[:commands]`, the registry `start` carries into every turn, so anything
-  below the head can see what was mapped.
+- The two-argument form of `AgentPipeline#map` — `map("/weather", "... $ARGUMENTS")`
+  — and its `$ARGUMENTS` substitution, along with the `generate_map` override.
+  They could not survive: the layer they built was written against a prompt
+  String while `start` hands the built app an env, so `start("/weather London")`
+  split the env's `to_s`, matched nothing, and left the command in the log
+  verbatim. Templates only ever expanded through `agent.call("a string")`, which
+  bypasses the turn, its hooks and its message log. Rack's `generate_map` also
+  builds a sub-*Builder* per entry (`self.class.new(default_app, &block)`),
+  which runs a command's own block at build time — harmless for a zero-arity
+  template block, fatal for one taking `|env|`.
 
 ## [5.0.4] - 2026-08-24
 
