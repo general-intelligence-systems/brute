@@ -5,6 +5,53 @@ All notable changes to Brute are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking.** `AgentPipeline#map` no longer registers a prompt template. It
+  registers a command against what the room just said: whatever it is given
+  becomes a check — a function of the newest message answering true or false —
+  and its block is a middleware, run before the rest of the stack.
+
+  ```ruby
+  Brute.agent
+    .map("/compact") { |env| ... }              # ^\/compact.* and what rides after
+    .map(/\Aplease compact/i) { |env| ... }     # a Regexp is evaluated
+    .map(->(said) { said.length > 10_000 }) { |env| ... }
+  ```
+
+  Checks are tried in registration order and the first to pass runs. Only a
+  user message is offered to them.
+
+  The old form — `map("/weather", "... $ARGUMENTS")` and its `$ARGUMENTS`
+  substitution — is gone, and with it the `generate_map` override. It could
+  not survive: the layer it built was written against a prompt String while
+  `start` hands the built app an env, so `start("/weather London")` split the
+  env's `to_s`, matched nothing, and left the command in the log verbatim.
+  Templates only ever expanded through `agent.call("a string")`, which
+  bypasses the turn, its hooks and its message log. Rack's `generate_map` also
+  builds a sub-*Builder* per entry (`self.class.new(default_app, &block)`),
+  which runs a command's own block at build time — harmless for a zero-arity
+  template block, fatal for one taking `|env|`.
+
+  A block that rewrote the prompt through a template now does it directly:
+
+  ```ruby
+  map("/weather") { |env| env[:messages].last.content = "..." }
+  ```
+
+- `AgentPipeline#to_app` (and `#build`) returns the chain with
+  `Brute::Middleware::SlashCommands` at its head rather than the chain itself.
+
+### Added
+
+- `Brute::Middleware::SlashCommands`, the head of every agent chain — put
+  there by the builder, not by a `use` anyone writes. It runs the first of
+  `env[:commands]` whose check passes on the newest user message, before the
+  rest of the stack.
+
+- `env[:commands]`, the registry `start` carries into every turn, so anything
+  below the head can see what was mapped.
+
 ## [5.0.4] - 2026-08-24
 
 ### Security

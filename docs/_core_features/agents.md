@@ -58,16 +58,32 @@ The proc does one completion per pass, not the whole loop — [`Loop::ToolResult
 
 ## Slash commands
 
-`map` registers prompt templates, expanded before the turn starts. `$ARGUMENTS` is replaced with everything after the command:
+`map` registers a command against what the room just said. Whatever it is given becomes a **check** — a function of the newest message that answers true or false — and the block is a middleware, run before the rest of the stack:
 
 ```ruby
 agent = Brute.agent
-  .map("/weather", "Get the weather in the following location $ARGUMENTS")
-  .map("/echo") { "you said: $ARGUMENTS" }
+  .map("/compact") { |env| env[:messages].clear }
+  .map(/\Aplease compact/i) { |env| ... }
+  .map(->(said) { said.length > 10_000 }) { |env| ... }
   .run ->(env) { ... }
 
-agent.call("/weather London")   # prompt becomes "Get the weather in the following location London"
+agent.start("/compact keep the deploy notes")
 ```
+
+Three kinds of matcher, all normalised to a check at registration:
+
+| Given | Becomes |
+| --- | --- |
+| `"/compact"` | `/^\/compact.*/` — the command and whatever rides after it |
+| `"compact"` | the same; a String without a leading slash grows one |
+| `/\Aplease compact/i` | itself, wrapped in a function that evaluates it |
+| anything answering to `#call` | itself |
+
+Checks are tried in the order they were registered and the **first** to pass is the one that runs. Only a user message is offered to them — never the assistant, never an empty log.
+
+`start` puts the registry into the turn as `env[:commands]`, and `Brute::Middleware::SlashCommands` — which the builder puts at the head of every chain, registry or no registry — runs the match. A command's block is a middleware, so what it leaves in `env` is what the rest of the chain works on.
+
+This is `Rack::Builder#map` overridden. An agent routes on what was said rather than on a path, so there are no sub-builders and no `URLMap`.
 
 ## Agents from `.ru` strings and files
 
