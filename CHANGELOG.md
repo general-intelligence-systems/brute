@@ -5,6 +5,8 @@ All notable changes to Brute are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [5.1.0] - 2026-08-25
+
 ### Added
 
 - `Brute::Middleware::DefaultCompactionPipeline`, which compacts a conversation
