@@ -1,0 +1,143 @@
+---
+title: "API Reference"
+description: "Generated reference for every public class and module in brute."
+---
+
+Generated from the source with RDoc. 75 classes and 56 modules.
+
+## Brute
+
+- [`Brute`](/brute/reference/brute/) &mdash; Module Brute.
+- [`Brute::Compaction`](/brute/reference/brute/compaction/) &mdash; Giving up part of a conversation so the rest still fits.
+- [`Brute::Compaction::Middleware`](/brute/reference/brute/compaction/middleware/) &mdash; Compaction strategies, as the layers of a Brute::Turn::CompactionPipeline.
+- [`Brute::Compaction::Middleware::SlidingWindow`](/brute/reference/brute/compaction/middleware/sliding-window/) &mdash; When rewriting the tool output was not enough, whole stretches of the conversation go.
+- [`Brute::Compaction::Middleware::Strategy`](/brute/reference/brute/compaction/middleware/strategy/) &mdash; One strategy in the ladder.
+- [`Brute::Compaction::Middleware::ToolResults`](/brute/reference/brute/compaction/middleware/tool-results/) &mdash; The cheapest thing to give up first: what the tools said.
+- [`Brute::Compaction::Summarize`](/brute/reference/brute/compaction/summarize/) &mdash; Replaces stretches of the conversation with summaries of them, round after round, until it fits or there is nothing left it is allowed to give up.
+- [`Brute::Compaction::Transcript`](/brute/reference/brute/compaction/transcript/) &mdash; The shapes a compaction strategy selects over.
+- [`Brute::Completion`](/brute/reference/brute/completion/) &mdash; Completion middlewares — the terminal step of an agent turn.
+- [`Brute::Completion::LLMrb`](/brute/reference/brute/completion/ll-mrb/) &mdash; Completion backed by the llm.rb gem (https://github.com/llmrb/llm.rb).
+- [`Brute::Completion::LangChain`](/brute/reference/brute/completion/lang-chain/) &mdash; Completion backed by the langchainrb gem (https://github.com/patterns-ai-core/langchainrb).
+- [`Brute::Completion::OpenRouter`](/brute/reference/brute/completion/open-router/) &mdash; Class Brute::Completion::OpenRouter.
+- [`Brute::Completion::RubyLLM`](/brute/reference/brute/completion/ruby-llm/) &mdash; Completion backed by the ruby_llm gem.
+- [`Brute::Completion::RubyLLM::Tool`](/brute/reference/brute/completion/ruby-llm/tool/) &mdash; A Brute tool adapter wearing the interface ruby_llm's providers read off a RubyLLM::Tool: name, description, and a params_schema (they fall back to #paramete...
+- [`Brute::Contrib`](/brute/reference/brute/contrib/) &mdash; Module Brute::Contrib.
+- [`Brute::Contrib::LogFile`](/brute/reference/brute/contrib/log-file/) &mdash; A line-oriented, append-only log file that doubles as a work queue.
+- [`Brute::Contrib::Otel`](/brute/reference/brute/contrib/otel/) &mdash; OpenTelemetry for a turn, as hooks rather than middleware.
+- [`Brute::Diff`](/brute/reference/brute/diff/) &mdash; Module Brute::Diff.
+- [`Brute::Env`](/brute/reference/brute/env/) &mdash; What the turn came back with, asked of the env itself.
+- [`Brute::Eval`](/brute/reference/brute/eval/) &mdash; Evaluating an agent, rather than testing a middleware.
+- [`Brute::Eval::Case`](/brute/reference/brute/eval/case/) &mdash; One evaluation case: what the agent is told, the world it is told it in, and what must be true of the turn afterwards.
+- [`Brute::Eval::Suite`](/brute/reference/brute/eval/suite/) &mdash; Runs the cases against one agent and reports what happened.
+- [`Brute::Eval::Transcript`](/brute/reference/brute/eval/transcript/) &mdash; What one turn did.
+- [`Brute::Eval::World`](/brute/reference/brute/eval/world/) &mdash; The world a case wakes up in.
+- [`Brute::Events`](/brute/reference/brute/events/) &mdash; @namespace
+- [`Brute::Events::Handler`](/brute/reference/brute/events/handler/) &mdash; Stackable event handler base class.
+- [`Brute::Events::PrefixedTerminalOutput`](/brute/reference/brute/events/prefixed-terminal-output/) &mdash; TerminalOutput variant that prefixes all output with a label.
+- [`Brute::Events::TerminalOutput`](/brute/reference/brute/events/terminal-output/) &mdash; Class Brute::Events::TerminalOutput.
+- [`Brute::Hooks`](/brute/reference/brute/hooks/) &mdash; Pub/sub registry for agent lifecycle hooks, subscribed on the builder:
+- [`Brute::Hooks::Registry`](/brute/reference/brute/hooks/registry/) &mdash; The pub/sub registry a pipeline owns; use and run bind an emit to it.
+- [`Brute::MessageTransport`](/brute/reference/brute/message-transport/) &mdash; Class Brute::MessageTransport.
+- [`Brute::MessageTransport::Anthropic`](/brute/reference/brute/message-transport/anthropic/) &mdash; MessageTransport for the official anthropic gem (https://github.com/anthropics/anthropic-sdk-ruby).
+- [`Brute::MessageTransport::LLM`](/brute/reference/brute/message-transport/llm/) &mdash; MessageTransport for the llm.rb gem (https://github.com/llmrb/llm.rb).
+- [`Brute::MessageTransport::LangChain`](/brute/reference/brute/message-transport/lang-chain/) &mdash; MessageTransport for the langchainrb gem.
+- [`Brute::MessageTransport::OpenAI`](/brute/reference/brute/message-transport/open-ai/) &mdash; MessageTransport for the official openai gem (https://github.com/openai/openai-ruby).
+- [`Brute::MessageTransport::OpenRouter`](/brute/reference/brute/message-transport/open-router/) &mdash; MessageTransport for the open_router_enhanced gem (https://github.com/estiens/open_router_enhanced).
+- [`Brute::MessageTransport::RubyLLM`](/brute/reference/brute/message-transport/ruby-llm/) &mdash; Class Brute::MessageTransport::RubyLLM.
+- [`Brute::MessageTransport::RubyOpenAI`](/brute/reference/brute/message-transport/ruby-open-ai/) &mdash; Class Brute::MessageTransport::RubyOpenAI.
+- [`Brute::Messages`](/brute/reference/brute/messages/) &mdash; The in-memory conversation log is just a plain Array of Brute::Message.
+- [`Brute::Middleware`](/brute/reference/brute/middleware/) &mdash; Module Brute::Middleware.
+- [`Brute::Middleware::Base`](/brute/reference/brute/middleware/base/) &mdash; The parent of every middleware: it takes the next app, does its work around it, and calls it.
+- [`Brute::Middleware::Checkpoint`](/brute/reference/brute/middleware/checkpoint/) &mdash; Durable execution for the tool loop.
+- [`Brute::Middleware::CompactionCheck`](/brute/reference/brute/middleware/compaction-check/) &mdash; The old compaction trigger, kept working while it is deprecated.
+- [`Brute::Middleware::DefaultCompactionPipeline`](/brute/reference/brute/middleware/default-compaction-pipeline/) &mdash; Compacts the conversation once it fills too much of the model's window.
+- [`Brute::Middleware::DefaultCompactionPipeline::Declines`](/brute/reference/brute/middleware/default-compaction-pipeline/declines/) &mdash; The floor of a pipeline given nothing to summarise with: what the free layers managed is what the turn gets.
+- [`Brute::Middleware::DefaultToolPipeline`](/brute/reference/brute/middleware/default-tool-pipeline/) &mdash; Class Brute::Middleware::DefaultToolPipeline.
+- [`Brute::Middleware::EventHandler`](/brute/reference/brute/middleware/event-handler/) &mdash; Class Brute::Middleware::EventHandler.
+- [`Brute::Middleware::Loop`](/brute/reference/brute/middleware/loop/) &mdash; Re-invokes the inner stack as long as a condition holds — a generic loop over a turn.
+- [`Brute::Middleware::Loop::BackgroundJobs`](/brute/reference/brute/middleware/loop/background-jobs/) &mdash; Keeps the turn alive while background jobs are running.
+- [`Brute::Middleware::Loop::ToolResult`](/brute/reference/brute/middleware/loop/tool-result/) &mdash; Loops while the LLM keeps producing tool results — the standard agentic turn loop.
+- [`Brute::Middleware::MaxIterations`](/brute/reference/brute/middleware/max-iterations/) &mdash; Guards against runaway tool loops by capping the number of iterations.
+- [`Brute::Middleware::Question`](/brute/reference/brute/middleware/question/) &mdash; Class Brute::Middleware::Question.
+- [`Brute::Middleware::SessionLog`](/brute/reference/brute/middleware/session-log/) &mdash; The "session" is just a JSONL log of the conversation on disk.
+- [`Brute::Middleware::Skills`](/brute/reference/brute/middleware/skills/) &mdash; Loads skill objects into the agent context.
+- [`Brute::Middleware::SlashCommands`](/brute/reference/brute/middleware/slash-commands/) &mdash; The head of every agent chain, put there by the builder itself rather than by a use anyone writes.
+- [`Brute::Middleware::Summarize`](/brute/reference/brute/middleware/summarize/) &mdash; Runs a final tool-free LLM call after the Loop::ToolResult completes, ensuring the agent produces a clean summary response.
+- [`Brute::Middleware::SystemPrompt`](/brute/reference/brute/middleware/system-prompt/) &mdash; Prepends a system message to env[:messages] before passing control down the middleware chain.
+- [`Brute::Middleware::ToolPipeline`](/brute/reference/brute/middleware/tool-pipeline/) &mdash; The old name for DefaultToolPipeline, kept working while it is deprecated.
+- [`Brute::Middleware::UserQueue`](/brute/reference/brute/middleware/user-queue/) &mdash; Class Brute::Middleware::UserQueue.
+- [`Brute::PromptTemplate`](/brute/reference/brute/prompt-template/) &mdash; An ERB-backed system-prompt object for Middleware::SystemPrompt — the open alternative to Brute::SystemPrompt's built-in section stacks.
+- [`Brute::Prompts`](/brute/reference/brute/prompts/) &mdash; Module Brute::Prompts.
+- [`Brute::Prompts::Autonomy`](/brute/reference/brute/prompts/autonomy/) &mdash; Module Brute::Prompts::Autonomy.
+- [`Brute::Prompts::BuildSwitch`](/brute/reference/brute/prompts/build-switch/) &mdash; Module Brute::Prompts::BuildSwitch.
+- [`Brute::Prompts::CodeReferences`](/brute/reference/brute/prompts/code-references/) &mdash; Module Brute::Prompts::CodeReferences.
+- [`Brute::Prompts::CodeStyle`](/brute/reference/brute/prompts/code-style/) &mdash; Module Brute::Prompts::CodeStyle.
+- [`Brute::Prompts::Context`](/brute/reference/brute/prompts/context/) &mdash; Template context handed to ERB templates.
+- [`Brute::Prompts::Conventions`](/brute/reference/brute/prompts/conventions/) &mdash; Module Brute::Prompts::Conventions.
+- [`Brute::Prompts::DoingTasks`](/brute/reference/brute/prompts/doing-tasks/) &mdash; Module Brute::Prompts::DoingTasks.
+- [`Brute::Prompts::EditingApproach`](/brute/reference/brute/prompts/editing-approach/) &mdash; Module Brute::Prompts::EditingApproach.
+- [`Brute::Prompts::EditingConstraints`](/brute/reference/brute/prompts/editing-constraints/) &mdash; Module Brute::Prompts::EditingConstraints.
+- [`Brute::Prompts::Environment`](/brute/reference/brute/prompts/environment/) &mdash; Module Brute::Prompts::Environment.
+- [`Brute::Prompts::FrontendTasks`](/brute/reference/brute/prompts/frontend-tasks/) &mdash; Module Brute::Prompts::FrontendTasks.
+- [`Brute::Prompts::GitSafety`](/brute/reference/brute/prompts/git-safety/) &mdash; Module Brute::Prompts::GitSafety.
+- [`Brute::Prompts::Identity`](/brute/reference/brute/prompts/identity/) &mdash; Module Brute::Prompts::Identity.
+- [`Brute::Prompts::Instructions`](/brute/reference/brute/prompts/instructions/) &mdash; Module Brute::Prompts::Instructions.
+- [`Brute::Prompts::MaxSteps`](/brute/reference/brute/prompts/max-steps/) &mdash; Module Brute::Prompts::MaxSteps.
+- [`Brute::Prompts::Objectivity`](/brute/reference/brute/prompts/objectivity/) &mdash; Module Brute::Prompts::Objectivity.
+- [`Brute::Prompts::PlanReminder`](/brute/reference/brute/prompts/plan-reminder/) &mdash; Module Brute::Prompts::PlanReminder.
+- [`Brute::Prompts::Proactiveness`](/brute/reference/brute/prompts/proactiveness/) &mdash; Module Brute::Prompts::Proactiveness.
+- [`Brute::Prompts::SecurityAndSafety`](/brute/reference/brute/prompts/security-and-safety/) &mdash; Module Brute::Prompts::SecurityAndSafety.
+- [`Brute::Prompts::Skills`](/brute/reference/brute/prompts/skills/) &mdash; The <available_skills> system-prompt section.
+- [`Brute::Prompts::TaskManagement`](/brute/reference/brute/prompts/task-management/) &mdash; Module Brute::Prompts::TaskManagement.
+- [`Brute::Prompts::ToneAndStyle`](/brute/reference/brute/prompts/tone-and-style/) &mdash; Module Brute::Prompts::ToneAndStyle.
+- [`Brute::Prompts::ToolUsage`](/brute/reference/brute/prompts/tool-usage/) &mdash; Module Brute::Prompts::ToolUsage.
+- [`Brute::Rack`](/brute/reference/brute/rack/) &mdash; The mirror image of protocol-rack.
+- [`Brute::Rack::Adapter`](/brute/reference/brute/rack/adapter/) &mdash; Class Brute::Rack::Adapter.
+- [`Brute::Skill`](/brute/reference/brute/skill/) &mdash; A single skill: metadata plus the address of its SKILL.md on disk.
+- [`Brute::SystemPrompt`](/brute/reference/brute/system-prompt/) &mdash; Deferred system prompt builder.
+- [`Brute::TokenCounter`](/brute/reference/brute/token-counter/) &mdash; How big a conversation is, in tokens.
+- [`Brute::TokenCounter::Approximate`](/brute/reference/brute/token-counter/approximate/) &mdash; Tokens from text length, at a flat ratio of characters to tokens.
+- [`Brute::TokenCounter::Rendering`](/brute/reference/brute/token-counter/rendering/) &mdash; The text a counter measures.
+- [`Brute::TokenCounter::Tiktoken`](/brute/reference/brute/token-counter/tiktoken/) &mdash; Tokens from OpenAI's byte-pair encoder, through the tiktoken_ruby gem.
+- [`Brute::Tool`](/brute/reference/brute/tool/) &mdash; Base class for Brute's built-in tools — a tiny, framework-agnostic tool DSL.
+- [`Brute::Tools`](/brute/reference/brute/tools/) &mdash; Module Brute::Tools.
+- [`Brute::Tools::Adapter`](/brute/reference/brute/tools/adapter/) &mdash; Normalizes any tool shape into one neutral interface so the rest of Brute never has to care which tools library (if any) a tool was written with.
+- [`Brute::Tools::FS`](/brute/reference/brute/tools/fs/) &mdash; @namespace --- @namespace
+- [`Brute::Tools::FS::FileMutationQueue`](/brute/reference/brute/tools/fs/file-mutation-queue/) &mdash; Per-file serialization queue for concurrent tool execution.
+- [`Brute::Tools::FS::SnapshotStore`](/brute/reference/brute/tools/fs/snapshot-store/) &mdash; Per-path stack of file snapshots used by fs_write, fs_patch, fs_remove to enable undo.
+- [`Brute::Tools::FSPatch`](/brute/reference/brute/tools/fs-patch/) &mdash; Class Brute::Tools::FSPatch.
+- [`Brute::Tools::FSRead`](/brute/reference/brute/tools/fs-read/) &mdash; Existing features (ref: opencode read tool):
+- [`Brute::Tools::FSRemove`](/brute/reference/brute/tools/fs-remove/) &mdash; Class Brute::Tools::FSRemove.
+- [`Brute::Tools::FSSearch`](/brute/reference/brute/tools/fs-search/) &mdash; Existing features (ref: opencode grep tool):
+- [`Brute::Tools::FSUndo`](/brute/reference/brute/tools/fs-undo/) &mdash; Class Brute::Tools::FSUndo.
+- [`Brute::Tools::FSWrite`](/brute/reference/brute/tools/fs-write/) &mdash; Class Brute::Tools::FSWrite.
+- [`Brute::Tools::NetFetch`](/brute/reference/brute/tools/net-fetch/) &mdash; Class Brute::Tools::NetFetch.
+- [`Brute::Tools::Question`](/brute/reference/brute/tools/question/) &mdash; Class Brute::Tools::Question.
+- [`Brute::Tools::Shell`](/brute/reference/brute/tools/shell/) &mdash; Existing features (ref: opencode bash tool):
+- [`Brute::Tools::SkillLoad`](/brute/reference/brute/tools/skill-load/) &mdash; The skill tool — stages 2 (activation) and 3 (execution) of the Agent Skills progressive-disclosure lifecycle (https://agentskills.io).
+- [`Brute::Tools::SubAgent`](/brute/reference/brute/tools/sub-agent/) &mdash; A SubAgent is an Agent that exposes a tool-shaped facade so it can be dropped into another agent's tools list.
+- [`Brute::Tools::TodoList`](/brute/reference/brute/tools/todo-list/) &mdash; @namespace
+- [`Brute::Tools::TodoList::Store`](/brute/reference/brute/tools/todo-list/store/) &mdash; In-memory todo list storage.
+- [`Brute::Tools::TodoRead`](/brute/reference/brute/tools/todo-read/) &mdash; Class Brute::Tools::TodoRead.
+- [`Brute::Tools::TodoWrite`](/brute/reference/brute/tools/todo-write/) &mdash; Class Brute::Tools::TodoWrite.
+- [`Brute::Truncation`](/brute/reference/brute/truncation/) &mdash; Universal tool output truncation.
+- [`Brute::Turn`](/brute/reference/brute/turn/) &mdash; Module Brute::Turn.
+- [`Brute::Turn::AgentPipeline`](/brute/reference/brute/turn/agent-pipeline/) &mdash; agent = Brute.agent # => AgentPipeline
+- [`Brute::Turn::CompactionPipeline`](/brute/reference/brute/turn/compaction-pipeline/) &mdash; A compactor built out of middleware.
+- [`Brute::Turn::Pipeline`](/brute/reference/brute/turn/pipeline/) &mdash; Class Brute::Turn::Pipeline.
+- [`Brute::Turn::Pipeline::Chainable`](/brute/reference/brute/turn/pipeline/chainable/) &mdash; Module Brute::Turn::Pipeline::Chainable.
+- [`Brute::Turn::Pipeline::NullSink`](/brute/reference/brute/turn/pipeline/null-sink/) &mdash; Default null sink for env[:events] — swallows anything pushed to it.
+- [`Brute::Turn::ToolPipeline`](/brute/reference/brute/turn/tool-pipeline/) &mdash; A ToolPipeline runs a tool call through a middleware stack.
+- [`Brute::UsageDetection`](/brute/reference/brute/usage-detection/) &mdash; What the provider reported, normalised.
+- [`Brute::UsageDetection::LLMrb`](/brute/reference/brute/usage-detection/ll-mrb/) &mdash; llm.rb models usage as its own LLM::Usage value object.
+- [`Brute::UsageDetection::LangChain`](/brute/reference/brute/usage-detection/lang-chain/) &mdash; langchainrb has no single usage object: each provider's response subclass answers prompt_tokens / completion_tokens / total_tokens by digging its own raw sha...
+- [`Brute::UsageDetection::OpenRouter`](/brute/reference/brute/usage-detection/open-router/) &mdash; OpenRouter reports usage as the provider's raw hash on the response, in OpenAI's wire shape.
+- [`Brute::UsageDetection::RubyLLM`](/brute/reference/brute/usage-detection/ruby-llm/) &mdash; ruby_llm hangs usage off the message, not the response: a Tokens object with input/output/cache_read/cache_write/thinking, plus the provider's own reported_c...
+
+## BruteCLI
+
+- [`BruteCLI`](/brute/reference/brute-cli/) &mdash; Module BruteCLI.
+- [`BruteCLI::Providers`](/brute/reference/brute-cli/providers/) &mdash; Module BruteCLI::Providers.
+- [`BruteCLI::Providers::Shell`](/brute/reference/brute-cli/providers/shell/) &mdash; A pseudo-LLM provider that executes user input as code via the existing Brute::Tools::Shell tool.
+- [`BruteCLI::Providers::Shell::ModelList`](/brute/reference/brute-cli/providers/shell/model-list/) &mdash; Minimal object that quacks like provider.models so the REPL's fetch_models can call provider.models.all.select(&:chat?).
+- [`BruteCLI::Providers::ShellResponse`](/brute/reference/brute-cli/providers/shell-response/) &mdash; Synthetic completion response returned by Brute::Providers::Shell.

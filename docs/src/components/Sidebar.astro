@@ -9,14 +9,26 @@
  */
 import MobileMenuFooter from 'virtual:starlight/components/MobileMenuFooter';
 import SidebarList from './SidebarList.astro';
+import { currentSection } from '../lib/nav';
 
 const { sidebar } = Astro.locals.starlightRoute;
+
+/**
+ * Only the section being viewed. Each tab in the header owns its own sidebar,
+ * so the Docs tree is not visible from inside the Reference and vice versa —
+ * which is what stops a hundred-odd generated reference entries from burying
+ * the handful of prose pages.
+ *
+ * A page belonging to no section falls back to the whole tree: an over-full
+ * sidebar beats none at all.
+ */
+const entries = currentSection(sidebar)?.entries ?? sidebar;
 ---
 
 {/* pt-3 lands the first row 32px below the header, matching the rail on the
     other side of the page. */}
 <div class="px-4 pt-3">
-	<SidebarList entries={sidebar} />
+	<SidebarList entries={entries} />
 </div>
 
 {/* Overlay scrollbar: 4px, rounded, hidden until the sidebar is hovered or

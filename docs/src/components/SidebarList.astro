@@ -5,8 +5,11 @@
  * Replaces Starlight's own sublist so the markup is ours and can be styled
  * with utility classes rather than by reaching into Starlight's DOM.
  *
- * Groups render as quiet section headings rather than disclosure widgets:
- * these sections are permanent, so there is nothing to collapse.
+ * Groups render as quiet section headings rather than disclosure widgets: the
+ * hand-written sections are permanent, so there is nothing to collapse. A
+ * group that asks to be collapsed gets a disclosure instead — the generated
+ * API reference is a hundred-odd entries, which would otherwise bury the rest
+ * of the nav under itself.
  */
 import type { SidebarEntry } from '@astrojs/starlight/types';
 
@@ -26,25 +29,58 @@ const link = [
 	'aria-[current=page]:bg-accent-500/10 aria-[current=page]:font-semibold aria-[current=page]:text-(color:--sl-color-text-accent)',
 	nested ? 'pl-7' : 'pl-4',
 ].join(' ');
+
+/** True when the page being viewed lives anywhere inside this group. */
+function containsCurrent(items: SidebarEntry[]): boolean {
+	return items.some((entry) =>
+		entry.type === 'link' ? entry.isCurrent : containsCurrent(entry.entries)
+	);
+}
 ---
 
 <ul class="list-none p-0">
 	{
-		entries.map((entry) =>
-			entry.type === 'link' ? (
-				<li>
-					<a href={entry.href} aria-current={entry.isCurrent ? 'page' : undefined} class={link}>
-						{entry.label}
-					</a>
-				</li>
-			) : (
+		entries.map((entry) => {
+			if (entry.type === 'link') {
+				return (
+					<li>
+						<a href={entry.href} aria-current={entry.isCurrent ? 'page' : undefined} class={link}>
+							{entry.label}
+						</a>
+					</li>
+				);
+			}
+
+			// A collapsible group opens on load when the current page is inside
+			// it, so following a link into the reference does not land you in a
+			// closed tree with no sense of where you are.
+			if (entry.collapsed) {
+				return (
+					<li>
+						<details open={containsCurrent(entry.entries) || undefined} class="group/disclosure">
+							<summary
+								class="flex cursor-pointer list-none items-center gap-1.5 rounded-lg py-1.5 pr-3 pl-4 text-sm leading-6 font-medium text-(color:--sl-color-gray-3) hover:bg-(--sl-color-gray-6) hover:text-(color:--sl-color-white) [&::-webkit-details-marker]:hidden"
+							>
+								{/* Points right when closed, down when open. */}
+								<span
+									class="icon-mask icon-chevron size-3.5 shrink-0 -rotate-90 transition-transform duration-150 group-open/disclosure:rotate-0"
+								/>
+								{entry.label}
+							</summary>
+							<Astro.self entries={entry.entries} nested={true} />
+						</details>
+					</li>
+				);
+			}
+
+			return (
 				<li class="mt-8 first:mt-1">
 					<h2 class="mb-2.5 px-4 text-sm leading-5 font-semibold text-(color:--sl-color-white)">
 						{entry.label}
 					</h2>
 					<Astro.self entries={entry.entries} nested={false} />
 				</li>
-			)
-		)
+			);
+		})
 	}
 </ul>

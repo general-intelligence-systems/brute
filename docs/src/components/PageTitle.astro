@@ -42,9 +42,13 @@ const section = findGroup(sidebar);
 	}
 	<div class="flex flex-col items-end gap-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
 		{/* `_top` is Starlight's PAGE_TITLE_ID, the target of its skip link. */}
+		{/* `min-w-0 break-words`: a fully-qualified constant is one unbreakable
+		    word, and reference titles run to four segments. Without these a flex
+		    item refuses to shrink below its content, so the title overflows
+		    under the copy control and shoves it into the table of contents. */}
 		<h1
 			id="_top"
-			class="self-stretch text-(length:--sl-text-h1) leading-(--sl-line-height-headings) font-semibold text-(color:--sl-color-white) sm:self-auto"
+			class="min-w-0 self-stretch text-(length:--sl-text-h1) leading-(--sl-line-height-headings) font-semibold break-words text-(color:--sl-color-white) sm:self-auto"
 		>
 			{entry.data.title}
 		</h1>

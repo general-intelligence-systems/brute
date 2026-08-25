@@ -6,10 +6,12 @@
   "scripts": {
     "dev": "astro dev",
     "start": "astro dev",
-    "build": "astro build",
+    "build": "ruby bin/gen-reference.rb && node bin/gen-nav.mjs && astro build",
     "preview": "astro preview",
     "linkcheck": "astro build && node bin/check-links.mjs",
-    "astro": "astro"
+    "astro": "astro",
+    "reference": "ruby bin/gen-reference.rb",
+    "nav": "node bin/gen-nav.mjs"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.41.8",

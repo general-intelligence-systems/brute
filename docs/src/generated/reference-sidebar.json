@@ -1,0 +1,542 @@
+[
+  {
+    "label": "Overview",
+    "slug": "reference"
+  },
+  {
+    "label": "Brute",
+    "collapsed": true,
+    "items": [
+      {
+        "label": "Brute",
+        "slug": "reference/brute"
+      },
+      {
+        "label": "Compaction",
+        "slug": "reference/brute/compaction"
+      },
+      {
+        "label": "Compaction::Middleware",
+        "slug": "reference/brute/compaction/middleware"
+      },
+      {
+        "label": "Compaction::Middleware::SlidingWindow",
+        "slug": "reference/brute/compaction/middleware/sliding-window"
+      },
+      {
+        "label": "Compaction::Middleware::Strategy",
+        "slug": "reference/brute/compaction/middleware/strategy"
+      },
+      {
+        "label": "Compaction::Middleware::ToolResults",
+        "slug": "reference/brute/compaction/middleware/tool-results"
+      },
+      {
+        "label": "Compaction::Summarize",
+        "slug": "reference/brute/compaction/summarize"
+      },
+      {
+        "label": "Compaction::Transcript",
+        "slug": "reference/brute/compaction/transcript"
+      },
+      {
+        "label": "Completion",
+        "slug": "reference/brute/completion"
+      },
+      {
+        "label": "Completion::LLMrb",
+        "slug": "reference/brute/completion/ll-mrb"
+      },
+      {
+        "label": "Completion::LangChain",
+        "slug": "reference/brute/completion/lang-chain"
+      },
+      {
+        "label": "Completion::OpenRouter",
+        "slug": "reference/brute/completion/open-router"
+      },
+      {
+        "label": "Completion::RubyLLM",
+        "slug": "reference/brute/completion/ruby-llm"
+      },
+      {
+        "label": "Completion::RubyLLM::Tool",
+        "slug": "reference/brute/completion/ruby-llm/tool"
+      },
+      {
+        "label": "Contrib",
+        "slug": "reference/brute/contrib"
+      },
+      {
+        "label": "Contrib::LogFile",
+        "slug": "reference/brute/contrib/log-file"
+      },
+      {
+        "label": "Contrib::Otel",
+        "slug": "reference/brute/contrib/otel"
+      },
+      {
+        "label": "Diff",
+        "slug": "reference/brute/diff"
+      },
+      {
+        "label": "Env",
+        "slug": "reference/brute/env"
+      },
+      {
+        "label": "Eval",
+        "slug": "reference/brute/eval"
+      },
+      {
+        "label": "Eval::Case",
+        "slug": "reference/brute/eval/case"
+      },
+      {
+        "label": "Eval::Suite",
+        "slug": "reference/brute/eval/suite"
+      },
+      {
+        "label": "Eval::Transcript",
+        "slug": "reference/brute/eval/transcript"
+      },
+      {
+        "label": "Eval::World",
+        "slug": "reference/brute/eval/world"
+      },
+      {
+        "label": "Events",
+        "slug": "reference/brute/events"
+      },
+      {
+        "label": "Events::Handler",
+        "slug": "reference/brute/events/handler"
+      },
+      {
+        "label": "Events::PrefixedTerminalOutput",
+        "slug": "reference/brute/events/prefixed-terminal-output"
+      },
+      {
+        "label": "Events::TerminalOutput",
+        "slug": "reference/brute/events/terminal-output"
+      },
+      {
+        "label": "Hooks",
+        "slug": "reference/brute/hooks"
+      },
+      {
+        "label": "Hooks::Registry",
+        "slug": "reference/brute/hooks/registry"
+      },
+      {
+        "label": "MessageTransport",
+        "slug": "reference/brute/message-transport"
+      },
+      {
+        "label": "MessageTransport::Anthropic",
+        "slug": "reference/brute/message-transport/anthropic"
+      },
+      {
+        "label": "MessageTransport::LLM",
+        "slug": "reference/brute/message-transport/llm"
+      },
+      {
+        "label": "MessageTransport::LangChain",
+        "slug": "reference/brute/message-transport/lang-chain"
+      },
+      {
+        "label": "MessageTransport::OpenAI",
+        "slug": "reference/brute/message-transport/open-ai"
+      },
+      {
+        "label": "MessageTransport::OpenRouter",
+        "slug": "reference/brute/message-transport/open-router"
+      },
+      {
+        "label": "MessageTransport::RubyLLM",
+        "slug": "reference/brute/message-transport/ruby-llm"
+      },
+      {
+        "label": "MessageTransport::RubyOpenAI",
+        "slug": "reference/brute/message-transport/ruby-open-ai"
+      },
+      {
+        "label": "Messages",
+        "slug": "reference/brute/messages"
+      },
+      {
+        "label": "Middleware",
+        "slug": "reference/brute/middleware"
+      },
+      {
+        "label": "Middleware::Base",
+        "slug": "reference/brute/middleware/base"
+      },
+      {
+        "label": "Middleware::Checkpoint",
+        "slug": "reference/brute/middleware/checkpoint"
+      },
+      {
+        "label": "Middleware::CompactionCheck",
+        "slug": "reference/brute/middleware/compaction-check"
+      },
+      {
+        "label": "Middleware::DefaultCompactionPipeline",
+        "slug": "reference/brute/middleware/default-compaction-pipeline"
+      },
+      {
+        "label": "Middleware::DefaultCompactionPipeline::Declines",
+        "slug": "reference/brute/middleware/default-compaction-pipeline/declines"
+      },
+      {
+        "label": "Middleware::DefaultToolPipeline",
+        "slug": "reference/brute/middleware/default-tool-pipeline"
+      },
+      {
+        "label": "Middleware::EventHandler",
+        "slug": "reference/brute/middleware/event-handler"
+      },
+      {
+        "label": "Middleware::Loop",
+        "slug": "reference/brute/middleware/loop"
+      },
+      {
+        "label": "Middleware::Loop::BackgroundJobs",
+        "slug": "reference/brute/middleware/loop/background-jobs"
+      },
+      {
+        "label": "Middleware::Loop::ToolResult",
+        "slug": "reference/brute/middleware/loop/tool-result"
+      },
+      {
+        "label": "Middleware::MaxIterations",
+        "slug": "reference/brute/middleware/max-iterations"
+      },
+      {
+        "label": "Middleware::Question",
+        "slug": "reference/brute/middleware/question"
+      },
+      {
+        "label": "Middleware::SessionLog",
+        "slug": "reference/brute/middleware/session-log"
+      },
+      {
+        "label": "Middleware::Skills",
+        "slug": "reference/brute/middleware/skills"
+      },
+      {
+        "label": "Middleware::SlashCommands",
+        "slug": "reference/brute/middleware/slash-commands"
+      },
+      {
+        "label": "Middleware::Summarize",
+        "slug": "reference/brute/middleware/summarize"
+      },
+      {
+        "label": "Middleware::SystemPrompt",
+        "slug": "reference/brute/middleware/system-prompt"
+      },
+      {
+        "label": "Middleware::ToolPipeline",
+        "slug": "reference/brute/middleware/tool-pipeline"
+      },
+      {
+        "label": "Middleware::UserQueue",
+        "slug": "reference/brute/middleware/user-queue"
+      },
+      {
+        "label": "PromptTemplate",
+        "slug": "reference/brute/prompt-template"
+      },
+      {
+        "label": "Prompts",
+        "slug": "reference/brute/prompts"
+      },
+      {
+        "label": "Prompts::Autonomy",
+        "slug": "reference/brute/prompts/autonomy"
+      },
+      {
+        "label": "Prompts::BuildSwitch",
+        "slug": "reference/brute/prompts/build-switch"
+      },
+      {
+        "label": "Prompts::CodeReferences",
+        "slug": "reference/brute/prompts/code-references"
+      },
+      {
+        "label": "Prompts::CodeStyle",
+        "slug": "reference/brute/prompts/code-style"
+      },
+      {
+        "label": "Prompts::Context",
+        "slug": "reference/brute/prompts/context"
+      },
+      {
+        "label": "Prompts::Conventions",
+        "slug": "reference/brute/prompts/conventions"
+      },
+      {
+        "label": "Prompts::DoingTasks",
+        "slug": "reference/brute/prompts/doing-tasks"
+      },
+      {
+        "label": "Prompts::EditingApproach",
+        "slug": "reference/brute/prompts/editing-approach"
+      },
+      {
+        "label": "Prompts::EditingConstraints",
+        "slug": "reference/brute/prompts/editing-constraints"
+      },
+      {
+        "label": "Prompts::Environment",
+        "slug": "reference/brute/prompts/environment"
+      },
+      {
+        "label": "Prompts::FrontendTasks",
+        "slug": "reference/brute/prompts/frontend-tasks"
+      },
+      {
+        "label": "Prompts::GitSafety",
+        "slug": "reference/brute/prompts/git-safety"
+      },
+      {
+        "label": "Prompts::Identity",
+        "slug": "reference/brute/prompts/identity"
+      },
+      {
+        "label": "Prompts::Instructions",
+        "slug": "reference/brute/prompts/instructions"
+      },
+      {
+        "label": "Prompts::MaxSteps",
+        "slug": "reference/brute/prompts/max-steps"
+      },
+      {
+        "label": "Prompts::Objectivity",
+        "slug": "reference/brute/prompts/objectivity"
+      },
+      {
+        "label": "Prompts::PlanReminder",
+        "slug": "reference/brute/prompts/plan-reminder"
+      },
+      {
+        "label": "Prompts::Proactiveness",
+        "slug": "reference/brute/prompts/proactiveness"
+      },
+      {
+        "label": "Prompts::SecurityAndSafety",
+        "slug": "reference/brute/prompts/security-and-safety"
+      },
+      {
+        "label": "Prompts::Skills",
+        "slug": "reference/brute/prompts/skills"
+      },
+      {
+        "label": "Prompts::TaskManagement",
+        "slug": "reference/brute/prompts/task-management"
+      },
+      {
+        "label": "Prompts::ToneAndStyle",
+        "slug": "reference/brute/prompts/tone-and-style"
+      },
+      {
+        "label": "Prompts::ToolUsage",
+        "slug": "reference/brute/prompts/tool-usage"
+      },
+      {
+        "label": "Rack",
+        "slug": "reference/brute/rack"
+      },
+      {
+        "label": "Rack::Adapter",
+        "slug": "reference/brute/rack/adapter"
+      },
+      {
+        "label": "Skill",
+        "slug": "reference/brute/skill"
+      },
+      {
+        "label": "SystemPrompt",
+        "slug": "reference/brute/system-prompt"
+      },
+      {
+        "label": "TokenCounter",
+        "slug": "reference/brute/token-counter"
+      },
+      {
+        "label": "TokenCounter::Approximate",
+        "slug": "reference/brute/token-counter/approximate"
+      },
+      {
+        "label": "TokenCounter::Rendering",
+        "slug": "reference/brute/token-counter/rendering"
+      },
+      {
+        "label": "TokenCounter::Tiktoken",
+        "slug": "reference/brute/token-counter/tiktoken"
+      },
+      {
+        "label": "Tool",
+        "slug": "reference/brute/tool"
+      },
+      {
+        "label": "Tools",
+        "slug": "reference/brute/tools"
+      },
+      {
+        "label": "Tools::Adapter",
+        "slug": "reference/brute/tools/adapter"
+      },
+      {
+        "label": "Tools::FS",
+        "slug": "reference/brute/tools/fs"
+      },
+      {
+        "label": "Tools::FS::FileMutationQueue",
+        "slug": "reference/brute/tools/fs/file-mutation-queue"
+      },
+      {
+        "label": "Tools::FS::SnapshotStore",
+        "slug": "reference/brute/tools/fs/snapshot-store"
+      },
+      {
+        "label": "Tools::FSPatch",
+        "slug": "reference/brute/tools/fs-patch"
+      },
+      {
+        "label": "Tools::FSRead",
+        "slug": "reference/brute/tools/fs-read"
+      },
+      {
+        "label": "Tools::FSRemove",
+        "slug": "reference/brute/tools/fs-remove"
+      },
+      {
+        "label": "Tools::FSSearch",
+        "slug": "reference/brute/tools/fs-search"
+      },
+      {
+        "label": "Tools::FSUndo",
+        "slug": "reference/brute/tools/fs-undo"
+      },
+      {
+        "label": "Tools::FSWrite",
+        "slug": "reference/brute/tools/fs-write"
+      },
+      {
+        "label": "Tools::NetFetch",
+        "slug": "reference/brute/tools/net-fetch"
+      },
+      {
+        "label": "Tools::Question",
+        "slug": "reference/brute/tools/question"
+      },
+      {
+        "label": "Tools::Shell",
+        "slug": "reference/brute/tools/shell"
+      },
+      {
+        "label": "Tools::SkillLoad",
+        "slug": "reference/brute/tools/skill-load"
+      },
+      {
+        "label": "Tools::SubAgent",
+        "slug": "reference/brute/tools/sub-agent"
+      },
+      {
+        "label": "Tools::TodoList",
+        "slug": "reference/brute/tools/todo-list"
+      },
+      {
+        "label": "Tools::TodoList::Store",
+        "slug": "reference/brute/tools/todo-list/store"
+      },
+      {
+        "label": "Tools::TodoRead",
+        "slug": "reference/brute/tools/todo-read"
+      },
+      {
+        "label": "Tools::TodoWrite",
+        "slug": "reference/brute/tools/todo-write"
+      },
+      {
+        "label": "Truncation",
+        "slug": "reference/brute/truncation"
+      },
+      {
+        "label": "Turn",
+        "slug": "reference/brute/turn"
+      },
+      {
+        "label": "Turn::AgentPipeline",
+        "slug": "reference/brute/turn/agent-pipeline"
+      },
+      {
+        "label": "Turn::CompactionPipeline",
+        "slug": "reference/brute/turn/compaction-pipeline"
+      },
+      {
+        "label": "Turn::Pipeline",
+        "slug": "reference/brute/turn/pipeline"
+      },
+      {
+        "label": "Turn::Pipeline::Chainable",
+        "slug": "reference/brute/turn/pipeline/chainable"
+      },
+      {
+        "label": "Turn::Pipeline::NullSink",
+        "slug": "reference/brute/turn/pipeline/null-sink"
+      },
+      {
+        "label": "Turn::ToolPipeline",
+        "slug": "reference/brute/turn/tool-pipeline"
+      },
+      {
+        "label": "UsageDetection",
+        "slug": "reference/brute/usage-detection"
+      },
+      {
+        "label": "UsageDetection::LLMrb",
+        "slug": "reference/brute/usage-detection/ll-mrb"
+      },
+      {
+        "label": "UsageDetection::LangChain",
+        "slug": "reference/brute/usage-detection/lang-chain"
+      },
+      {
+        "label": "UsageDetection::OpenRouter",
+        "slug": "reference/brute/usage-detection/open-router"
+      },
+      {
+        "label": "UsageDetection::RubyLLM",
+        "slug": "reference/brute/usage-detection/ruby-llm"
+      }
+    ]
+  },
+  {
+    "label": "BruteCLI",
+    "collapsed": true,
+    "items": [
+      {
+        "label": "BruteCLI",
+        "slug": "reference/brute-cli"
+      },
+      {
+        "label": "Providers",
+        "slug": "reference/brute-cli/providers"
+      },
+      {
+        "label": "Providers::Shell",
+        "slug": "reference/brute-cli/providers/shell"
+      },
+      {
+        "label": "Providers::Shell::ModelList",
+        "slug": "reference/brute-cli/providers/shell/model-list"
+      },
+      {
+        "label": "Providers::ShellResponse",
+        "slug": "reference/brute-cli/providers/shell-response"
+      }
+    ]
+  }
+]

@@ -4,6 +4,11 @@ import starlight from '@astrojs/starlight';
 
 import tailwindcss from '@tailwindcss/vite';
 
+// The whole navigation, built from the content directory by bin/gen-nav.mjs
+// (which folds in the Ruby-generated reference tree). Checked in so a plain
+// `astro build` works without a Ruby toolchain.
+import nav from './src/generated/nav.json' with { type: 'json' };
+
 const repo = 'https://github.com/general-intelligence-systems/brute';
 
 // https://astro.build/config
@@ -50,38 +55,12 @@ export default defineConfig({
               TableOfContents: './src/components/TableOfContents.astro',
               TwoColumnContent: './src/components/TwoColumnContent.astro',
           },
-          // Slugs are flat so the URLs match the previous Jekyll site exactly
-          // (its collections used a `/:name/` permalink).
-          sidebar: [
-              {
-                  label: 'Start Here',
-                  items: [{ label: 'Getting Started', slug: 'getting-started' }],
-              },
-              {
-                  label: 'Core Features',
-                  items: [
-                      { label: 'The Agent Pipeline', slug: 'agents' },
-                      { label: 'Messages', slug: 'messages' },
-                      { label: 'Message Transports', slug: 'message-transports' },
-                      { label: 'Tools', slug: 'tools' },
-                      { label: 'Middleware', slug: 'middleware' },
-                  ],
-              },
-              {
-                  label: 'Advanced',
-                  items: [
-                      { label: 'Sub-Agents', slug: 'sub-agents' },
-                      { label: 'Sessions', slug: 'sessions' },
-                      { label: 'Skills', slug: 'skills' },
-                      { label: 'Events', slug: 'events' },
-                      { label: 'Serving over HTTP', slug: 'rack' },
-                  ],
-              },
-              {
-                  label: 'Examples',
-                  items: [{ label: 'Runnable Examples', slug: 'examples' }],
-              },
-          ],
+          // The site's four sections — Home, Docs, Reference, Examples.
+          // Each top-level entry is one tab in the header and owns the whole
+          // sidebar while you are inside it: Header.astro derives the tabs
+          // from this list, and Sidebar.astro renders only the current
+          // section. The tree itself is generated; see bin/gen-nav.mjs.
+          sidebar: nav,
       }),
 	],
 

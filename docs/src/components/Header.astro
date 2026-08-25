@@ -2,9 +2,9 @@
 /**
  * Override of Starlight's `Header`.
  *
- * Two rows: the site bar, then a row of section tabs. The tabs are derived
- * from the sidebar's top-level groups, so they stay in step with the nav
- * without being configured twice.
+ * Two rows: the site bar, then a row of tabs — one per section of the site.
+ * The tabs are derived from the navigation rather than configured separately,
+ * so a section cannot exist in one and not the other.
  *
  * The pieces inside stay Starlight's — Search carries the Pagefind wiring and
  * keyboard shortcuts, ThemeSelect the persistence that avoids a flash of the
@@ -18,34 +18,14 @@ import SiteTitle from 'virtual:starlight/components/SiteTitle';
 import SocialIcons from 'virtual:starlight/components/SocialIcons';
 import ThemeSelect from 'virtual:starlight/components/ThemeSelect';
 
+import { sections } from '../lib/nav';
+
 const shouldRenderSearch =
 	config.pagefind || config.components.Search !== '@astrojs/starlight/components/Search.astro';
 
 const { sidebar } = Astro.locals.starlightRoute;
 
-/** First reachable page in a group, used as the tab's destination. */
-function firstLink(entries: typeof sidebar): { href: string; isCurrent: boolean } | undefined {
-	for (const entry of entries) {
-		if (entry.type === 'link') return { href: entry.href, isCurrent: entry.isCurrent };
-		const nested = firstLink(entry.entries);
-		if (nested) return nested;
-	}
-	return undefined;
-}
-
-/** True when the page being viewed lives anywhere inside this group. */
-function containsCurrent(entries: typeof sidebar): boolean {
-	return entries.some((entry) =>
-		entry.type === 'link' ? entry.isCurrent : containsCurrent(entry.entries)
-	);
-}
-
-const tabs = sidebar.flatMap((entry) => {
-	if (entry.type !== 'group') return [];
-	const target = firstLink(entry.entries);
-	if (!target) return [];
-	return [{ label: entry.label, href: target.href, current: containsCurrent(entry.entries) }];
-});
+const tabs = sections(sidebar);
 ---
 
 {/* The hairline under the whole header is drawn by Starlight's <header>, which
@@ -84,10 +64,10 @@ const tabs = sidebar.flatMap((entry) => {
 					<li class="flex">
 						<a
 							href={tab.href}
-							aria-current={tab.current ? 'page' : undefined}
+							aria-current={tab.isCurrent ? 'page' : undefined}
 							class:list={[
 								'flex items-center border-b-2 text-sm font-medium no-underline transition-colors',
-								tab.current
+								tab.isCurrent
 									? 'border-(color:--sl-color-text-accent) font-semibold text-(color:--sl-color-white)'
 									: 'border-transparent text-(color:--sl-color-gray-3) hover:text-(color:--sl-color-white)',
 							]}
