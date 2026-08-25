@@ -55,7 +55,7 @@ describe "brute/middleware/000_base" do
 
     # Every middleware in the chain descends from it.
     Brute::Middleware::SystemPrompt.ancestors.should.include Brute::Middleware::Base
-    Brute::Middleware::ToolPipeline.ancestors.should.include Brute::Middleware::Base
+    Brute::Middleware::DefaultToolPipeline.ancestors.should.include Brute::Middleware::Base
     Brute::Middleware::Loop::ToolResult.ancestors.should.include Brute::Middleware::Base
   end
 end

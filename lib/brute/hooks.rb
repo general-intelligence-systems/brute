@@ -42,6 +42,15 @@ module Brute
   #                             completion middleware then emits one of
   #                             :faraday_error, :open_router_server_error or
   #                             :standard_error with the exception as an extra
+  #   :compact_duration       → env, started, finished, the compactor: one
+  #                             strategy's attempt is this event's block, so
+  #                             the strategy that spends a model call is
+  #                             visible, and one that declined is still timed
+  #   :compacted              → env, {strategy:, before:, after:} — a
+  #                             compaction strategy rewrote env[:messages];
+  #                             what it replaced is already gone, so an
+  #                             application that keeps a transcript preserves
+  #                             it here
   #   :before_tool            → env, call env {name:, arguments:, result:,
   #                             denied:, events:, metadata:, turn_env:} —
   #                             mutate :arguments to rewrite the call, or set
@@ -75,6 +84,8 @@ module Brute
     FARADAY_ERROR_EVENT = :faraday_error
     OPEN_ROUTER_SERVER_ERROR_EVENT = :open_router_server_error
     STANDARD_ERROR_EVENT = :standard_error
+    COMPACT_DURATION_EVENT = :compact_duration
+    COMPACTED_EVENT = :compacted
     BEFORE_TOOL_EVENT = :before_tool
     APPROVE_TOOL_EVENT = :approve_tool
     TOOL_DURATION_EVENT = :tool_duration

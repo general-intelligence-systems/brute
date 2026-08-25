@@ -5,6 +5,138 @@ All notable changes to Brute are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `Brute::Middleware::DefaultCompactionPipeline`, which compacts a conversation
+  once it fills too much of the model's window. It owns the *when* — estimating
+  the size before each call and deriving the target — and hands the *what* to a
+  compactor.
+
+  ```ruby
+  use Brute::Middleware::Loop::ToolResult
+  use Brute::Middleware::DefaultCompactionPipeline,
+    window:     200_000,
+    summariser: Brute::Completion::OpenRouter.new(config: { access_token: key })
+  use Brute::Middleware::DefaultToolPipeline, tools: tools
+  ```
+
+  It belongs inside the tool loop, so it runs before every call rather than
+  once a turn. Sizing anchors on what the provider counted for the last call
+  and measures locally only what has landed since. Pass `compactor:` to
+  replace the ladder it wires by default.
+
+- `Brute::Turn::CompactionPipeline`, a compactor built out of middleware — the
+  compaction counterpart of `Brute::Turn::ToolPipeline`, composed the same way.
+  The stack order is the policy: a layer that got the conversation under target
+  does not call the next, so the free strategies sit at the top and the
+  terminal app — the only thing that spends money — is reached only when they
+  could not get there.
+
+  ```ruby
+  Brute::Turn::CompactionPipeline.new do
+    use Brute::Compaction::Middleware::ToolResults,   keep_steps: 1
+    use Brute::Compaction::Middleware::SlidingWindow, keep_steps: 2
+    run Brute::Compaction::Summarize.new(chat_generator)
+  end
+  ```
+
+  The conversation rides on `env[:conversation]`, leaving `env[:messages]` to
+  mean what it means to every other terminal app: the prompt down, the reply
+  back.
+
+- `Brute::Compaction::Middleware`, the strategies that are layers.
+  `ToolResults` rewrites older tool output in place so every call keeps the
+  result answering it; `SlidingWindow` drops the oldest complete turns, then
+  the current task's oldest steps, leaving a note where they were. Both are
+  free and neither calls a model. `Compaction::Middleware::Strategy` is the base, and it
+  owns the rules every strategy keeps: asked only while over target, and taken
+  only when it actually made the conversation smaller.
+
+- `Brute::Compaction::Summarize`, the strategy of last resort and the one that
+  ends a pipeline. It replaces stretches with summaries of them round after
+  round, in four tiers — oldest historical turns, then historical summaries
+  combined, then the current task's oldest steps, then its own summaries. It
+  stops at the last round that worked, so a generator that answers nothing
+  usable, a summary no smaller than what it replaced, or a call that raised
+  all leave the conversation as the previous round left it.
+
+- `Brute::Compaction`, what every strategy needs: `Transcript` for the grouping
+  that keeps a tool call with its results, and an injectable token counter on
+  `env[:token_counter]` so a strategy weighs the conversation the same way the
+  trigger did.
+
+- `Brute::TokenCounter`, how big a conversation is. A counter answers
+  `count(messages, tools: nil)` — the tools because their schemas ride in
+  every request, so an agent carrying a dozen of them is spending context
+  before anyone has said a word. `Approximate` divides the rendered text by a
+  characters-per-token ratio and needs no dependency; `Tiktoken` encodes it
+  with `tiktoken_ruby`, required the first time it is asked rather than at
+  boot.
+
+  ```ruby
+  Brute::TokenCounter.estimate(env)   # what the turn costs right now
+  ```
+
+  `estimate` trusts what the provider counted when it answered and measures
+  locally only what has landed since — and never the schemas on that path,
+  because the reported total already covers them.
+
+- `Brute::Eval`, evaluating an assembled agent rather than testing a layer.
+  A `Case` says what was said, the world it was said in, and what must be true
+  of the turn afterwards — a call that was made, a call that was not, the order
+  two came in, a word the answer must contain, a budget it must stay inside.
+
+  ```ruby
+  exit(Brute::Eval::Suite.new(agent: "agent.ru", cases: CASES).run)
+  ```
+
+  Everything it observes comes off the agent's own hooks, so the agent under
+  evaluation is the agent that ships. Tool results are stubbed on
+  `:before_tool`, which answers a call without executing it, and where a case
+  wakes up is `Brute::Eval::World`, which a deployment subclasses.
+
+- `Brute::Env`, asked of the turn env itself: `#reply` is the last message and
+  only when the assistant wrote it, `#has_reply?` whether there was one. A turn
+  that only ran tools, or whose provider failed, ends on something else.
+
+- `:compacted`, emitted with `{context:, before:, after:}` when a turn's conversation is
+  rewritten — `context:` is the anchored estimate that triggered it, `before:`
+  and `after:` the conversation on its own. Compaction is lossy and the
+  pipeline keeps no record, so an application that wants one preserves it
+  here.
+
+  ```ruby
+  agent.on(:compacted) { |env, payload| archive(env, payload) }
+  ```
+
+- `:compact_duration`, the timed event around the attempt, so the compactor
+  that spends a model call is visible alongside `:llm_duration` and
+  `:tool_duration`.
+
+  A compactor that raises is treated as one that declined: the failure goes
+  onto `env[:events]` as `{type: :error}` and the turn carries on with the
+  context it has.
+
+### Changed
+
+- **Breaking.** `Brute::Middleware::ToolPipeline` is now
+  `Brute::Middleware::DefaultToolPipeline`. The middleware is one particular
+  wiring of tool dispatch, and the name now says so — leaving
+  `Brute::Turn::ToolPipeline` as the mechanism you compose when that wiring is
+  not what you want. The pairing is the same for compaction:
+  `DefaultCompactionPipeline` and `Turn::CompactionPipeline`.
+
+  ```ruby
+  use Brute::Middleware::DefaultToolPipeline, tools: tools   # was ToolPipeline
+  ```
+
+### Removed
+
+- **Breaking.** `Brute::Middleware::CompactionCheck`, replaced by
+  `Brute::Middleware::DefaultCompactionPipeline`. Its `call` never did anything
+  but pass the turn through, and its inner `Compactor` has no counterpart — a
+  strategy answering `#compact(messages, target:)` replaces it.
+
 ## [5.0.5] - 2026-08-24
 
 ### Added

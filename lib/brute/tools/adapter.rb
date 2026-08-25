@@ -118,6 +118,10 @@ module Brute
         )
       end
 
+      # The tool object this adapter wraps (Brute::Tool, Brute::Turn::ToolPipeline,
+      # SubAgent, Hash definition, ...).
+      attr_reader :original
+
       def initialize(name:, description:, params:, handler:, schema: nil, original: nil)
         @name        = name
         @description = description
@@ -126,10 +130,6 @@ module Brute
         @handler     = handler
         @original    = original
       end
-
-      # The tool object this adapter wraps (Brute::Tool, Brute::Turn::ToolPipeline,
-      # SubAgent, Hash definition, ...).
-      attr_reader :original
 
       # Execute the tool. Accepts string- or symbol-keyed argument hashes,
       # as delivered by LLM providers.

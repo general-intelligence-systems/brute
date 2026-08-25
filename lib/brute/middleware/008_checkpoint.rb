@@ -16,7 +16,7 @@ module Brute
     #   use Brute::Middleware::Loop::ToolResult
     #   use Brute::Middleware::Checkpoint, path: "tmp/checkpoints.jsonl"
     #   use Brute::Middleware::MaxIterations
-    #   use Brute::Middleware::ToolPipeline, tools: Brute::Tools::ALL
+    #   use Brute::Middleware::DefaultToolPipeline, tools: Brute::Tools::ALL
     #
     # The store is just a JSONL log of snapshots — one line per checkpoint,
     # each carrying the full message log plus its own id and the id of the

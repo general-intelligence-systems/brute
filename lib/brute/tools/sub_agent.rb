@@ -21,7 +21,7 @@ module Brute
     #     use Brute::Middleware::SystemPrompt
     #     use Brute::Middleware::Loop::ToolResult
     #     use Brute::Middleware::MaxIterations, max_iterations: 10
-    #     use Brute::Middleware::ToolPipeline, tools: [Brute::Tools::FSRead, Brute::Tools::FSSearch]
+    #     use Brute::Middleware::DefaultToolPipeline, tools: [Brute::Tools::FSRead, Brute::Tools::FSSearch]
     #     run ->(env) do
     #       # The LLM call, written with your library of choice. Convert
     #       # env[:messages] to its format, call it, and append the response
@@ -32,7 +32,7 @@ module Brute
     #
     #   # The SubAgent IS a tool — hand it to a parent agent's ToolPipeline:
     #   main_agent = Brute.agent do
-    #     use Brute::Middleware::ToolPipeline, tools: [Brute::Tools::FSRead, researcher]
+    #     use Brute::Middleware::DefaultToolPipeline, tools: [Brute::Tools::FSRead, researcher]
     #     run ->(env) { ... }
     #   end
     #   main_agent.start("delegate some research")

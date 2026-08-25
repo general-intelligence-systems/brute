@@ -40,12 +40,12 @@ module Brute
 
       FILE_LIMIT = 10
 
-      def name; "skill"; end
-
       def initialize(cwd: Dir.pwd)
         super()
         @cwd = cwd
       end
+
+      def name; "skill"; end
 
       def execute(name:)
         skill = Brute::Skill.get(name, cwd: @cwd)

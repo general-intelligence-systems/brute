@@ -44,7 +44,7 @@ agent = Brute.agent
   .use(Brute::Middleware::SystemPrompt)
   .use(Brute::Middleware::Loop::ToolResult)
   .use(Brute::Middleware::MaxIterations)
-  .use(Brute::Middleware::ToolPipeline, tools: Brute::Tools::ALL)
+  .use(Brute::Middleware::DefaultToolPipeline, tools: Brute::Tools::ALL)
   .run do |env|
     response = provider.complete(
       Brute::MessageTransport::RubyLLM.dump_all(env[:messages]),

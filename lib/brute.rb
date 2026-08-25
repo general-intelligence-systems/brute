@@ -42,7 +42,7 @@ module Brute
   #
   #   agent = Brute.agent
   #     .use(Brute::Middleware::SystemPrompt)
-  #     .use(Brute::Middleware::ToolPipeline, tools: Brute::Tools::ALL)
+  #     .use(Brute::Middleware::DefaultToolPipeline, tools: Brute::Tools::ALL)
   #     .run ->(env) { ... }      # the LLM-call proc (provider/model/creds here)
   #
   #   agent.start("what changed?")
@@ -93,7 +93,14 @@ end
 require_relative "brute/version"
 require_relative "brute/hooks"
 require_relative "brute/messages"
+require_relative "brute/env"
 require_relative "brute/middleware/000_base"
+require_relative "brute/compaction"
+require_relative "brute/compaction/transcript"
+require_relative "brute/compaction/middleware/strategy"
+require_relative "brute/compaction/middleware/tool_results"
+require_relative "brute/compaction/middleware/sliding_window"
+require_relative "brute/compaction/summarize"
 require_relative "brute/completion/open_router"
 require_relative "brute/completion/lang_chain"
 require_relative "brute/completion/llmrb"
@@ -124,9 +131,9 @@ require_relative "brute/middleware/008_checkpoint"
 require_relative "brute/middleware/010_max_iterations"
 require_relative "brute/middleware/020_system_prompt"
 require_relative "brute/middleware/025_skills"
-require_relative "brute/middleware/040_compaction_check"
+require_relative "brute/middleware/040_default_compaction_pipeline"
 require_relative "brute/middleware/060_questions"
-require_relative "brute/middleware/070_tool_pipeline"
+require_relative "brute/middleware/070_default_tool_pipeline"
 require_relative "brute/middleware/event_handler"
 require_relative "brute/middleware/user_queue"
 require_relative "brute/prompt_template"
@@ -157,6 +164,9 @@ require_relative "brute/prompts/tool_usage"
 require_relative "brute/rack/adapter"
 require_relative "brute/skill"
 require_relative "brute/system_prompt"
+require_relative "brute/token_counter"
+require_relative "brute/token_counter/approximate"
+require_relative "brute/token_counter/tiktoken"
 require_relative "brute/tool"
 require_relative "brute/tools"
 require_relative "brute/tools/adapter"
@@ -179,7 +189,9 @@ require_relative "brute/tools/todo_write"
 require_relative "brute/truncation"
 require_relative "brute/turn/agent_pipeline"
 require_relative "brute/turn/pipeline"
+require_relative "brute/turn/compaction_pipeline"
 require_relative "brute/turn/tool_pipeline"
+require_relative "brute/eval"
 require_relative "brute/utils/diff"
 
 # gangsta g-dogg bruh...

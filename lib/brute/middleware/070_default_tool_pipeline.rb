@@ -8,7 +8,7 @@ require "async/barrier"
 
 module Brute
   module Middleware
-    class ToolPipeline < Brute::Middleware::Base
+    class DefaultToolPipeline < Brute::Middleware::Base
       def initialize(app, tools: [])
         @app   = app
         @tools = tools
@@ -148,7 +148,7 @@ end
 
 __END__
 
-describe "brute/middleware/070_tool_pipeline" do
+describe "brute/middleware/070_default_tool_pipeline" do
   require "brute/messages"
   require "brute/truncation"
 
@@ -156,7 +156,7 @@ describe "brute/middleware/070_tool_pipeline" do
     inner = ->(env) {
       env[:messages] << Brute::Message.new(role: :assistant, content: "hi")
     }
-    mw = Brute::Middleware::ToolPipeline.new(inner, tools: [])
+    mw = Brute::Middleware::DefaultToolPipeline.new(inner, tools: [])
     env = {
       messages: Brute.log,
       events: [],
@@ -170,7 +170,7 @@ describe "brute/middleware/070_tool_pipeline" do
     seen = nil
     inner = ->(env) { seen = env[:tools] }
     tool = { name: "echo", description: "", execute: ->(**) { "ok" } }
-    mw = Brute::Middleware::ToolPipeline.new(inner, tools: [tool])
+    mw = Brute::Middleware::DefaultToolPipeline.new(inner, tools: [tool])
     env = { messages: Brute.log, events: [] }
     env[:messages].user("hi")
     mw.call(env)
@@ -183,7 +183,7 @@ describe "brute/middleware/070_tool_pipeline" do
   # builds a real pipeline rather than instantiating the middleware alone.
   def hooked(inner, tools:, &subscribe)
     pipeline = Brute::Turn::Pipeline.new
-    pipeline.use Brute::Middleware::ToolPipeline, tools: tools
+    pipeline.use Brute::Middleware::DefaultToolPipeline, tools: tools
     pipeline.run(Object.new.tap { |o| o.define_singleton_method(:call, &inner) })
     subscribe.call(pipeline)
     pipeline

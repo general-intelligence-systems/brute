@@ -1,3 +1,19 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-bundle exec scampi
+cd "$(dirname "$0")/.."
+
+# `require "brute"` under bundler resolves to the installed gem, not this
+# working tree, so the tests would exercise whatever is packaged rather than
+# what is written here.
+export RUBYOPT="-I$(pwd)/lib${RUBYOPT:+ $RUBYOPT}"
+
+# Given nothing, scampi discovers by walking the whole repo for an __END__
+# section. That reaches examples/, which are their own agents with their own
+# bundles and are not brute's tests -- so the library is named explicitly.
+# Pass paths to run a subset: bin/test lib/brute/compaction/*.rb
+if [ $# -gt 0 ]; then
+  exec bundle exec scampi "$@"
+fi
+
+exec bundle exec scampi "lib/**/*.rb"

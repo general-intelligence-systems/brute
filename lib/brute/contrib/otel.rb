@@ -157,7 +157,7 @@ describe "brute/contrib/otel" do
     tool = { name: "echo", description: "", execute: ->(text:) { "ran:#{text}" } }
 
     agent = Brute::Turn::AgentPipeline.new
-    agent.use Brute::Middleware::ToolPipeline, tools: [tool]
+    agent.use Brute::Middleware::DefaultToolPipeline, tools: [tool]
     agent.run(Object.new.tap do |terminal|
       terminal.define_singleton_method(:call) do |env|
         # A completion records usage and announces the call; `run` bound this
@@ -192,7 +192,7 @@ describe "brute/contrib/otel" do
 
     # :exit is timed, so each layer reports its own duration.
     layer_event = span.events.find { |name, _| name == "middleware" }
-    layer_event.last["middleware.name"].should == "Brute::Middleware::ToolPipeline"
+    layer_event.last["middleware.name"].should == "Brute::Middleware::DefaultToolPipeline"
     layer_event.last["middleware.duration"].should.be >= 0
 
     # Each pair's timed middle reports its own duration.
