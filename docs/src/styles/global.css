@@ -1,0 +1,281 @@
+/* Layer order Starlight expects, then its Tailwind compatibility CSS. */
+@layer base, starlight, theme, components, utilities;
+
+@import '@astrojs/starlight-tailwind';
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+/*
+ * Starlight reads `--color-accent-*`, `--color-gray-*`, `--font-sans` and
+ * `--font-mono` from the Tailwind theme and wires them into its own UI, so
+ * these ramps are the single source of truth for both Tailwind utilities and
+ * Starlight's chrome.
+ */
+@theme {
+	/* Accent: vivid orange. */
+	--color-accent-50: #fff4ed;
+	--color-accent-100: #ffe6d4;
+	--color-accent-200: #fec9a9;
+	--color-accent-300: #fda373;
+	--color-accent-400: #fb7a3b;
+	--color-accent-500: #f95d15;
+	--color-accent-600: #ea4c0c;
+	--color-accent-700: #c2380c;
+	--color-accent-800: #9a2f12;
+	--color-accent-900: #7c2912;
+	--color-accent-950: #431207;
+
+	/* Neutrals warmed toward the accent hue rather than Tailwind's cool zinc,
+	   so every surface on the page relates to the accent instead of fighting
+	   it.
+
+	   The dark end is deliberately deep: Starlight maps gray-900 to the page
+	   background and gray-800 to the sidebar and nav, so those two steps set
+	   how dark the site reads. */
+	--color-gray-50: #faf5f2;
+	--color-gray-100: #f5f0ee;
+	--color-gray-200: #e6e0de;
+	--color-gray-300: #d5d0ce;
+	--color-gray-400: #a6a09e;
+	--color-gray-500: #77726f;
+	--color-gray-600: #57524f;
+	--color-gray-700: #46403e;
+	--color-gray-800: #1c1615;
+	--color-gray-900: #100c0b;
+	--color-gray-950: #0a0707;
+}
+
+/*
+ * Icon utilities. The glyphs are masks so they inherit `currentColor`, which
+ * keeps them in step with whatever text colour the button is using.
+ */
+@utility icon-mask {
+	display: inline-block;
+	flex-shrink: 0;
+	background-color: currentColor;
+	-webkit-mask: var(--icon) no-repeat center / contain;
+	mask: var(--icon) no-repeat center / contain;
+}
+
+@utility icon-copy {
+	--icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'%3E%3Crect x='9' y='9' width='13' height='13' rx='2' ry='2'/%3E%3Cpath d='M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+@utility icon-check {
+	--icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m20 6l-11 11l-5-5'/%3E%3C/svg%3E");
+}
+
+@utility icon-file {
+	--icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3Cline x1='16' y1='13' x2='8' y2='13'/%3E%3Cline x1='16' y1='17' x2='8' y2='17'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+@utility icon-chevron {
+	--icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='2.5' d='m6 9l6 6l6-6'/%3E%3C/svg%3E");
+}
+
+/*
+ * Layout and type scale. These are Starlight's own custom properties rather
+ * than Tailwind theme keys, so they stay as declarations.
+ *
+ * The scale is deliberately compressed: body copy is large and headings sit
+ * close to it, which reads denser than Starlight's default big-heading ramp.
+ */
+:root {
+	--sl-text-body: 1.125rem; /* 18px */
+	--sl-line-height: 1.5556; /* 28px */
+	--sl-text-code: 0.875rem; /* 14px */
+
+	--sl-text-h1: 2.25rem; /* 36px */
+	--sl-text-h2: 1.5rem; /* 24px */
+	--sl-text-h3: 1.25rem; /* 20px */
+	--sl-text-h4: 1.125rem;
+	--sl-text-h5: 1rem;
+	--sl-line-height-headings: 1.15;
+
+	--sl-content-width: 40rem;
+
+	/* Widens the gutter between the sidebar and the prose column. */
+	--sl-content-pad-x: 2.5rem;
+
+	/* The header carries two rows: the site bar (64px) and the section tabs
+	   (48px). */
+	--sl-nav-height: 7rem;
+
+	/* Outer page margin. Starlight's 1.5rem sits the header tight to the
+	   viewport edge; 3rem lines the wordmark up with the sidebar's column. */
+	--sl-nav-pad-x: 3rem;
+
+	/* The two header rows size themselves; any vertical padding here would
+	   squeeze them out of their 64px + 48px. */
+	--sl-nav-pad-y: 0rem;
+
+	/* 320px: a 256px item column inside 32px of padding either side. This is
+	   what positions the content and the table of contents — a narrow sidebar
+	   drags the whole layout left. */
+	--sl-sidebar-width: 20rem;
+
+	/* Headings land on a soft off-white rather than #fff, which stops the
+	   contrast glaring against the near-black background. */
+	--sl-color-white: var(--color-gray-200);
+
+	/* Links and current-item highlights. Starlight would derive this from the
+	   light end of the accent ramp, which lands on a pale peach; the accent
+	   needs to stay saturated to read as a link on a dark ground. */
+	--sl-color-text-accent: var(--color-accent-500);
+
+	/* Nav and sidebar sit flush with the page rather than as lighter bands, so
+	   the chrome reads as one surface and the content column is what separates
+	   itself. */
+	--sl-color-bg-nav: var(--sl-color-bg);
+	--sl-color-bg-sidebar: var(--sl-color-bg);
+}
+
+:root[data-theme='light'] {
+	--sl-color-white: var(--color-gray-900);
+}
+
+/*
+ * A soft accent glow above the fold, fixed behind all content. Anchored off
+ * the top edge so only its lower falloff is visible, which warms the header
+ * without reading as a banner.
+ */
+body::before {
+	content: '';
+	position: fixed;
+	inset: 0;
+	z-index: -1;
+	pointer-events: none;
+	background: radial-gradient(
+		55% 55% at 62% -8%,
+		color-mix(in srgb, var(--color-accent-400) 13%, transparent) 40%,
+		transparent 100%
+	);
+}
+
+/* The glow only works against the dark ground. */
+:root[data-theme='light'] body::before {
+	display: none;
+}
+
+/*
+ * The only rules that reach into Starlight's own markup.
+ *
+ * Everything this project renders — the sidebar, the page title, the copy
+ * control — is a component override styled with utility classes. What is left
+ * here targets prose generated from Markdown and Starlight's panel layout,
+ * neither of which has markup to hang a class on.
+ *
+ * Deliberately unlayered: Starlight's component styles live in the
+ * `starlight.core` layer, so a rule inside that layer loses to them.
+ */
+
+/* Tailwind's Preflight reset (restored by the Starlight compatibility CSS)
+   overrides Starlight's prose sizing, so the body scale is set explicitly
+   rather than being left at the browser default. */
+.sl-markdown-content {
+	font-size: var(--sl-text-body);
+	line-height: var(--sl-line-height);
+}
+
+/*
+ * Prose text styles.
+ *
+ * Body copy sits a step back from headings so the two are not competing at the
+ * same brightness; headings and `strong` carry the emphasis.
+ */
+/* List items set a touch smaller than body copy, so a run of them reads as a
+   group rather than as more paragraphs. */
+.sl-markdown-content :is(ul, ol) li {
+	font-size: 1rem;
+}
+
+.sl-markdown-content :is(h2, h3, h4, h5) {
+	color: var(--color-gray-50);
+	line-height: 1.35;
+	letter-spacing: -0.01em;
+}
+
+.sl-markdown-content strong {
+	font-weight: 600;
+	color: var(--color-gray-50);
+}
+
+/* Inline code reads as a chip: a faint wash of the text colour rather than a
+   solid panel, so it sits inside a sentence without interrupting it. */
+.sl-markdown-content :not(pre) > code {
+	font-size: 0.875rem;
+	font-weight: 500;
+	padding: 0.125rem 0.5rem;
+	border-radius: 0.375rem;
+	background: color-mix(in srgb, var(--color-gray-50) 7%, transparent);
+	color: var(--color-gray-200);
+}
+
+/* Links carry the accent, underlined so they are not colour-only. */
+.sl-markdown-content a {
+	color: var(--sl-color-text-accent);
+	text-underline-offset: 0.2em;
+}
+
+/* The opening paragraph is body-sized and simply quieter — it reads as an
+   intro through colour, not scale. */
+.sl-markdown-content > p:first-of-type {
+	color: var(--sl-color-gray-3);
+}
+
+/*
+ * Sidebar scrollbar: a 4px rounded overlay that is invisible until the pointer
+ * is over the sidebar.
+ *
+ * `scrollbar-width`/`scrollbar-color` cover Firefox and modern Chrome; the
+ * WebKit pseudo-elements are what give the exact 4px width and rounded cap. The
+ * track is 8px with a 2px transparent border on the thumb, clipped to the
+ * content box — that inset is what leaves 4px of visible thumb.
+ */
+/* The native bar is hidden and replaced by the overlay thumb rendered in
+   Sidebar.astro. `scrollbar-width` only offers auto/thin/none, and
+   ::-webkit-scrollbar is a no-op in current Chrome, so neither can produce the
+   4px rounded bar this design wants. */
+#starlight__sidebar {
+	scrollbar-width: none;
+}
+
+#starlight__sidebar::-webkit-scrollbar {
+	display: none;
+}
+
+/* The rule under the header spans the full viewport, so it belongs on the
+   header element rather than on the padded content inside it. Starlight paints
+   this border in the page background colour, which makes it invisible. */
+header.header {
+	border-bottom: 1px solid color-mix(in srgb, var(--color-gray-50) 8%, transparent);
+}
+
+/*
+ * Body rhythm.
+ *
+ * Starlight spaces every block uniformly (`* + *`, 24px). Varying it is what
+ * makes long prose read: a heading takes more space above than below, so it
+ * binds to the text it introduces rather than floating between sections.
+ * Starlight expresses spacing as margin-top on the following sibling, so these
+ * do too.
+ */
+.sl-markdown-content > * + :is(h2, h3, h4, .sl-heading-wrapper) {
+	margin-top: 2.25rem; /* 36px above a heading */
+}
+
+.sl-markdown-content > :is(h2, h3, h4, .sl-heading-wrapper) + * {
+	margin-top: 1.125rem; /* 18px below a heading */
+}
+
+/* A sub-heading immediately after a heading belongs with it, so it keeps the
+   closer spacing rather than opening a full section gap. */
+.sl-markdown-content > .sl-heading-wrapper + .sl-heading-wrapper {
+	margin-top: 1.125rem;
+}
+
+.sl-markdown-content > * + :is(ul, ol),
+.sl-markdown-content > :is(ul, ol) + * {
+	margin-top: 1.25rem; /* 20px around lists */
+}
+

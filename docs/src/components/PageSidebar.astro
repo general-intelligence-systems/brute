@@ -1,0 +1,24 @@
+---
+/**
+ * Override of Starlight's `PageSidebar` — the container for the table of
+ * contents in the right-hand column.
+ */
+import MobileTableOfContents from 'virtual:starlight/components/MobileTableOfContents';
+import TableOfContents from 'virtual:starlight/components/TableOfContents';
+
+const { toc } = Astro.locals.starlightRoute;
+---
+
+{
+	toc && (
+		<>
+			<div class="lg:sl-hidden">
+				<MobileTableOfContents />
+			</div>
+			{/* pt-10 lands the heading 40px below the header. */}
+			<div class="sl-hidden px-8 pt-10 pb-4 lg:block">
+				<TableOfContents />
+			</div>
+		</>
+	)
+}

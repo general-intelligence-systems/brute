@@ -1,0 +1,16 @@
+---
+/**
+ * Override of Starlight's `SiteTitle`.
+ *
+ * This site sets no logo, so the wordmark is text only.
+ */
+const { siteTitle, siteTitleHref } = Astro.locals.starlightRoute;
+---
+
+<a
+	href={siteTitleHref}
+	class="flex min-w-0 items-center gap-(--sl-nav-gap) text-lg font-semibold whitespace-nowrap text-(color:--sl-color-white) no-underline"
+	translate="no"
+>
+	<span class="overflow-hidden">{siteTitle}</span>
+</a>

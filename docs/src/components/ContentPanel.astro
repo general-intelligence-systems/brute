@@ -1,0 +1,20 @@
+---
+/**
+ * Override of Starlight's `ContentPanel`.
+ *
+ * Starlight puts a divider and a full 1.5rem of padding between the title
+ * panel and the body panel, which opens a large gap under the heading. Here
+ * the divider is dropped and the panel holding the `h1` gets a short bottom
+ * padding, so the intro paragraph sits directly beneath the title.
+ */
+---
+
+<div
+	class="content-panel px-(--sl-content-pad-x) py-6 has-[h1]:pt-[2.625rem] has-[h1]:pb-2 [&+.content-panel]:pt-0"
+>
+	{/* Left-aligned, not centred: the prose sits a fixed gutter from the
+	    sidebar rather than floating in the middle of the pane. */}
+	<div class="me-auto max-w-(--sl-content-width) [&>*+*]:mt-6">
+		<slot />
+	</div>
+</div>

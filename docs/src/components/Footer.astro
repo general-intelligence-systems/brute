@@ -1,0 +1,21 @@
+---
+/**
+ * Override of Starlight's `Footer`.
+ *
+ * Layout only — the edit link, timestamp and pagination stay Starlight's, as
+ * each depends on route data and localised strings.
+ */
+import EditLink from 'virtual:starlight/components/EditLink';
+import LastUpdated from 'virtual:starlight/components/LastUpdated';
+import Pagination from 'virtual:starlight/components/Pagination';
+---
+
+<footer class="flex flex-col gap-6">
+	<div
+		class="mt-12 flex flex-wrap justify-between gap-x-12 gap-y-3 text-sm text-(color:--sl-color-gray-3) [&>p:only-child]:ms-auto"
+	>
+		<EditLink />
+		<LastUpdated />
+	</div>
+	<Pagination />
+</footer>

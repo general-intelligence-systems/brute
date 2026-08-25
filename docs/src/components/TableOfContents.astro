@@ -1,0 +1,91 @@
+---
+/**
+ * Override of Starlight's `TableOfContents`.
+ *
+ * Starlight's version depends on an internal `<starlight-toc>` custom element
+ * for highlighting the current heading, which is not importable from outside
+ * the package — so the markup and the scroll-spy are both owned here.
+ */
+import TocList from './TocList.astro';
+
+const { toc } = Astro.locals.starlightRoute;
+---
+
+{
+	toc && (
+		<nav aria-labelledby="starlight__on-this-page" data-toc>
+			<h2
+				id="starlight__on-this-page"
+				class="mb-1 text-sm leading-5 font-semibold text-(color:--sl-color-gray-3)"
+			>
+				{Astro.locals.t('tableOfContents.onThisPage')}
+			</h2>
+			<TocList items={toc.items} />
+		</nav>
+	)
+}
+
+<script>
+	/**
+	 * Marks the heading currently in view.
+	 *
+	 * Rather than an IntersectionObserver per heading, this picks the last
+	 * heading that has scrolled past the top of the reading area, which stays
+	 * correct for headings taller than the viewport and for fast scrolling.
+	 */
+	function setupToc() {
+		const nav = document.querySelector<HTMLElement>('nav[data-toc]');
+		if (!nav) return;
+
+		const links = [...nav.querySelectorAll<HTMLAnchorElement>('a[href^="#"]')];
+		if (links.length === 0) return;
+
+		const targets = links
+			.map((link) => {
+				const id = decodeURIComponent(link.hash.slice(1));
+				return { link, heading: document.getElementById(id) };
+			})
+			.filter((entry): entry is { link: HTMLAnchorElement; heading: HTMLElement } =>
+				Boolean(entry.heading)
+			);
+
+		const navHeight = () =>
+			parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sl-nav-height')) ||
+			0;
+
+		let queued = false;
+
+		const update = () => {
+			queued = false;
+			const threshold = navHeight() + 32;
+
+			let active = targets[0];
+			for (const entry of targets) {
+				if (entry.heading.getBoundingClientRect().top <= threshold) active = entry;
+				else break;
+			}
+
+			// At the very bottom the last heading is the one being read, even if
+			// it never crosses the threshold.
+			if (window.innerHeight + window.scrollY >= document.body.scrollHeight - 2) {
+				active = targets[targets.length - 1];
+			}
+
+			for (const { link } of targets) link.removeAttribute('aria-current');
+			active?.link.setAttribute('aria-current', 'true');
+		};
+
+		const onScroll = () => {
+			if (queued) return;
+			queued = true;
+			requestAnimationFrame(update);
+		};
+
+		document.addEventListener('scroll', onScroll, { passive: true });
+		window.addEventListener('resize', onScroll, { passive: true });
+		update();
+	}
+
+	setupToc();
+	document.addEventListener('astro:page-load', setupToc);
+</script>

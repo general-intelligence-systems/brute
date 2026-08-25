@@ -1,0 +1,37 @@
+---
+/**
+ * Table-of-contents list. Recurses through the heading tree.
+ *
+ * Rows are 14px text on a 24px line box inside 4px of padding, giving 32px
+ * rows to match the sidebar's rhythm.
+ */
+import type { TocItem } from '@astrojs/starlight/types';
+
+interface Props {
+	items: TocItem[];
+	depth?: number;
+}
+
+const { items, depth = 0 } = Astro.props;
+---
+
+<ul class="list-none p-0">
+	{
+		items.map((item) => (
+			<li>
+				<a
+					href={`#${item.slug}`}
+					class:list={[
+						'block py-1 text-sm leading-6 no-underline transition-colors',
+						'text-(color:--sl-color-gray-3) hover:text-(color:--sl-color-white)',
+						'aria-[current=true]:font-semibold aria-[current=true]:text-(color:--sl-color-text-accent)',
+						depth > 0 && 'ps-4',
+					]}
+				>
+					{item.text}
+				</a>
+				{item.children.length > 0 && <Astro.self items={item.children} depth={depth + 1} />}
+			</li>
+		))
+	}
+</ul>

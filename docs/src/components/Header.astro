@@ -1,0 +1,102 @@
+---
+/**
+ * Override of Starlight's `Header`.
+ *
+ * Two rows: the site bar, then a row of section tabs. The tabs are derived
+ * from the sidebar's top-level groups, so they stay in step with the nav
+ * without being configured twice.
+ *
+ * The pieces inside stay Starlight's — Search carries the Pagefind wiring and
+ * keyboard shortcuts, ThemeSelect the persistence that avoids a flash of the
+ * wrong theme.
+ */
+import config from 'virtual:starlight/user-config';
+
+import LanguageSelect from 'virtual:starlight/components/LanguageSelect';
+import Search from 'virtual:starlight/components/Search';
+import SiteTitle from 'virtual:starlight/components/SiteTitle';
+import SocialIcons from 'virtual:starlight/components/SocialIcons';
+import ThemeSelect from 'virtual:starlight/components/ThemeSelect';
+
+const shouldRenderSearch =
+	config.pagefind || config.components.Search !== '@astrojs/starlight/components/Search.astro';
+
+const { sidebar } = Astro.locals.starlightRoute;
+
+/** First reachable page in a group, used as the tab's destination. */
+function firstLink(entries: typeof sidebar): { href: string; isCurrent: boolean } | undefined {
+	for (const entry of entries) {
+		if (entry.type === 'link') return { href: entry.href, isCurrent: entry.isCurrent };
+		const nested = firstLink(entry.entries);
+		if (nested) return nested;
+	}
+	return undefined;
+}
+
+/** True when the page being viewed lives anywhere inside this group. */
+function containsCurrent(entries: typeof sidebar): boolean {
+	return entries.some((entry) =>
+		entry.type === 'link' ? entry.isCurrent : containsCurrent(entry.entries)
+	);
+}
+
+const tabs = sidebar.flatMap((entry) => {
+	if (entry.type !== 'group') return [];
+	const target = firstLink(entry.entries);
+	if (!target) return [];
+	return [{ label: entry.label, href: target.href, current: containsCurrent(entry.entries) }];
+});
+---
+
+{/* The hairline under the whole header is drawn by Starlight's <header>, which
+    spans the full viewport; adding one here too would sit inside the header's
+    padding and fall short of the edges. Only the rule between the two rows
+    belongs in this component. */}
+<div class="flex h-full flex-col">
+	{/* Row one: identity, search, controls. */}
+	<div
+		class="flex h-16 shrink-0 items-center justify-between gap-(--sl-nav-gap) border-b border-gray-50/8"
+	>
+		<div class="-m-1 flex min-w-0 overflow-clip p-1">
+			<SiteTitle />
+		</div>
+
+		<div class="flex print:hidden">
+			{shouldRenderSearch && <Search />}
+		</div>
+
+		<div class="sl-hidden items-center gap-4 md:flex print:hidden">
+			<div
+				class="flex items-center gap-4 after:h-8 after:border-e after:border-(color:--sl-color-gray-5)"
+			>
+				<SocialIcons />
+			</div>
+			<ThemeSelect />
+			<LanguageSelect />
+		</div>
+	</div>
+
+	{/* Row two: section tabs, underlined on the active section. */}
+	<nav class="sl-hidden h-12 shrink-0 md:block print:hidden" aria-label="Sections">
+		<ul class="flex h-full list-none items-stretch gap-6 p-0">
+			{
+				tabs.map((tab) => (
+					<li class="flex">
+						<a
+							href={tab.href}
+							aria-current={tab.current ? 'page' : undefined}
+							class:list={[
+								'flex items-center border-b-2 text-sm font-medium no-underline transition-colors',
+								tab.current
+									? 'border-(color:--sl-color-text-accent) font-semibold text-(color:--sl-color-white)'
+									: 'border-transparent text-(color:--sl-color-gray-3) hover:text-(color:--sl-color-white)',
+							]}
+						>
+							{tab.label}
+						</a>
+					</li>
+				))
+			}
+		</ul>
+	</nav>
+</div>

@@ -1,0 +1,50 @@
+---
+/**
+ * Sidebar navigation list.
+ *
+ * Replaces Starlight's own sublist so the markup is ours and can be styled
+ * with utility classes rather than by reaching into Starlight's DOM.
+ *
+ * Groups render as quiet section headings rather than disclosure widgets:
+ * these sections are permanent, so there is nothing to collapse.
+ */
+import type { SidebarEntry } from '@astrojs/starlight/types';
+
+interface Props {
+	entries: SidebarEntry[];
+	nested?: boolean;
+}
+
+const { entries, nested = false } = Astro.props;
+
+// 6px/12px/6px/16px padding around a 24px line box gives 36px rows.
+const link = [
+	'block rounded-lg py-1.5 pr-3 text-sm leading-6 font-medium no-underline',
+	// Starlight only defines --sl-color-gray-1 through -6; anything outside
+	// that range silently resolves to nothing and the hover disappears.
+	'text-(color:--sl-color-gray-3) hover:bg-(--sl-color-gray-6) hover:text-(color:--sl-color-white)',
+	'aria-[current=page]:bg-accent-500/10 aria-[current=page]:font-semibold aria-[current=page]:text-(color:--sl-color-text-accent)',
+	nested ? 'pl-7' : 'pl-4',
+].join(' ');
+---
+
+<ul class="list-none p-0">
+	{
+		entries.map((entry) =>
+			entry.type === 'link' ? (
+				<li>
+					<a href={entry.href} aria-current={entry.isCurrent ? 'page' : undefined} class={link}>
+						{entry.label}
+					</a>
+				</li>
+			) : (
+				<li class="mt-8 first:mt-1">
+					<h2 class="mb-2.5 px-4 text-sm leading-5 font-semibold text-(color:--sl-color-white)">
+						{entry.label}
+					</h2>
+					<Astro.self entries={entry.entries} nested={false} />
+				</li>
+			)
+		)
+	}
+</ul>

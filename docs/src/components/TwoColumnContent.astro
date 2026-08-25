@@ -1,0 +1,29 @@
+---
+/**
+ * Override of Starlight's `TwoColumnContent`.
+ *
+ * This is what positions the content column and the table of contents.
+ * Starlight sizes the right column with a formula that leaves it very wide,
+ * squeezing the prose; here it is a fixed 19.5rem.
+ *
+ * Two details the layout depends on: the aside must not shrink, or the flex
+ * row steals width from it, and the fixed inner panel needs an explicit width
+ * because a percentage on a fixed element resolves against the viewport.
+ */
+const { toc } = Astro.locals.starlightRoute;
+---
+
+{/* The 32px end inset mirrors the sidebar's left margin, so the content and
+    contents rail stop short of the viewport edge rather than running into it. */}
+<div class="lg:flex lg:me-8">
+	{
+		toc && (
+			<aside class="relative order-2 lg:w-78 lg:shrink-0 print:hidden">
+				<div class="fixed top-0 h-screen overflow-y-auto border-s border-(color:--sl-color-hairline) pt-(--sl-nav-height) lg:w-78 [scrollbar-width:none]">
+					<slot name="right-sidebar" />
+				</div>
+			</aside>
+		)
+	}
+	<div class="order-1 isolate min-w-0 flex-1"><slot /></div>
+</div>

@@ -1,0 +1,168 @@
+---
+/**
+ * Override of Starlight's `Sidebar`.
+ *
+ * Starlight's own sidebar renders its markup with styles in the
+ * `starlight.core` cascade layer, so it cannot be restyled from outside
+ * without fighting those selectors. Owning the markup here means the styling
+ * is plain utility classes.
+ */
+import MobileMenuFooter from 'virtual:starlight/components/MobileMenuFooter';
+import SidebarList from './SidebarList.astro';
+
+const { sidebar } = Astro.locals.starlightRoute;
+---
+
+{/* pt-3 lands the first row 32px below the header, matching the rail on the
+    other side of the page. */}
+<div class="px-4 pt-3">
+	<SidebarList entries={sidebar} />
+</div>
+
+{/* Overlay scrollbar: 4px, rounded, hidden until the sidebar is hovered or
+    scrolling. Positioned `fixed` because the scroller it belongs to is itself
+    fixed, so an absolutely-positioned child would scroll away with content. */}
+<div
+	data-sidebar-scrollbar
+	class="pointer-events-none fixed z-20 w-1 opacity-0 transition-opacity duration-150 ease-[cubic-bezier(0.4,0,0.2,1)] print:hidden"
+>
+	{/* `before:-inset-x-2` gives the 4px thumb a ~20px grab target without
+	    making it look any wider. */}
+	<div
+		data-thumb
+		class="relative w-full cursor-default rounded-full bg-(--sl-color-gray-4) hover:bg-(--sl-color-gray-3) active:bg-(--sl-color-gray-3) before:absolute before:inset-y-0 before:-inset-x-2 before:content-['']"
+	>
+	</div>
+</div>
+
+<script>
+	function setupSidebarScrollbar() {
+		const pane = document.getElementById('starlight__sidebar');
+		const bar = document.querySelector<HTMLElement>('[data-sidebar-scrollbar]');
+		const thumb = bar?.querySelector<HTMLElement>('[data-thumb]');
+		if (!pane || !bar || !thumb) return;
+
+		const INSET = 16; // matches the track's vertical margin
+		const MIN_THUMB = 24;
+		let hideTimer: number | undefined;
+
+		const visible = () => pane.scrollHeight > pane.clientHeight;
+
+		const layout = () => {
+			if (!visible()) {
+				bar.style.opacity = '0';
+				return;
+			}
+
+			const rect = pane.getBoundingClientRect();
+			const track = rect.height - INSET * 2;
+
+			bar.style.top = `${rect.top + INSET}px`;
+			bar.style.height = `${track}px`;
+			// 2px in from the edge, mirroring the reference's small side margin.
+			bar.style.left = `${rect.right - 6}px`;
+
+			const ratio = pane.clientHeight / pane.scrollHeight;
+			const height = Math.max(MIN_THUMB, track * ratio);
+			const scrollable = pane.scrollHeight - pane.clientHeight;
+			const offset = scrollable > 0 ? (pane.scrollTop / scrollable) * (track - height) : 0;
+
+			thumb.style.height = `${height}px`;
+			thumb.style.transform = `translateY(${offset}px)`;
+		};
+
+		let dragging = false;
+		let grabY = 0;
+		let grabScroll = 0;
+
+		const show = (instant: boolean) => {
+			if (!visible()) return;
+			bar.style.transitionDuration = instant ? '0ms' : '150ms';
+			bar.style.opacity = '1';
+			// Only grabbable while shown, so the bar never swallows clicks
+			// aimed at the content beneath it.
+			bar.style.pointerEvents = 'auto';
+		};
+
+		const hide = () => {
+			if (dragging) return;
+			bar.style.transitionDuration = '150ms';
+			bar.style.opacity = '0';
+			bar.style.pointerEvents = 'none';
+		};
+
+		const hideSoon = () => {
+			window.clearTimeout(hideTimer);
+			hideTimer = window.setTimeout(() => {
+				if (!pane.matches(':hover')) hide();
+			}, 600);
+		};
+
+		pane.addEventListener('scroll', () => {
+			layout();
+			show(true); // instant while scrolling, as the reference does
+			hideSoon();
+		});
+
+		pane.addEventListener('mouseenter', () => {
+			layout();
+			show(false);
+		});
+
+		pane.addEventListener('mouseleave', hide);
+
+		// Keep the bar alive while the pointer is over it, not just the pane.
+		bar.addEventListener('mouseenter', () => show(false));
+		bar.addEventListener('mouseleave', hideSoon);
+
+		thumb.addEventListener('pointerdown', (event) => {
+			dragging = true;
+			grabY = event.clientY;
+			grabScroll = pane.scrollTop;
+			// Capture keeps the drag alive when the pointer leaves the 4px
+			// thumb; it throws if the pointer is no longer active, which must
+			// not abort the drag.
+			try {
+				thumb.setPointerCapture(event.pointerId);
+			} catch {}
+			document.body.style.userSelect = 'none';
+			show(true);
+			event.preventDefault();
+		});
+
+		thumb.addEventListener('pointermove', (event) => {
+			if (!dragging) return;
+
+			const track = pane.getBoundingClientRect().height - INSET * 2;
+			const travel = track - thumb.getBoundingClientRect().height;
+			const scrollable = pane.scrollHeight - pane.clientHeight;
+			if (travel <= 0) return;
+
+			// Pointer travel maps onto thumb travel, which maps onto scroll.
+			pane.scrollTop = grabScroll + ((event.clientY - grabY) / travel) * scrollable;
+		});
+
+		const endDrag = (event: PointerEvent) => {
+			if (!dragging) return;
+			dragging = false;
+			try {
+				thumb.releasePointerCapture(event.pointerId);
+			} catch {}
+			document.body.style.userSelect = '';
+			hideSoon();
+		};
+
+		thumb.addEventListener('pointerup', endDrag);
+		thumb.addEventListener('pointercancel', endDrag);
+
+		window.addEventListener('resize', layout);
+		layout();
+	}
+
+	setupSidebarScrollbar();
+	document.addEventListener('astro:page-load', setupSidebarScrollbar);
+</script>
+
+<div class="md:sl-hidden">
+	<MobileMenuFooter />
+</div>
