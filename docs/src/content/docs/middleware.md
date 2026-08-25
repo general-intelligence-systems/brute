@@ -41,8 +41,8 @@ Files are numeric-prefixed by stack position (`002_session_log.rb`, `070_tool_pi
 A compactor is anything answering `#compact(messages, target:)`.
 `Brute::Turn::CompactionPipeline` builds one out of middleware, the way
 `Brute::Turn::ToolPipeline` builds a tool out of middleware — the free
-strategies (`Brute::Compactor::Middleware::ToolResults`, `::SlidingWindow`) are
-`use` layers, and `Brute::Compactor::Summarize`, the one that costs money, is
+strategies (`Brute::Compaction::Middleware::ToolResults`, `::SlidingWindow`) are
+`use` layers, and `Brute::Compaction::Summarize`, the one that costs money, is
 the `run`. A layer that got under target never descends, so the stack order is
 the policy.
 

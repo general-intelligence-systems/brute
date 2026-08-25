@@ -13,9 +13,9 @@ Brute.agent
   .use(Brute::Middleware::DefaultCompactionPipeline,
        window: 200_000,
        compactor: Brute::Turn::CompactionPipeline.new do
-         use Brute::Compactor::Middleware::ToolResults    # rewrite older tool output
-         use Brute::Compactor::Middleware::SlidingWindow  # drop the oldest turns
-         run Brute::Compactor::Summarize.new(chat_generator)
+         use Brute::Compaction::Middleware::ToolResults    # rewrite older tool output
+         use Brute::Compaction::Middleware::SlidingWindow  # drop the oldest turns
+         run Brute::Compaction::Summarize.new(chat_generator)
        end)
   .use(Brute::Middleware::DefaultToolPipeline, tools: Brute::Tools::ALL)
 ```
@@ -80,9 +80,9 @@ Brute.agent
   .use(Brute::Middleware::DefaultCompactionPipeline,
        window: 200_000,
        compactors: [
-         Brute::Compactor::ToolResults.new,     # rewrite older tool output
-         Brute::Compactor::SlidingWindow.new,   # drop the oldest turns
-         Brute::Compactor::Summary.new(summarize: summarize),
+         Brute::Compaction::ToolResults.new,     # rewrite older tool output
+         Brute::Compaction::SlidingWindow.new,   # drop the oldest turns
+         Brute::Compaction::Summary.new(summarize: summarize),
        ])
   .use(Brute::Middleware::DefaultToolPipeline, tools: Brute::Tools::ALL)
 ```
