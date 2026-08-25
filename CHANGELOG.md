@@ -119,7 +119,7 @@ All notable changes to Brute are documented in this file. The format follows
 
 ### Changed
 
-- **Breaking.** `Brute::Middleware::ToolPipeline` is now
+- `Brute::Middleware::ToolPipeline` is now
   `Brute::Middleware::DefaultToolPipeline`. The middleware is one particular
   wiring of tool dispatch, and the name now says so — leaving
   `Brute::Turn::ToolPipeline` as the mechanism you compose when that wiring is
@@ -130,12 +130,23 @@ All notable changes to Brute are documented in this file. The format follows
   use Brute::Middleware::DefaultToolPipeline, tools: tools   # was ToolPipeline
   ```
 
-### Removed
+  The old name still works, deprecated until 6.0 — see below.
 
-- **Breaking.** `Brute::Middleware::CompactionCheck`, replaced by
-  `Brute::Middleware::DefaultCompactionPipeline`. Its `call` never did anything
-  but pass the turn through, and its inner `Compactor` has no counterpart — a
-  strategy answering `#compact(messages, target:)` replaces it.
+### Deprecated
+
+- `Brute::Middleware::ToolPipeline` — use
+  `Brute::Middleware::DefaultToolPipeline` instead. The old name remains a
+  working subclass and warns on use; it will be removed in 6.0.
+
+- `Brute::Middleware::CompactionCheck` — use
+  `Brute::Middleware::DefaultCompactionPipeline` instead. The old name keeps
+  passing the turn through and compacting nothing, which is all it ever did,
+  and warns on use; it will be removed in 6.0. It is deliberately *not* a
+  subclass of its replacement: inheriting would make a layer that gave up
+  nothing suddenly start giving up context, and a deprecation warns about a
+  name rather than changing what runs under it. Its inner `Compactor` class
+  has no counterpart — a strategy answering `#compact(messages, target:)`
+  replaces it, and code calling `should_compact?` has to move now.
 
 ## [5.0.5] - 2026-08-24
 
