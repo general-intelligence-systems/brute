@@ -10,7 +10,7 @@ Gem::Specification.new do |spec|
   spec.description   = 'Production-grade coding agent with tool execution, ' \
                         'middleware pipeline, context compaction, session persistence, ' \
                         'and multi-provider LLM support.'
-  spec.license       = 'MIT'
+  spec.license       = 'Apache-2.0'
   spec.homepage      = 'https://github.com/general-intelligence-systems/brute'
   spec.required_ruby_version = '>= 3.3'
 
