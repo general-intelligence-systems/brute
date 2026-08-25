@@ -7,7 +7,7 @@
     "label": "Docs",
     "items": [
       {
-        "label": "Start Here",
+        "label": "Tutorials",
         "items": [
           {
             "label": "Getting Started",
@@ -16,32 +16,7 @@
         ]
       },
       {
-        "label": "Core Features",
-        "items": [
-          {
-            "label": "The Agent Pipeline",
-            "slug": "docs/agents"
-          },
-          {
-            "label": "Messages",
-            "slug": "docs/messages"
-          },
-          {
-            "label": "Message Transports",
-            "slug": "docs/message-transports"
-          },
-          {
-            "label": "Tools",
-            "slug": "docs/tools"
-          },
-          {
-            "label": "Middleware",
-            "slug": "docs/middleware"
-          }
-        ]
-      },
-      {
-        "label": "Advanced",
+        "label": "How-To Guides",
         "items": [
           {
             "label": "Sub-Agents",
@@ -62,6 +37,55 @@
           {
             "label": "Serving over HTTP",
             "slug": "docs/rack"
+          },
+          {
+            "label": "Switch LLM Libraries",
+            "slug": "docs/switch-llm-library"
+          },
+          {
+            "label": "Evaluate an Agent",
+            "slug": "docs/evaluate-agents"
+          }
+        ]
+      },
+      {
+        "label": "Concepts",
+        "items": [
+          {
+            "label": "The Agent Pipeline",
+            "slug": "docs/agents"
+          },
+          {
+            "label": "Messages",
+            "slug": "docs/messages"
+          },
+          {
+            "label": "Message Transports",
+            "slug": "docs/message-transports"
+          },
+          {
+            "label": "Tools",
+            "slug": "docs/tools"
+          },
+          {
+            "label": "Middleware",
+            "slug": "docs/middleware"
+          },
+          {
+            "label": "The Rack Model for Agent Turns",
+            "slug": "docs/rack-model"
+          },
+          {
+            "label": "Context Management",
+            "slug": "docs/context-management"
+          },
+          {
+            "label": "Why Brute Owns No LLM Library",
+            "slug": "docs/why-byo-llm"
+          },
+          {
+            "label": "Prompt Architecture",
+            "slug": "docs/prompt-architecture"
           }
         ]
       }
