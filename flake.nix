@@ -41,8 +41,11 @@
             bundix
             gems
             gems.wrappedRuby
-            libyaml 
+            libyaml
             openssl
+            # The docs site is Astro/Starlight; node is for docs/ only and
+            # nothing in lib/ or the gemspec depends on it.
+            nodejs_22
           ];
 
           shellHook = ''

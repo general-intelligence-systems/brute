@@ -1,11 +1,8 @@
 ---
-layout: default
 title: Getting Started
-nav_order: 1
-description: Install brute, build your first agent with the LLM library of your choice, and run a multi-step coding task.
+description: Install brute, build your first agent with the LLM library of your choice,
+  and run a multi-step coding task.
 ---
-
-# Getting Started
 
 This guide installs brute, builds a working coding agent, and runs a multi-step task against a local or hosted model.
 
@@ -66,7 +63,7 @@ agent = Brute.agent
   .use(Brute::Middleware::SystemPrompt)
   .use(Brute::Middleware::Loop::ToolResult)
   .use(Brute::Middleware::MaxIterations)
-  .use(Brute::Middleware::ToolPipeline, tools: Brute::Tools::ALL)
+  .use(Brute::Middleware::DefaultToolPipeline, tools: Brute::Tools::ALL)
   .run do |env|
     context = RubyLLM.context do |config|
       config.ollama_api_base   = ENV.fetch("OLLAMA_API_BASE", "http://localhost:11434/v1")
@@ -106,13 +103,13 @@ BRUTE_PROVIDER=anthropic BRUTE_MODEL=claude-opus-4-8 ANTHROPIC_API_KEY=sk-... ni
 
 1. `.start("...")` builds the env: `{ messages:, events:, metadata:, current_iteration: }`, with your prompt as a `role: :user` message.
 2. Middleware runs top-down: `SessionLog` loads history from disk, `SystemPrompt` prepends the system message, `ToolPipeline` advertises the tools on `env[:tools]`.
-3. Your `run` proc converts `env[:messages]` to the library's format (the [MessageTransport]({% link _core_features/message-transports.md %}) does this), makes ONE completion, and appends the response back as `Brute::Message` values.
+3. Your `run` proc converts `env[:messages]` to the library's format (the [MessageTransport](../message-transports/) does this), makes ONE completion, and appends the response back as `Brute::Message` values.
 4. On the way back up, `ToolPipeline` executes any tool calls the model made — concurrently, with output truncation — and appends `role: :tool` results.
 5. `Loop::ToolResult` sees the last message is a tool result and sends control back down. The loop ends when the model answers with text (or `MaxIterations` trips).
 6. `SessionLog` persists the whole conversation as JSONL.
 
-Every message in `env[:messages]` is a [`Brute::Message`]({% link _core_features/messages.md %}) — a plain, immutable value. Nothing in that flow touched an LLM library except your proc.
+Every message in `env[:messages]` is a [`Brute::Message`](../messages/) — a plain, immutable value. Nothing in that flow touched an LLM library except your proc.
 
 ## Not a ruby_llm shop?
 
-The identical agent runs on [llm.rb, the openai gem, or the anthropic gem]({% link _core_features/message-transports.md %}) — only the `run` proc changes. See `examples/llm-rb/`, `examples/openai/`, and `examples/anthropic/` in the repo, or the [examples overview]({% link _examples/examples.md %}).
+The identical agent runs on [llm.rb, the openai gem, or the anthropic gem](../message-transports/) — only the `run` proc changes. See `examples/llm-rb/`, `examples/openai/`, and `examples/anthropic/` in the repo, or the [examples overview](../examples/).

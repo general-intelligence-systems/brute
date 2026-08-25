@@ -1,0 +1,287 @@
+---
+/**
+ * "Copy page as Markdown" control.
+ *
+ * The Markdown is fetched from the `<slug>.md` route emitted by
+ * `src/pages/[...slug].md.ts`, so the source is not duplicated into the HTML.
+ */
+interface Props {
+	/** URL of the raw Markdown for the current page. */
+	markdownUrl: string;
+}
+
+const { markdownUrl } = Astro.props;
+---
+
+<div class="copy-md" data-markdown-url={markdownUrl}>
+	<button class="copy-md-btn" type="button" title="Copy page as Markdown">
+		<span class="icon icon-copy" aria-hidden="true"></span>
+		<span class="copy-md-label" aria-live="polite">Copy page</span>
+	</button>
+	<button class="copy-md-toggle" type="button" aria-label="More options" aria-expanded="false">
+		<span class="icon icon-chevron" aria-hidden="true"></span>
+	</button>
+	<div class="copy-md-menu" hidden>
+		<button class="copy-md-item" type="button" data-action="copy">
+			<span class="icon icon-copy" aria-hidden="true"></span>
+			<span class="copy-md-item-text">
+				<span class="copy-md-item-title">Copy page</span>
+				<span class="copy-md-item-desc">Copy page as Markdown for LLMs</span>
+			</span>
+		</button>
+		<a class="copy-md-item" href={markdownUrl} target="_blank" rel="noreferrer">
+			<span class="icon icon-file" aria-hidden="true"></span>
+			<span class="copy-md-item-text">
+				<span class="copy-md-item-title">View as Markdown</span>
+				<span class="copy-md-item-desc">View this page as plain text</span>
+			</span>
+		</a>
+	</div>
+</div>
+
+<style>
+	.copy-md {
+		position: relative;
+		display: inline-flex;
+		align-items: stretch;
+		flex-shrink: 0;
+		border: 1px solid var(--sl-color-gray-5);
+		border-radius: 0.5rem;
+		background: var(--sl-color-bg);
+	}
+
+	.copy-md:hover {
+		border-color: var(--sl-color-gray-4);
+	}
+
+	.icon {
+		display: inline-block;
+		background-color: currentColor;
+		-webkit-mask: var(--icon) no-repeat center / contain;
+		mask: var(--icon) no-repeat center / contain;
+		width: 0.875rem;
+		height: 0.875rem;
+		flex-shrink: 0;
+	}
+
+	.icon-copy {
+		--icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'%3E%3Crect x='9' y='9' width='13' height='13' rx='2' ry='2'/%3E%3Cpath d='M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1'/%3E%3C/g%3E%3C/svg%3E");
+	}
+
+	.icon-check {
+		--icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m20 6l-11 11l-5-5'/%3E%3C/svg%3E");
+	}
+
+	.icon-file {
+		--icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3Cline x1='16' y1='13' x2='8' y2='13'/%3E%3Cline x1='16' y1='17' x2='8' y2='17'/%3E%3C/g%3E%3C/svg%3E");
+	}
+
+	.icon-chevron {
+		--icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='2.5' d='m6 9l6 6l6-6'/%3E%3C/svg%3E");
+		transition: transform 0.2s ease;
+	}
+
+	.copy-md-toggle[aria-expanded='true'] .icon-chevron {
+		transform: rotate(180deg);
+	}
+
+	.copy-md-btn,
+	.copy-md-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		padding: 0.25rem 0.625rem;
+		border: none;
+		background: transparent;
+		color: var(--sl-color-gray-2);
+		font-size: var(--sl-text-xs);
+		font-weight: 600;
+		line-height: 1.5;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+
+	.copy-md-btn {
+		border-radius: 0.5rem 0 0 0.5rem;
+	}
+
+	.copy-md-toggle {
+		padding-inline: 0.375rem;
+		border-inline-start: 1px solid var(--sl-color-gray-5);
+		border-radius: 0 0.5rem 0.5rem 0;
+	}
+
+	.copy-md-btn:hover,
+	.copy-md-toggle:hover,
+	.copy-md-btn.copied {
+		color: var(--sl-color-white);
+		background: var(--sl-color-gray-6);
+	}
+
+	.copy-md-btn:focus-visible,
+	.copy-md-toggle:focus-visible {
+		outline: 2px solid var(--sl-color-text-accent);
+		outline-offset: -2px;
+	}
+
+	.copy-md-menu {
+		position: absolute;
+		inset-block-start: calc(100% + 0.375rem);
+		inset-inline-end: 0;
+		z-index: 10;
+		min-width: 15rem;
+		padding: 0.375rem;
+		border: 1px solid var(--sl-color-gray-5);
+		border-radius: 0.5rem;
+		background: var(--sl-color-bg);
+		box-shadow: 0 0.5rem 1.75rem rgb(0 0 0 / 25%);
+	}
+
+	.copy-md-menu[hidden] {
+		display: none;
+	}
+
+	.copy-md-item {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.625rem;
+		width: 100%;
+		padding: 0.5rem 0.625rem;
+		border: none;
+		border-radius: 0.375rem;
+		background: transparent;
+		color: var(--sl-color-white);
+		text-align: start;
+		text-decoration: none;
+		cursor: pointer;
+	}
+
+	.copy-md-item:hover {
+		background: var(--sl-color-gray-6);
+		color: var(--sl-color-white);
+	}
+
+	.copy-md-item .icon {
+		width: 1.125rem;
+		height: 1.125rem;
+		margin-block-start: 0.125rem;
+		color: var(--sl-color-gray-3);
+	}
+
+	.copy-md-item-text {
+		display: flex;
+		flex-direction: column;
+		gap: 0.125rem;
+	}
+
+	.copy-md-item-title {
+		font-size: var(--sl-text-sm);
+		line-height: 1.3;
+	}
+
+	.copy-md-item-desc {
+		font-size: var(--sl-text-xs);
+		color: var(--sl-color-gray-3);
+		line-height: 1.3;
+	}
+</style>
+
+<script>
+	const LABEL = 'Copy page';
+
+	function writeToClipboard(text: string) {
+		if (window.isSecureContext && navigator.clipboard?.writeText) {
+			return navigator.clipboard.writeText(text);
+		}
+
+		return new Promise<void>((resolve, reject) => {
+			const textarea = document.createElement('textarea');
+
+			textarea.value = text;
+			textarea.setAttribute('readonly', '');
+			textarea.style.position = 'fixed';
+			textarea.style.top = '-9999px';
+			document.body.appendChild(textarea);
+			textarea.select();
+
+			try {
+				document.execCommand('copy') ? resolve() : reject(new Error('Copy failed'));
+			} catch (error) {
+				reject(error);
+			} finally {
+				document.body.removeChild(textarea);
+			}
+		});
+	}
+
+	function setup(root: HTMLElement) {
+		if (root.dataset.wired) return;
+		root.dataset.wired = 'true';
+
+		const url = root.dataset.markdownUrl!;
+		const button = root.querySelector<HTMLButtonElement>('.copy-md-btn')!;
+		const toggle = root.querySelector<HTMLButtonElement>('.copy-md-toggle')!;
+		const menu = root.querySelector<HTMLElement>('.copy-md-menu')!;
+		const icon = button.querySelector<HTMLElement>('.icon')!;
+		const label = button.querySelector<HTMLElement>('.copy-md-label')!;
+
+		let resetTimer: number | undefined;
+
+		const setOpen = (open: boolean) => {
+			menu.hidden = !open;
+			toggle.setAttribute('aria-expanded', String(open));
+		};
+
+		const setCopied = (copied: boolean) => {
+			button.classList.toggle('copied', copied);
+			icon.classList.toggle('icon-copy', !copied);
+			icon.classList.toggle('icon-check', copied);
+			label.textContent = copied ? 'Copied' : LABEL;
+		};
+
+		const copy = async () => {
+			try {
+				const response = await fetch(url);
+				if (!response.ok) throw new Error(`HTTP ${response.status}`);
+				await writeToClipboard(await response.text());
+
+				setCopied(true);
+				window.clearTimeout(resetTimer);
+				resetTimer = window.setTimeout(() => setCopied(false), 2000);
+			} catch {
+				label.textContent = 'Copy failed';
+				window.setTimeout(() => {
+					label.textContent = LABEL;
+				}, 2500);
+			}
+		};
+
+		button.addEventListener('click', copy);
+
+		toggle.addEventListener('click', (event) => {
+			event.stopPropagation();
+			setOpen(menu.hidden);
+		});
+
+		root.querySelector('[data-action="copy"]')!.addEventListener('click', () => {
+			setOpen(false);
+			copy();
+		});
+
+		document.addEventListener('click', (event) => {
+			if (!menu.hidden && !root.contains(event.target as Node)) setOpen(false);
+		});
+
+		document.addEventListener('keydown', (event) => {
+			if (event.key === 'Escape' && !menu.hidden) {
+				setOpen(false);
+				toggle.focus();
+			}
+		});
+	}
+
+	const init = () => document.querySelectorAll<HTMLElement>('.copy-md').forEach(setup);
+
+	init();
+	document.addEventListener('astro:page-load', init);
+</script>

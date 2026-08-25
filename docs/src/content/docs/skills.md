@@ -1,11 +1,8 @@
 ---
-layout: default
 title: Skills
-nav_order: 3
-description: 'Skills are markdown instruction files discovered from the filesystem and surfaced to the model with progressive disclosure.'
+description: Skills are markdown instruction files discovered from the filesystem
+  and surfaced to the model with progressive disclosure.
 ---
-
-# Skills
 
 A skill is a `SKILL.md` file of specialized instructions for a kind of task — a debugging workflow, a release checklist, a code-review procedure. Skills are not code; they are prompt material, discovered from the filesystem and surfaced to the model so it can pull in detailed guidance only when a task matches.
 

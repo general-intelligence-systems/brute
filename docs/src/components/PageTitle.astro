@@ -1,0 +1,54 @@
+---
+/**
+ * Override of Starlight's `PageTitle`, adding the "Copy page as Markdown"
+ * control beside the heading.
+ *
+ * Pages with a `hero` in their frontmatter render Starlight's `Hero` instead of
+ * this component, so the splash home page is unaffected.
+ */
+import CopyPageMarkdown from './CopyPageMarkdown.astro';
+
+const { id, entry } = Astro.locals.starlightRoute;
+
+// `BASE_URL` always ends in a slash; ids never start with one.
+const markdownUrl = `${import.meta.env.BASE_URL}${id}.md`;
+---
+
+<div class="title-row">
+	{/* `_top` is Starlight's PAGE_TITLE_ID, the target of its skip link. */}
+	<h1 id="_top">{entry.data.title}</h1>
+	<CopyPageMarkdown markdownUrl={markdownUrl} />
+</div>
+
+<style>
+	.title-row {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 1rem;
+	}
+
+	h1 {
+		margin-top: 1rem;
+		font-size: var(--sl-text-h1);
+		line-height: var(--sl-line-height-headings);
+		font-weight: 600;
+		color: var(--sl-color-white);
+	}
+
+	.title-row :global(.copy-md) {
+		margin-top: 1.5rem;
+	}
+
+	@media (max-width: 30rem) {
+		.title-row {
+			flex-direction: column;
+			align-items: flex-end;
+			gap: 0;
+		}
+
+		h1 {
+			align-self: stretch;
+		}
+	}
+</style>

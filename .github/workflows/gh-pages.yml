@@ -24,23 +24,29 @@ jobs:
     steps:
     - uses: actions/checkout@v6
 
-    - uses: ruby/setup-ruby@v1
+    - uses: actions/setup-node@v4
       with:
-        ruby-version: ruby
-        bundler-cache: true
-        working-directory: docs
+        node-version: 22
+        cache: npm
+        cache-dependency-path: docs/package-lock.json
+
+    - name: Install dependencies
+      working-directory: docs
+      run: npm ci
 
     - name: Build documentation
       timeout-minutes: 5
       working-directory: docs
-      run: bundle exec jekyll build --baseurl /brute -d _site
-      env:
-        JEKYLL_ENV: production
+      run: npm run build
+
+    - name: Check internal links
+      working-directory: docs
+      run: node bin/check-links.mjs
 
     - name: Upload documentation artifact
       uses: actions/upload-pages-artifact@v4
       with:
-        path: docs/_site
+        path: docs/dist
 
   deploy:
     runs-on: ubuntu-latest

@@ -1,11 +1,8 @@
 ---
-layout: default
 title: Sub-Agents
-nav_order: 1
-description: 'A SubAgent is a full agent wearing a tool-shaped facade, so delegation and parallel exploration compose like any other tool.'
+description: A SubAgent is a full agent wearing a tool-shaped facade, so delegation
+  and parallel exploration compose like any other tool.
 ---
-
-# Sub-Agents
 
 A `Brute::Tools::SubAgent` is an `AgentPipeline` that also exposes a tool interface (`name`, `description`, `params`, `execute`). Hand it to a parent agent's `ToolPipeline` and the parent's model can call it like any other tool. When invoked, the sub-agent builds a fresh conversation from the tool arguments, runs its own full middleware pipeline, and returns its final assistant message as the tool result.
 
@@ -21,7 +18,7 @@ researcher = Brute::Tools::SubAgent.new(
   use Brute::Middleware::SystemPrompt
   use Brute::Middleware::Loop::ToolResult
   use Brute::Middleware::MaxIterations, max_iterations: 10
-  use Brute::Middleware::ToolPipeline, tools: [Brute::Tools::FSRead, Brute::Tools::FSSearch]
+  use Brute::Middleware::DefaultToolPipeline, tools: [Brute::Tools::FSRead, Brute::Tools::FSSearch]
   run do |env|
     # the sub-agent's own LLM call — same MessageTransport pattern as any agent
   end
@@ -39,7 +36,7 @@ main = Brute.agent do
   use Brute::Middleware::SystemPrompt
   use Brute::Middleware::Loop::ToolResult
   use Brute::Middleware::MaxIterations
-  use Brute::Middleware::ToolPipeline, tools: [Brute::Tools::FSRead, researcher]
+  use Brute::Middleware::DefaultToolPipeline, tools: [Brute::Tools::FSRead, researcher]
   run ->(env) { ... }
 end
 
@@ -50,4 +47,4 @@ When the parent's model calls `research`, the sub-agent runs `start` on a fresh 
 
 ## Why it composes
 
-`SubAgent < AgentPipeline < Pipeline`, and the [Adapter]({% link _core_features/tools.md %}) recognizes it directly — so a sub-agent is subject to the same concurrent execution, output truncation, and error-capture as every other tool. Nesting agents costs nothing beyond another pipeline; there is no special "delegation" machinery to learn.
+`SubAgent < AgentPipeline < Pipeline`, and the [Adapter](../tools/) recognizes it directly — so a sub-agent is subject to the same concurrent execution, output truncation, and error-capture as every other tool. Nesting agents costs nothing beyond another pipeline; there is no special "delegation" machinery to learn.

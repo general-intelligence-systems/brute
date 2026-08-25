@@ -1,11 +1,8 @@
 ---
-layout: default
 title: Tools
-nav_order: 4
-description: 'Four ways to define a tool, one neutral adapter, and a concurrent execution loop with automatic output truncation.'
+description: Four ways to define a tool, one neutral adapter, and a concurrent execution
+  loop with automatic output truncation.
 ---
-
-# Tools
 
 A tool is anything the model can invoke by name with structured arguments: read a file, run a shell command, delegate to a sub-agent. Brute accepts tools in four shapes, normalizes them through one adapter, and executes them concurrently.
 
@@ -63,7 +60,7 @@ end
 
 ### 4. `Brute::Tools::SubAgent` — an agent as a tool
 
-A [SubAgent]({% link _advanced/sub-agents.md %}) exposes a tool-shaped facade so a whole agent drops into another agent's tool list.
+A [SubAgent](../sub-agents/) exposes a tool-shaped facade so a whole agent drops into another agent's tool list.
 
 Anything else that responds to `#name` plus `#call` or `#execute` is accepted via duck typing.
 
@@ -91,7 +88,7 @@ def openai_tools(tools)
 end
 ```
 
-Each shipped [example]({% link _examples/examples.md %}) shows this conversion for its library.
+Each shipped [example](../examples/) shows this conversion for its library.
 
 ## The built-in tools
 
@@ -109,7 +106,7 @@ Each shipped [example]({% link _examples/examples.md %}) shows this conversion f
 | `fetch` | `NetFetch` | HTTP GET |
 | `todo_write` / `todo_read` | `TodoWrite` / `TodoRead` | Task-list scratchpad |
 | `question` | `Question` | Ask the user interactive questions |
-| `skill` | `SkillLoad` | Load a [skill]({% link _advanced/skills.md %}) on demand |
+| `skill` | `SkillLoad` | Load a [skill](../skills/) on demand |
 
 File-mutating tools share a `FileMutationQueue` (serializes writes to the same file with a fiber-aware mutex; different files proceed in parallel) and a `SnapshotStore` (records pre-mutation copies that `undo` restores).
 
@@ -130,4 +127,4 @@ On the way in, `ToolPipeline` sets `env[:tools]`. On the way out, it collects th
 - **Errors become results** — an exception inside a tool is captured as `"Error: <class>: <message>"` and returned to the model rather than crashing the pipeline.
 - **Universal truncation** — every result passes through `Brute::Truncation.truncate` (2000-line / 50 KB cap) as a safety net; the full output overflows to a temp file whose path is included. Tools that truncated internally are not double-truncated.
 
-The `question` tool is excluded from this loop — it's handled interactively. Each result is appended as a `role: :tool` message and emitted as a `:tool_result` [event]({% link _advanced/events.md %}).
+The `question` tool is excluded from this loop — it's handled interactively. Each result is appended as a `role: :tool` message and emitted as a `:tool_result` [event](../events/).

@@ -1,11 +1,8 @@
 ---
-layout: default
 title: The Agent Pipeline
-nav_order: 1
-description: 'Brute.agent returns a Rack-style builder that is also the runnable agent: chain .use and .run, then .start a turn.'
+description: 'Brute.agent returns a Rack-style builder that is also the runnable agent:
+  chain .use and .run, then .start a turn.'
 ---
-
-# The Agent Pipeline
 
 `Brute.agent` returns a `Brute::Turn::AgentPipeline` — a subclass of `Rack::Builder` that is simultaneously the *builder* and the *agent*. You configure it by chaining, and run it with `.start`:
 
@@ -32,8 +29,8 @@ end
 
 | Key | Value |
 |---|---|
-| `:messages` | the conversation log — an Array of [`Brute::Message`]({% link _core_features/messages.md %}) with role-tagging sugar (`Brute.log`) |
-| `:events` | an event sink (`<<`-able); defaults to a null sink — see [Events]({% link _advanced/events.md %}) |
+| `:messages` | the conversation log — an Array of [`Brute::Message`](../messages/) with role-tagging sugar (`Brute.log`) |
+| `:events` | an event sink (`<<`-able); defaults to a null sink — see [Events](../events/) |
 | `:metadata` | a scratch Hash for middleware (timing, session ids, ...) |
 | `:current_iteration` | the tool-loop counter, starts at 1 |
 | `:tools` | set by the `ToolPipeline` middleware on the way in |
@@ -52,9 +49,9 @@ run do |env|
 end
 ```
 
-The [MessageTransport]({% link _core_features/message-transports.md %}) classes handle steps 1 and 3 for ruby_llm, llm.rb, openai and anthropic.
+The [MessageTransport](../message-transports/) classes handle steps 1 and 3 for ruby_llm, llm.rb, openai and anthropic.
 
-The proc does one completion per pass, not the whole loop — [`Loop::ToolResult`]({% link _core_features/middleware.md %}) re-invokes the stack while the model keeps calling tools, so Brute stays the turn manager.
+The proc does one completion per pass, not the whole loop — [`Loop::ToolResult`](../middleware/) re-invokes the stack while the model keeps calling tools, so Brute stays the turn manager.
 
 ## Slash commands
 
@@ -100,8 +97,8 @@ agent = Brute::Turn::AgentPipeline.parse_file("agent.ru")
 agent.start("hello")
 ```
 
-This is also what lets an agent [serve over HTTP]({% link _advanced/rack.md %}) — the same builder drops into a `config.ru`.
+This is also what lets an agent [serve over HTTP](../rack/) — the same builder drops into a `config.ru`.
 
 ## Pipelines everywhere
 
-`AgentPipeline` composes `Brute::Turn::Pipeline`, a thin `Rack::Builder` subclass whose `use`/`run` return `self` for chaining. The same class powers [`ToolPipeline`]({% link _core_features/tools.md %}) (tools with middleware) and [`SubAgent`]({% link _advanced/sub-agents.md %}) (agents as tools) — one mental model for the whole framework.
+`AgentPipeline` composes `Brute::Turn::Pipeline`, a thin `Rack::Builder` subclass whose `use`/`run` return `self` for chaining. The same class powers [`ToolPipeline`](../tools/) (tools with middleware) and [`SubAgent`](../sub-agents/) (agents as tools) — one mental model for the whole framework.

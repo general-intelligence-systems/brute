@@ -1,11 +1,8 @@
 ---
-layout: default
 title: Message Transports
-nav_order: 3
-description: 'The MessageTransport pattern translates between Brute messages and any LLM library. Ships with transports for ruby_llm, llm.rb, openai, and anthropic.'
+description: The MessageTransport pattern translates between Brute messages and any
+  LLM library. Ships with transports for ruby_llm, llm.rb, openai, and anthropic.
 ---
-
-# Message Transports
 
 A `MessageTransport` is the seam that makes Brute framework-agnostic. Calling an LLM is trivial with any library, so Brute has no completion middleware — the terminal `run` proc makes the call, and a transport translates at the boundary in both directions:
 

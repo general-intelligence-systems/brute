@@ -58,12 +58,16 @@ agent.start("What files are in the current directory?")
 
 ## Docs
 
-The documentation site is a [Just the Docs](https://just-the-docs.com/) Jekyll
-project under `docs/`. Serve it locally:
+The documentation site is an [Astro](https://astro.build/) +
+[Starlight](https://starlight.astro.build/) project under `docs/`. `nix develop`
+provides the node it needs. Serve it locally:
 
 ```sh
 docs/bin/serve.sh          # http://localhost:4000/brute/
 ```
+
+`npm run build` writes the static site to `docs/dist/`; `npm run linkcheck`
+builds and then verifies every internal link resolves.
 
 ## Contributing
 

@@ -1,0 +1,17 @@
+/* Site accent, derived from the brute wordmark's rust red. */
+:root {
+	--sl-color-accent-low: #431109;
+	--sl-color-accent: #b5432a;
+	--sl-color-accent-high: #f0b3a4;
+}
+
+:root[data-theme='light'] {
+	--sl-color-accent-low: #f6ccc1;
+	--sl-color-accent: #b03d24;
+	--sl-color-accent-high: #521a0d;
+}
+
+/* The docs lean on wide Ruby snippets; give them room before they scroll. */
+.sl-markdown-content pre {
+	font-size: var(--sl-text-code-sm);
+}

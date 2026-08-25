@@ -1,11 +1,8 @@
 ---
-layout: default
 title: Events
-nav_order: 4
-description: 'A stackable event sink on env[:events] streams progress — content, tool calls, results, errors — to terminal output or any handler you write.'
+description: A stackable event sink on env[:events] streams progress — content, tool
+  calls, results, errors — to terminal output or any handler you write.
 ---
-
-# Events
 
 While a turn runs, middleware and tools push events to `env[:events]` — a sink you can stack handlers onto for live progress. By default it's a null sink that swallows everything; add the `EventHandler` middleware to route events somewhere.
 

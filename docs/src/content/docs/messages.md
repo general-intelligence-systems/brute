@@ -1,11 +1,8 @@
 ---
-layout: default
 title: Messages
-nav_order: 2
-description: 'The conversation log is a plain Array of Brute::Message — an immutable Data value that any LLM library can be translated to and from.'
+description: The conversation log is a plain Array of Brute::Message — an immutable
+  Data value that any LLM library can be translated to and from.
 ---
-
-# Messages
 
 Brute's conversation log is a plain `Array`. Each entry is a `Brute::Message` — an immutable [`Data`](https://docs.ruby-lang.org/en/master/Data.html) value that is Brute's canonical, framework-agnostic message format.
 
@@ -63,10 +60,10 @@ message.tool_call?   # => true when tool_calls is present and non-empty
 message.to_h         # plain Hash, nils dropped, tool calls as hashes — JSON-ready
 ```
 
-`to_h` round-trips: `Brute::Message.new(**m.to_h) == m`. This is exactly what [`SessionLog`]({% link _advanced/sessions.md %}) writes to and reads from disk.
+`to_h` round-trips: `Brute::Message.new(**m.to_h) == m`. This is exactly what [`SessionLog`](../sessions/) writes to and reads from disk.
 
 ## Duck typing
 
 Nothing in Brute's stack calls anything beyond `#role`, `#content`, `#tool_calls`, `#tool_call_id`, and `#to_h`. `Brute::Message` is the canonical implementation, but any object exposing those methods can ride in `env[:messages]`. That is the seam that keeps Brute framework-agnostic — and the reason a library's own message objects can pass straight through if you'd rather not convert them.
 
-The conversion between `Brute::Message` and a specific LLM library's format is handled by a [MessageTransport]({% link _core_features/message-transports.md %}).
+The conversion between `Brute::Message` and a specific LLM library's format is handled by a [MessageTransport](../message-transports/).
