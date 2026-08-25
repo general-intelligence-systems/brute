@@ -215,6 +215,7 @@ DEPENDENCIES
   open_router_enhanced
   openai
   rake (~> 13.0)
+  rdoc (~> 8.0)
   ruby_llm
   scampi (~> 1.0)
   websocket-driver (>= 0.8.2)

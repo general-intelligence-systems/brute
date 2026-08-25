@@ -18,5 +18,6 @@ group :browser, optional: true do
 	gem "websocket-driver", ">= 0.8.2" # DoS via malformed Host header
 end
 
-# Docs live under docs/ as a standalone Just the Docs (Jekyll) project with its
-# own Gemfile; run docs/bin/serve.sh. Nothing here builds them.
+# Docs live under docs/ as a standalone Astro (Starlight) project with its own
+# package.json; run `npm run dev` there. The one Ruby part is the API reference
+# generator, which runs under this bundle for its `rdoc` pin — see the gemspec.

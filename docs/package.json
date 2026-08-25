@@ -6,11 +6,11 @@
   "scripts": {
     "dev": "astro dev",
     "start": "astro dev",
-    "build": "ruby bin/gen-reference.rb && node bin/gen-nav.mjs && astro build",
+    "build": "bundle exec ruby bin/gen-reference.rb && node bin/gen-nav.mjs && astro build",
     "preview": "astro preview",
     "linkcheck": "astro build && node bin/check-links.mjs",
     "astro": "astro",
-    "reference": "ruby bin/gen-reference.rb",
+    "reference": "bundle exec ruby bin/gen-reference.rb",
     "nav": "node bin/gen-nav.mjs"
   },
   "dependencies": {

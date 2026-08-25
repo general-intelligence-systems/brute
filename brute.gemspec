@@ -49,6 +49,10 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "langchainrb"
 
   spec.add_development_dependency 'rake', '~> 13.0'
+  # The docs site's API reference generator (docs/bin/rdoc_starlight.rb) reaches
+  # into RDoc's markup formatters and cross-reference resolver, which changed in
+  # 8.0 — pin the major rather than inherit whichever RDoc the Ruby ships.
+  spec.add_development_dependency 'rdoc', '~> 8.0'
   spec.add_development_dependency 'scampi', '~> 1.0'
   spec.add_development_dependency "lefthook", "~> 2.1"
   # The release toolchain: `gem kit bump|changelog|deprecations|release|tag`.
