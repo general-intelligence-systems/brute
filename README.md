@@ -1,5 +1,6 @@
 # Brute
 
+
 A framework-agnostic coding agent for Ruby. Rack-style middleware pipelines for
 agent turns, a full set of coding tools, and session persistence — bring your
 own LLM library.
