@@ -13,7 +13,10 @@ AllCops:
   SuggestExtensions: false
   TargetRubyVersion: 3.2
   Exclude:
+    - docs/**/*
+    - Gemfile
     - .direnv/**/*
+    - examples/**/*
     - result
     - vendor/**/*
     - tmp/**/*
