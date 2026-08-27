@@ -59,35 +59,36 @@ module Brute
       end
 
       def call(env)
-        emit(BEFORE_LLM_EVENT, env)
+        env.emit_trace do |env|
+          env.emit(LLM_START_EVENT)
 
-        messages = Brute::MessageTransport::RubyLLM.dump_all(env[:messages])
-        response = nil
-        emit(LLM_DURATION_EVENT, env) { response = complete(env, messages) }
+          messages = Brute::MessageTransport::RubyLLM.dump_all(env[:messages])
+          response = nil
+          env.emit(LLM_DURATION_EVENT) { response = complete(env, messages) }
 
-        unless response.nil?
-          if (usage = Brute::MessageTransport::RubyLLM.usage_metrics(response))
-            (env[:metadata] ||= {})[:last_llm_usage] = usage
+          unless response.nil?
+            if (usage = Brute::MessageTransport::RubyLLM.usage_metrics(response))
+              (env[:metadata] ||= {})[:last_llm_usage] = usage
+            end
+
+            Brute::MessageTransport::RubyLLM.wrap_each(response) do |message|
+              env[:messages] << message
+            end
           end
 
-          Brute::MessageTransport::RubyLLM.wrap_each(response) do |message|
-            env[:messages] << message
+          env.emit(LLM_END_EVENT)
+        # A provider call that raises is reported through the hooks rather than
+        # up the stack, the same way the OpenRouter completion does it.
+        rescue => error
+          env.emit(LLM_FAILURE_EVENT)
+
+          if defined?(::Faraday::Error) && error.is_a?(::Faraday::Error)
+            env.emit(FARADAY_ERROR_EVENT, error)
+          else
+            env.emit(STANDARD_ERROR_EVENT, error)
           end
+
         end
-
-        emit(AFTER_LLM_EVENT, env)
-        env
-      # A provider call that raises is reported through the hooks rather than
-      # up the stack, the same way the OpenRouter completion does it.
-      rescue => error
-        emit(LLM_FAILURE_EVENT, env)
-
-        if defined?(::Faraday::Error) && error.is_a?(::Faraday::Error)
-          emit(FARADAY_ERROR_EVENT, env, error)
-        else
-          emit(STANDARD_ERROR_EVENT, env, error)
-        end
-
         env
       end
 
@@ -104,7 +105,7 @@ module Brute
 
           provider_client = client(option(env, :provider))
 
-          # Streaming reports through env[:events] chunk by chunk; the final
+          # Streaming reports through :content and :reasoning chunk by chunk; the final
           # message still comes back for the log.
           if streaming?(env)
             provider_client.complete(messages, **kwargs) do |chunk|
@@ -117,11 +118,11 @@ module Brute
 
         def stream(env, chunk)
           if chunk.content && !chunk.content.to_s.empty?
-            env[:events] << { type: :content, data: chunk.content.to_s }
+            env.emit(CONTENT_EVENT, chunk.content.to_s)
           end
 
           if chunk.respond_to?(:thinking) && chunk.thinking.respond_to?(:text) && chunk.thinking&.text
-            env[:events] << { type: :reasoning, data: chunk.thinking.text }
+            env.emit(REASONING_EVENT, chunk.thinking.text)
           end
         end
 
@@ -214,8 +215,8 @@ describe "brute/completion/ruby_llm" do
 
     seen = []
     pipeline = running.call(Brute::Completion::RubyLLM.new(client: client, model: "use-this-model", temperature: 0.1))
-    pipeline.on(Brute::Hooks::BEFORE_LLM_EVENT) { |_env| seen << :before }
-    pipeline.on(Brute::Hooks::AFTER_LLM_EVENT) { |_env| seen << :after }
+    pipeline.on(Brute::Hooks::LLM_START_EVENT) { |_env| seen << :before }
+    pipeline.on(Brute::Hooks::LLM_END_EVENT) { |_env| seen << :after }
     pipeline.call(env)
 
     env[:messages].last.role.should == :assistant

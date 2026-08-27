@@ -41,12 +41,11 @@ module Brute
         @pipeline.instance_eval(&block) if block
       end
 
-      def call(events: Pipeline::NullSink.new, **arguments)
+      def call(**arguments)
         env = {
           name:      @name,
           arguments: arguments,
           result:    nil,
-          events:    events,
           metadata:  {},
         }
         @pipeline.call(env)

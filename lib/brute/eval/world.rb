@@ -38,12 +38,12 @@ module Brute
         kase.said
       end
 
-      # :before_tool is handed a mutable call env, and a :result set on it is
+      # :tool_start is handed a mutable call env, and a :result set on it is
       # answered without the tool ever running -- so a stub replaces the web,
       # the calendar or the shell without the agent being built differently.
       # A stub that answers to #call is handed the arguments.
       def stub(agent, stubs)
-        agent.on(:before_tool) do |_env, call|
+        agent.on(:tool_start) do |_env, call|
           canned = stubs[call[:name]]
 
           unless canned.nil?

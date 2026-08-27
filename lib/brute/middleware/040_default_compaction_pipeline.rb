@@ -46,10 +46,10 @@ module Brute
     # env[:tools] is not set yet: pass `tools:` to have them counted then.
     #
     # Compaction is lossy, and this layer keeps no record of what it gave up:
-    # it rewrites env[:messages] and says so with :compacted. An application
+    # it rewrites env[:messages] and says so with :compact_end. An application
     # that keeps a transcript preserves it from there.
     #
-    #   agent.on(:compacted) { |env, payload| archive(env, payload) }
+    #   agent.on(:compact_end) { |env, payload| archive(env, payload) }
     #
     class DefaultCompactionPipeline < Brute::Middleware::Base
       def initialize(app, window:, summariser: nil, compactor: nil, keep_steps: 2,
@@ -101,22 +101,25 @@ module Brute
         def compact(env)
           context = estimate(env)
 
-          if context >= @window * @compact_at
-            before = @token_counter.count(env[:messages])
-            compacted = attempt(env, target(env))
+          env.emit_trace do |env|
+            if context >= @window * @compact_at
+              env.emit(COMPACT_START_EVENT, { context: context })
 
-            unless compacted.nil?
-              env[:messages].replace(compacted)
-              # The reported total describes a conversation that no longer
-              # exists, so the next estimate must not build on it. The call
-              # below refreshes it; one that fails leaves the estimate to be
-              # counted from scratch instead of anchored to a fiction.
-              env[:metadata]&.delete(:last_llm_usage)
-              emit(
-                COMPACTED_EVENT,
-                env,
-                { context: context, before: before, after: @token_counter.count(compacted) },
-              )
+              before = @token_counter.count(env[:messages])
+              compacted = attempt(env, target(env))
+
+              unless compacted.nil?
+                env[:messages].replace(compacted)
+                # The reported total describes a conversation that no longer
+                # exists, so the next estimate must not build on it. The call
+                # below refreshes it; one that fails leaves the estimate to be
+                # counted from scratch instead of anchored to a fiction.
+                env[:metadata]&.delete(:last_llm_usage)
+                env.emit(
+                  COMPACT_END_EVENT,
+                  { context: context, before: before, after: @token_counter.count(compacted) },
+                )
+              end
             end
           end
         end
@@ -145,18 +148,17 @@ module Brute
         def attempt(env, target)
           compacted = nil
 
-          emit(COMPACT_DURATION_EVENT, env, env[:compactor]) do
+          env.emit(COMPACT_DURATION_EVENT, env[:compactor]) do
             compacted = env[:compactor].compact(
               env[:messages],
               target: target,
-              events: env[:events] || Brute::Turn::Pipeline::NullSink.new,
               token_counter: @token_counter,
             )
           end
 
           compacted
         rescue => error
-          (env[:events] ||= []) << { type: :error, data: { error: error, message: error.message } }
+          env.emit(COMPACT_FAILURE_EVENT, error)
           nil
         end
 
@@ -194,6 +196,10 @@ describe "brute/middleware/040_default_compaction_pipeline" do
     end
   end
 
+  def traced(env, hooks = Brute::Hooks::Registry.new)
+    Brute::Hooks::Trace.new(env, hooks: hooks)
+  end
+
   def compactor(&block)
     Object.new.tap do |double|
       double.define_singleton_method(:compact) { |messages, target:, **| block.call(messages, target) }
@@ -207,6 +213,10 @@ describe "brute/middleware/040_default_compaction_pipeline" do
     declines = compactor { |_messages, target| asked << target; nil }
     raises   = compactor { |_messages, _target| raise IOError, "the summariser is down" }
 
+    hooks = Brute::Hooks::Registry.new
+    %i[compact_end compact_failure].each { |event| hooks.on(event) { |_env, *extras| events << [event, *extras.first(1)] } }
+    hooks.on(:compact_duration) { |_env, *| events << [:compact_duration] }
+
     layer = lambda do |compactor|
       Brute::Middleware::DefaultCompactionPipeline.new(
         ->(env) { env },
@@ -214,18 +224,16 @@ describe "brute/middleware/040_default_compaction_pipeline" do
         window: 1_000,
         compact_at: 0.7,
         compact_to: 0.4,
-      ).tap do |it|
-        it.define_singleton_method(:emit) { |event, _env, *extras, &work| work&.call; events << [event, *extras] }
-      end
+      )
     end
 
-    env = { messages: conversation, metadata: usage(900) }
+    env = traced({ messages: conversation, metadata: usage(900) }, hooks)
     layer.call(shrinks).call(env)
 
     asked.should == [400]
     env[:messages].map(&:role).should == [:user]
     env[:compactor].equal?(shrinks).should.be.true
-    events.select { |e, _| e == :compacted }.should == [[:compacted, { context: 900, before: 514, after: 256 }]]
+    events.select { |e, _| e == :compact_end }.should == [[:compact_end, { context: 900, before: 514, after: 256 }]]
     # The attempt is timed, so the compactor that spends a model call is visible.
     events.select { |e, _| e == :compact_duration }.length.should == 1
 
@@ -233,27 +241,29 @@ describe "brute/middleware/040_default_compaction_pipeline" do
     # asked and nothing is said.
     asked.clear
     events.clear
-    layer.call(shrinks).call({ messages: conversation, metadata: usage(600) })
+    layer.call(shrinks).call(traced({ messages: conversation, metadata: usage(600) }, hooks))
     asked.should == []
     events.should == []
 
     # ...but what landed since it answered is counted on top of it, and that
     # is what tips this one over.
     tail = conversation.tap { |log| log.tool("z" * 400, tool_call_id: "tc1") }
-    layer.call(declines).call({ messages: tail, metadata: usage(600) })
+    layer.call(declines).call(traced({ messages: tail, metadata: usage(600) }, hooks))
     asked.should == [400]
 
     # With nothing reported at all, the whole conversation is counted here.
     asked.clear
-    layer.call(declines).call({ messages: conversation })
+    layer.call(declines).call(traced({ messages: conversation }, hooks))
     asked.should == []
 
     # A compactor that raises is a compactor that declined: reported, not
     # fatal. An agent that cannot shrink its context carries on with it.
-    failing = { messages: conversation, events: [], metadata: usage(900) }
+    events.clear
+    failing = traced({ messages: conversation, metadata: usage(900) }, hooks)
     should.not.raise(IOError) { layer.call(raises).call(failing) }
     failing[:messages].length.should == 2
-    failing[:events].map { |e| [e[:type], e[:data][:message]] }.should == [[:error, "the summariser is down"]]
+    events.select { |e, _| e == :compact_failure }.map { |_, error| error.message }
+      .should == ["the summariser is down"]
 
     # A target at or above the trigger would compact on every single step.
     should.raise(ArgumentError) do
@@ -272,16 +282,11 @@ describe "brute/middleware/040_default_compaction_pipeline" do
     ladder = Brute::Middleware::DefaultCompactionPipeline.compactor(summariser: summariser, keep_steps: 1)
     ladder.should.be.kind_of Brute::Turn::CompactionPipeline
 
-    events = []
-    sink = Object.new.tap { |it| it.define_singleton_method(:<<) { |e| events << e; it } }
-
     messages = history
     before = Brute::Compaction::Transcript.tokens(messages)
-    out = ladder.compact(messages, target: 1_500, events: sink)
+    out = ladder.compact(messages, target: 1_500)
 
     Brute::Compaction::Transcript.tokens(out).should.be < before
-    events.select { |e| e[:type] == :compacted }.map { |e| e[:data][:strategy] }
-      .should.include "sliding_window"
 
     # Given no summariser the terminal declines, and the free layers are all
     # the agent gets -- a policy said out loud rather than configured.
@@ -290,8 +295,7 @@ describe "brute/middleware/040_default_compaction_pipeline" do
 
     # One layer, so it still owns the *when* as well as the what.
     layer = Brute::Middleware::DefaultCompactionPipeline.new(->(e) { e }, window: 1_000, summariser: summariser)
-    layer.define_singleton_method(:emit) { |_e, _env, *, &work| work&.call }
-    env = { messages: history, metadata: {} }
+    env = traced({ messages: history, metadata: {} })
     layer.call(env)
     env[:messages].length.should.be < 11
   end
@@ -319,33 +323,33 @@ describe "brute/middleware/040_default_compaction_pipeline" do
     said = -> { Brute.log.tap { |log| log.user("x" * 2_578) } }
     Brute::TokenCounter.default.count(said.call).should == 650
 
-    layer.call.call({ messages: said.call, metadata: {} })
+    layer.call.call(traced({ messages: said.call, metadata: {} }))
     asked.should == []
 
     # The same conversation ships with tool schemas in every request, and
     # counting what they occupy is what tips it over. What is left of the
     # target after them is what the compactor is asked for -- the schemas are
     # not room the conversation may have.
-    layer.call(tools: [tool]).call({ messages: said.call, metadata: {} })
+    layer.call(tools: [tool]).call(traced({ messages: said.call, metadata: {} }))
     asked.should == [400 - schemas]
 
     # Reported usage already covers the schemas, so the warm path must not
     # count them again -- 600 reported and nothing said since is 600, tools
     # or no tools.
     asked.clear
-    layer.call(tools: [tool]).call({ messages: conversation, metadata: usage(600) })
+    layer.call(tools: [tool]).call(traced({ messages: conversation, metadata: usage(600) }))
     asked.should == []
 
     # What the provider counted describes the conversation as it was. Once
     # compaction has given part of it up that number is a fiction, so it goes
     # -- the next estimate counts from scratch rather than building on it.
-    compacted = { messages: conversation, metadata: usage(900) }
+    compacted = traced({ messages: conversation, metadata: usage(900) })
     layer.call.call(compacted)
     compacted[:messages].length.should == 1
     compacted[:metadata].key?(:last_llm_usage).should.be.false
 
     # Nothing given up, nothing invalidated.
-    kept = { messages: conversation, metadata: usage(900) }
+    kept = traced({ messages: conversation, metadata: usage(900) })
     layer.call(compactor: compactor { |_messages, _target| nil }).call(kept)
     kept[:metadata].key?(:last_llm_usage).should.be.true
   end

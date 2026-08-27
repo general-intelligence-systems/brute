@@ -44,14 +44,13 @@ module Brute
       end
 
       # Answer a smaller conversation, or nil when nothing was given up.
-      def compact(messages, target:, events: Pipeline::NullSink.new, token_counter: nil)
+      def compact(messages, target:, token_counter: nil)
         env = {
           conversation:  messages,
           target:        target,
           token_counter: token_counter,
           applied:       [],
           messages:      Brute.log,
-          events:        events,
           metadata:      {},
         }
         @pipeline.call(env)

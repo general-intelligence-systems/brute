@@ -5,6 +5,78 @@ All notable changes to Brute are documented in this file. The format follows
 
 ## [Unreleased]
 
+The events engine is rewritten to make way for tracing providers — Langfuse,
+OpenTelemetry, anything that wants a tree rather than a stream. An event could
+say what happened but not what it happened *inside*: the env is shared by the
+whole turn and a middleware knew only the registry, so there was nothing to
+hang a generation off. Every event now belongs to a trace, and traces nest —
+a completion's inside its layer's, a layer's inside the turn's.
+
+### Changed
+
+- **Lifecycle events are named as sets.** Every phase of a run now reads
+  `*_START` / `*_DURATION` / `*_FAILURE` / `*_END`, so a subscriber can be
+  written against the shape rather than against five spellings of the same
+  idea.
+
+  | Was | Is |
+  | --- | --- |
+  | `ENTER_EVENT`, `DURATION_EVENT`, `EXIT_EVENT` | `MIDDLEWARE_START_EVENT`, `MIDDLEWARE_DURATION_EVENT`, `MIDDLEWARE_END_EVENT` |
+  | `BEFORE_LLM_EVENT`, `AFTER_LLM_EVENT` | `LLM_START_EVENT`, `LLM_END_EVENT` |
+  | `BEFORE_TOOL_EVENT`, `APPROVE_TOOL_EVENT`, `AFTER_TOOL_EVENT` | `TOOL_START_EVENT`, `TOOL_APPROVE_EVENT`, `TOOL_END_EVENT` |
+  | `COMPACTED_EVENT` | `COMPACT_END_EVENT` |
+
+- **Emitting moved onto the env.** A layer no longer has an `emit` bolted onto
+  it: what a pipeline is called with is wrapped in a `Brute::Hooks::Trace`,
+  which is the env (`SimpleDelegator`) and answers `emit`. `bind_emitter` is
+  gone, and with it the "was given a lambda" warning — a lambda is handed the
+  same env as anything else and can emit from it.
+
+  ```ruby
+  def call(env)
+    env.emit_trace do |env|
+      env.emit(LLM_START_EVENT)
+      env.emit(LLM_DURATION_EVENT) { response = complete(env) }
+      env.emit(LLM_END_EVENT)
+    end
+  end
+  ```
+
+- `Brute::Turn::Pipeline.new` takes `hooks:`, so a nested pipeline either owns
+  a registry or reports to the one that built it. One `Registry` per agent.
+
+### Added
+
+- `Brute::Hooks::Trace`. Every start/duration/end set is wrapped in
+  `emit_trace`, and the id of the trace an event belongs to reaches subscribers
+  as the last extra. Traces nest by delegation — a completion's inside its
+  layer's, a layer's inside the turn's — which is what a tracing provider needs
+  to hang a generation off the call that asked for it.
+
+- A failure event per set: `TURN_FAILURE_EVENT`, `MIDDLEWARE_FAILURE_EVENT`,
+  `COMPACT_FAILURE_EVENT`, `TOOL_FAILURE_EVENT`, beside the existing
+  `LLM_FAILURE_EVENT`. Each is emitted from inside its own trace, so a failure
+  is attributed to the call that failed.
+
+- `COMPACT_START_EVENT`, and `CONTENT_EVENT` / `REASONING_EVENT` for streaming,
+  `TOOL_CALLS_EVENT` for the batch a completion asked for.
+
+### Removed
+
+- **`env[:events]` and its sink.** `Brute::Turn::Pipeline::NullSink` and
+  `Brute::Middleware::EventHandler` are gone, along with every `events:`
+  keyword argument — `AgentPipeline#start`, `ToolPipeline#call` and
+  `CompactionPipeline#compact` no longer accept one. What was pushed to the
+  sink is emitted through the hooks instead.
+
+- `Brute::Middleware::CompactionCheck` and `Brute::Middleware::ToolPipeline`,
+  deprecated since 5.0 and due in 6.0. Use
+  `Brute::Middleware::DefaultCompactionPipeline` and
+  `Brute::Middleware::DefaultToolPipeline`.
+
+- `Brute::Hooks.new`. It was a module pretending to be a class; build the
+  registry it built — `Brute::Hooks::Registry.new`.
+
 ## [5.1.0] - 2026-08-25
 
 ### Added

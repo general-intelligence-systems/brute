@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# rubocop, from wherever this machine has one.
+#
+# The git hook runs outside the devShell as often as inside it — `git commit`
+# from an editor, from a script, from a shell that never entered `nix develop`
+# — so falling back to nixpkgs is what keeps the hook from being skipped
+# exactly when it matters.
+set -euo pipefail
+
+if command -v rubocop >/dev/null 2>&1; then
+  exec rubocop "$@"
+fi
+
+exec nix --extra-experimental-features 'nix-command flakes' run nixpkgs#rubocop -- "$@"

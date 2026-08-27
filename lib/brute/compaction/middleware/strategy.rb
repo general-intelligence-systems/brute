@@ -70,7 +70,6 @@ module Brute
               if after < before
                 env[:conversation] = rewritten
                 env[:applied] << { strategy: strategy, before: before, after: after }
-                env[:events] << { type: :compacted, data: env[:applied].last }
               end
             end
           end
@@ -113,7 +112,6 @@ describe "brute/compaction/middleware/strategy" do
     env[:conversation].map { |m| m.content[0, 1] }.should == ["a", "b"]
     asked.should == ["halves"]
     env[:applied].should == [{ strategy: "halves", before: 4_022, after: 2_011 }]
-    env[:events].should == [{ type: :compacted, data: { strategy: "halves", before: 4_022, after: 2_011 } }]
 
     # A rewrite that saved nothing is refused and the ladder carries on past
     # it, so the strategy itself never has to check.

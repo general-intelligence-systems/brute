@@ -42,31 +42,32 @@ module Brute
       end
 
       def call(env)
-        emit(BEFORE_LLM_EVENT, env)
+        env.emit_trace do |env|
+          env.emit(LLM_START_EVENT)
 
-        response = nil
-        emit(LLM_DURATION_EVENT, env) { response = @llm.chat(**params(env)) }
+          response = nil
+          env.emit(LLM_DURATION_EVENT) { response = @llm.chat(**params(env)) }
 
-        if (usage = Brute::MessageTransport::LangChain.usage_metrics(response))
-          (env[:metadata] ||= {})[:last_llm_usage] = usage
+          if (usage = Brute::MessageTransport::LangChain.usage_metrics(response))
+            (env[:metadata] ||= {})[:last_llm_usage] = usage
+          end
+
+          # langchainrb speaks the OpenAI-style wire format both ways.
+          Brute::MessageTransport::LangChain.wrap_each(reply(response)) do |message|
+            env[:messages] << message
+          end
+
+          env.emit(LLM_END_EVENT)
+        rescue => error
+          env.emit(LLM_FAILURE_EVENT)
+
+          if defined?(::Faraday::Error) && error.is_a?(::Faraday::Error)
+            env.emit(FARADAY_ERROR_EVENT, error)
+          else
+            env.emit(STANDARD_ERROR_EVENT, error)
+          end
+
         end
-
-        # langchainrb speaks the OpenAI-style wire format both ways.
-        Brute::MessageTransport::LangChain.wrap_each(reply(response)) do |message|
-          env[:messages] << message
-        end
-
-        emit(AFTER_LLM_EVENT, env)
-        env
-      rescue => error
-        emit(LLM_FAILURE_EVENT, env)
-
-        if defined?(::Faraday::Error) && error.is_a?(::Faraday::Error)
-          emit(FARADAY_ERROR_EVENT, env, error)
-        else
-          emit(STANDARD_ERROR_EVENT, env, error)
-        end
-
         env
       end
 
@@ -143,8 +144,8 @@ describe "brute/completion/lang_chain" do
     seen = []
     pipeline = Brute::Turn::Pipeline.new
     pipeline.run Brute::Completion::LangChain.new(llm: llm, model: "gpt-4o-mini")
-    pipeline.on(Brute::Hooks::BEFORE_LLM_EVENT) { |_env| seen << :before }
-    pipeline.on(Brute::Hooks::AFTER_LLM_EVENT) { |_env| seen << :after }
+    pipeline.on(Brute::Hooks::LLM_START_EVENT) { |_env| seen << :before }
+    pipeline.on(Brute::Hooks::LLM_END_EVENT) { |_env| seen << :after }
     pipeline.call(env)
 
     env[:messages].last.role.should == :assistant

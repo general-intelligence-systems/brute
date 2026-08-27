@@ -113,15 +113,14 @@ module Brute
         end
 
         def summarise(env, indices)
-          asked = { messages: prompt(env[:conversation], indices), metadata: {}, events: env[:events] }
+          asked = { messages: prompt(env[:conversation], indices), metadata: {} }
           @generator.call(asked)
           answer = asked[:messages].last&.content.to_s.strip
 
           unless answer.empty?
             answer
           end
-        rescue => error
-          env[:events] << { type: :error, data: { error: error, message: error.message } }
+        rescue
           nil
         end
 
@@ -137,7 +136,6 @@ module Brute
           if after < before
             env[:conversation] = compacted
             env[:applied] << { strategy: STRATEGY, before: before, after: after }
-            env[:events] << { type: :compacted, data: env[:applied].last }
             true
           else
             false
@@ -326,11 +324,10 @@ describe "brute/compaction/summarize" do
     windy = ->(env) { env[:messages] << said(:assistant, "w" * 90_000) }
     summarised(history, 3_000, windy, keep_steps: 1)[:applied].should == []
 
-    # A generator that raises ends the loop rather than the turn, and says so.
-    env = { conversation: history, target: 3_000, applied: [], events: [] }
+    # A generator that raises ends the loop rather than the turn.
+    env = { conversation: history, target: 3_000, applied: [] }
     Brute::Compaction::Summarize.new(->(_e) { raise IOError, "the summariser is down" }).call(env)
     env[:applied].should == []
-    env[:events].map { |e| [e[:type], e[:data][:message]] }.should == [[:error, "the summariser is down"]]
 
     # And one that works after the tiers are exhausted still stops.
     once = ->(e) { e[:messages] << said(:assistant, "small") }

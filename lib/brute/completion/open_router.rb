@@ -43,52 +43,53 @@ module Brute
       end
 
       def call(env)
-        emit(BEFORE_LLM_EVENT, env)
+        env.emit_trace do |env|
+          env.emit(LLM_START_EVENT)
 
-        messages = Brute::MessageTransport::OpenRouter.dump_all(env[:messages])
+          messages = Brute::MessageTransport::OpenRouter.dump_all(env[:messages])
 
-        ::OpenRouter::Client.new(**@config).then do |client|
-          response = nil
-          emit(LLM_DURATION_EVENT, env) { response = client.complete(messages, options(env)) }
+          ::OpenRouter::Client.new(**@config).then do |client|
+            response = nil
+            env.emit(LLM_DURATION_EVENT) { response = client.complete(messages, options(env)) }
 
-          response.then do |response|
+            response.then do |response|
 
-            # Expose the provider's usage for downstream accounting
-            # (goal budgets, autonomous limits, compaction thresholds, usage
-            # attribution) — additive metadata only, normalised so a reader
-            # does not have to know which provider answered.
-            if (usage = Brute::MessageTransport::OpenRouter.usage_metrics(response))
-              (env[:metadata] ||= {})[:last_llm_usage] = usage
-            end
+              # Expose the provider's usage for downstream accounting
+              # (goal budgets, autonomous limits, compaction thresholds, usage
+              # attribution) — additive metadata only, normalised so a reader
+              # does not have to know which provider answered.
+              if (usage = Brute::MessageTransport::OpenRouter.usage_metrics(response))
+                (env[:metadata] ||= {})[:last_llm_usage] = usage
+              end
 
-            # OpenRouter in fact only returns a single message...
-            # https://github.com/estiens/open_router_enhanced/blob/main/lib/open_router/response.rb
-            Brute::MessageTransport::OpenRouter.wrap_each(response) do |message|
-              env[:messages] << message
+              # OpenRouter in fact only returns a single message...
+              # https://github.com/estiens/open_router_enhanced/blob/main/lib/open_router/response.rb
+              Brute::MessageTransport::OpenRouter.wrap_each(response) do |message|
+                env[:messages] << message
+              end
             end
           end
+
+          env.emit(LLM_END_EVENT)
+        # A provider call that raises is reported through the hooks rather than
+        # up the stack: :llm_failure with the turn env, then one hook naming the
+        # kind of failure. The classes are looked up defensively — the provider
+        # gem is only a dependency of the app that uses this middleware.
+        rescue => error
+          env.emit(LLM_FAILURE_EVENT)
+
+          if defined?(::Faraday::Error) && error.is_a?(::Faraday::Error)
+            env.emit(FARADAY_ERROR_EVENT, error)
+
+          elsif defined?(::OpenRouter::ServerError) && error.is_a?(::OpenRouter::ServerError)
+            env.emit(OPEN_ROUTER_SERVER_ERROR_EVENT, error)
+
+          else
+            env.emit(STANDARD_ERROR_EVENT, error)
+
+          end
+
         end
-
-        emit(AFTER_LLM_EVENT, env)
-        env
-      # A provider call that raises is reported through the hooks rather than
-      # up the stack: :llm_failure with the turn env, then one hook naming the
-      # kind of failure. The classes are looked up defensively — the provider
-      # gem is only a dependency of the app that uses this middleware.
-      rescue => error
-        emit(LLM_FAILURE_EVENT, env)
-
-        if defined?(::Faraday::Error) && error.is_a?(::Faraday::Error)
-          emit(FARADAY_ERROR_EVENT, env, error)
-
-        elsif defined?(::OpenRouter::ServerError) && error.is_a?(::OpenRouter::ServerError)
-          emit(OPEN_ROUTER_SERVER_ERROR_EVENT, env, error)
-
-        else
-          emit(STANDARD_ERROR_EVENT, env, error)
-
-        end
-
         env
       end
 
@@ -266,7 +267,7 @@ describe "brute/completion/open_router" do
       env[:messages].user("hi")
       pipeline = Brute::Turn::Pipeline.new
       pipeline.run Brute::Completion::OpenRouter.new
-      %i[llm_failure standard_error after_llm].each do |event|
+      %i[llm_failure standard_error llm_end].each do |event|
         pipeline.on(event) { |hook_env, extra| seen << [event, hook_env, extra] }
       end
       returned = pipeline.call(env)

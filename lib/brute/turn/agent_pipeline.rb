@@ -38,8 +38,10 @@ module Brute
       # the newest message, only when it is a user message, before the rest
       # of the stack.
       def map(matcher, &block)
-        (@commands ||= []) << [check(matcher), block]
-        self
+        tap do
+          @commands ||= []
+          @commands << [check(matcher), block]
+        end
       end
 
       # Every chain starts with the commands, registry or no registry: the
@@ -50,21 +52,25 @@ module Brute
       end
       alias_method :build, :to_app
 
-      def start(input = nil, events: NullSink.new)
-        env = {
+      def start(input = nil)
+        {
           messages:          coerce_messages(input),
-          events:            events,
           metadata:          {},
           current_iteration: 1,
           commands:          @commands || [],
-        }
-        hooks.emit(TURN_START_EVENT, env)
-        begin
-          hooks.emit(TURN_DURATION_EVENT, env) { build.call(env) }
-        ensure
-          hooks.emit(TURN_END_EVENT, env)
+        }.tap do |turn|
+          Brute::Hooks::Trace.new(turn, hooks: hooks).emit_trace do |env|
+            env.emit(TURN_START_EVENT)
+            begin
+              env.emit(TURN_DURATION_EVENT) { build.call(env) }
+            rescue => error
+              env.emit(TURN_FAILURE_EVENT, error)
+              raise
+            ensure
+              env.emit(TURN_END_EVENT)
+            end
+          end
         end
-        env
       end
 
       private

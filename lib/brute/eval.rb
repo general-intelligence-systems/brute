@@ -38,7 +38,7 @@ module Brute
   # registry any other subscriber uses -- so the agent under evaluation is the
   # agent that ships: no eval-only middleware, no branch in agent.ru. The
   # model and the tool schemas are real; the tools themselves answer from the
-  # case's stubs, installed on :before_tool, which answers a call without
+  # case's stubs, installed on :tool_start, which answers a call without
   # executing it.
   #
   # Where a case wakes up is the World's business, and a deployment that

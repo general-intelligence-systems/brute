@@ -34,12 +34,12 @@ module Brute
       end
 
       # The call env the tool pipeline hands its subscribers is one mutable
-      # hash per call, so the entry kept here at :before_tool carries the
+      # hash per call, so the entry kept here at :tool_start carries the
       # result the tool answered with by the time anyone reads it.
       def subscribe(agent)
         agent
-          .on(:before_tool) { |_env, call| @calls << call }
-          .on(:after_llm) { |env| account(env[:metadata][:last_llm_usage]) }
+          .on(:tool_start) { |_env, call| @calls << call }
+          .on(:llm_end) { |env| account(env[:metadata][:last_llm_usage]) }
           .on(:faraday_error) { |_env, error| @failures << describe(error) }
           .on(:open_router_server_error) { |_env, error| @failures << describe(error) }
           .on(:standard_error) { |_env, error| @failures << describe(error) }

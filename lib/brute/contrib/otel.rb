@@ -19,8 +19,8 @@ module Brute
     # Every event it needs already exists:
     #
     #   turn_start / turn_end   the span itself
-    #   after_llm               token usage, from env[:metadata][:last_llm_usage]
-    #   before_tool / after_tool a span event per tool call and result
+    #   llm_end               token usage, from env[:metadata][:last_llm_usage]
+    #   tool_start / tool_end   a span event per tool call and result
     #
     # The tracer is injectable; without one it asks OpenTelemetry, and when
     # the SDK is not loaded `subscribe` does nothing at all.
@@ -40,11 +40,11 @@ module Brute
           agent
             .on(Brute::Hooks::TURN_START_EVENT) { |env| start(env, tracer) }
             .on(Brute::Hooks::TURN_END_EVENT) { |env| finish(env) }
-            .on(Brute::Hooks::AFTER_LLM_EVENT) { |env| record_usage(env) }
-            .on(Brute::Hooks::BEFORE_TOOL_EVENT) { |env, call| tool_called(env, call) }
-            .on(Brute::Hooks::AFTER_TOOL_EVENT) { |env, call| tool_returned(env, call) }
+            .on(Brute::Hooks::LLM_END_EVENT) { |env| record_usage(env) }
+            .on(Brute::Hooks::TOOL_START_EVENT) { |env, call| tool_called(env, call) }
+            .on(Brute::Hooks::TOOL_END_EVENT) { |env, call| tool_returned(env, call) }
             .on(Brute::Hooks::LLM_FAILURE_EVENT) { |env| failed(env) }
-            .on(Brute::Hooks::DURATION_EVENT) { |env, started, finished, layer| layer_finished(env, started, finished, layer) }
+            .on(Brute::Hooks::MIDDLEWARE_DURATION_EVENT) { |env, started, finished, layer| layer_finished(env, started, finished, layer) }
             .on(Brute::Hooks::TURN_DURATION_EVENT) { |env, started, finished| timed(env, "turn", finished - started) }
             .on(Brute::Hooks::LLM_DURATION_EVENT) { |env, started, finished| timed(env, "llm", finished - started) }
             .on(Brute::Hooks::TOOL_DURATION_EVENT) { |env, started, finished, call| timed(env, "tool", finished - started, "tool.name" => call[:name].to_s) }
@@ -100,8 +100,8 @@ module Brute
             })
           end
 
-          # The layer's work is :duration's block, so start and finish arrive
-          # with it rather than having to be correlated with :enter by hand.
+          # The layer's work is :middleware_duration's block, so start and finish arrive
+          # with it rather than having to be correlated with :middleware_start by hand.
           def layer_finished(env, started, finished, layer)
             env[:span]&.add_event("middleware", attributes: {
               "middleware.name"     => layer.class.name.to_s,
@@ -170,8 +170,8 @@ describe "brute/contrib/otel" do
             tool_calls: [{ id: "tc1", name: "echo", arguments: { "text" => "hi" } }])
         end
 
-        emit(Brute::Hooks::LLM_DURATION_EVENT, env) { :provider_call }
-        emit(Brute::Hooks::AFTER_LLM_EVENT, env)
+        env.emit(Brute::Hooks::LLM_DURATION_EVENT) { :provider_call }
+        env.emit(Brute::Hooks::LLM_END_EVENT)
         env
       end
     end)
@@ -190,7 +190,7 @@ describe "brute/contrib/otel" do
     span.events.map(&:first).should.include "tool_result"
     span.events.find { |name, _| name == "tool_call" }.last["tool.name"].should == "echo"
 
-    # :exit is timed, so each layer reports its own duration.
+    # :middleware_end is timed, so each layer reports its own duration.
     layer_event = span.events.find { |name, _| name == "middleware" }
     layer_event.last["middleware.name"].should == "Brute::Middleware::DefaultToolPipeline"
     layer_event.last["middleware.duration"].should.be >= 0

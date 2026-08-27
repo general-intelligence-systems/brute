@@ -33,7 +33,7 @@ module Brute
           tools_to_run = Array(tools_to_run).reject { |tc| tc.name == "question" }
 
           available_tools = Brute::Tools::Adapter.wrap_all(env[:tools])
-          env[:events] << on_tool_call_start_event(tools_to_run)
+          env.emit(TOOL_CALLS_EVENT, tools_to_run)
 
           results = []
 
@@ -48,43 +48,50 @@ module Brute
                 name = tool_call.name.to_sym
                 args = tool_call.arguments
 
-                # Lifecycle hooks (Brute::Hooks): before_tool may rewrite
-                # :arguments or short-circuit with a :result; approve_tool
-                # denies on a false (or String) return; after_tool may
+                # Lifecycle hooks (Brute::Hooks): tool_start may rewrite
+                # :arguments or short-circuit with a :result; tool_approve
+                # denies on a false (or String) return; tool_end may
                 # rewrite :result.
                 call_env = {
                   name:      name.to_s,
                   arguments: args,
                   result:    nil,
                   denied:    nil,
-                  events:    env[:events],
                   metadata:  {},
                   turn_env:  env,
                 }
-                # A subscriber takes part by mutating the call env: set
-                # :result to answer without executing, set :denied to refuse.
-                emit(BEFORE_TOOL_EVENT, env, call_env)
+                env.emit_trace do |env|
+                  # A subscriber takes part by mutating the call env: set
+                  # :result to answer without executing, set :denied to refuse.
+                  env.emit(TOOL_START_EVENT, call_env)
 
-                if call_env[:result].nil?
-                  emit(APPROVE_TOOL_EVENT, env, call_env)
+                  if call_env[:result].nil?
+                    env.emit(TOOL_APPROVE_EVENT, call_env)
 
-                  if (denial = call_env[:denied])
-                    call_env[:result] = denial.is_a?(String) ? denial : %(Tool call to "#{name}" was denied.)
+                    if (denial = call_env[:denied])
+                      call_env[:result] = denial.is_a?(String) ? denial : %(Tool call to "#{name}" was denied.)
+                    end
                   end
-                end
 
-                # Only the tool's own execution is timed: a call that
-                # before_tool answered, or approve_tool denied, never ran.
-                result = call_env[:result]
+                  # Only the tool's own execution is timed: a call that
+                  # tool_start answered, or tool_approve denied, never ran.
+                  result = call_env[:result]
 
-                if result.nil?
-                  emit(TOOL_DURATION_EVENT, env, call_env) do
-                    result = available_tools[name].call(call_env[:arguments])
+                  if result.nil?
+                    env.emit(TOOL_DURATION_EVENT, call_env) do
+                      result = available_tools[name].call(call_env[:arguments])
+                    end
                   end
-                end
 
-                call_env[:result] = result
-                emit(AFTER_TOOL_EVENT, env, call_env)
+                  call_env[:result] = result
+                  env.emit(TOOL_END_EVENT, call_env)
+                rescue => error
+                  # Capture the error as a tool result so the LLM can see it
+                  # and reason about the failure, rather than crashing the
+                  # entire middleware chain.
+                  env.emit(TOOL_FAILURE_EVENT, call_env, error)
+                  call_env[:result] = "Error: #{error.class}: #{error.message}"
+                end
                 result = call_env[:result]
 
                 # Coerce to String so Hash results (e.g. Shell's
@@ -101,12 +108,6 @@ module Brute
                 end
 
                 results << [tool_call, content]
-              rescue => e
-                # Capture the error as a tool result so the LLM can see it
-                # and reason about the failure, rather than crashing the
-                # entire middleware chain.
-                env[:events] << { type: :error, data: { error: e, message: e.message } }
-                results << [tool_call, "Error: #{e.class}: #{e.message}"]
               end
             end
 
@@ -120,7 +121,6 @@ module Brute
           results.sort_by! { |tool_call, _| tools_to_run.index(tool_call) }
 
           results.each do |tool_call, content|
-            env[:events] << { type: :tool_result, data: { name: tool_call.name, content: content } }
             env[:messages] << Brute::Message.new(role: :tool, content: content, tool_call_id: tool_call.id)
           end
         end
@@ -129,19 +129,6 @@ module Brute
       end
 
       private
-
-        def on_tool_call_start_event(pending_tools)
-          {
-            type: :tool_call_start,
-            data: pending_tools.map { |tc|
-              {
-                name: tc.name,
-                call_id: tc.id,
-                arguments: tc.arguments
-              }
-            }
-          }
-        end
     end
   end
 end
@@ -193,7 +180,7 @@ describe "brute/middleware/070_default_tool_pipeline" do
     { messages: Brute.log, events: [] }
   end
 
-  it "before_tool may rewrite arguments and short-circuit with a result" do
+  it "tool_start may rewrite arguments and short-circuit with a result" do
     tool = { name: "echo", description: "", execute: ->(text:) { "ran:#{text}" } }
     inner = ->(env) do
       env[:messages] << Brute::Message.new(role: :assistant, content: "",
@@ -201,41 +188,41 @@ describe "brute/middleware/070_default_tool_pipeline" do
     end
 
     pipeline = hooked(inner, tools: [tool]) do |p|
-      p.on(:before_tool) { |_env, call| call[:arguments] = { text: "rewritten" } }
+      p.on(:tool_start) { |_env, call| call[:arguments] = { text: "rewritten" } }
     end
     env = hook_env
     env[:messages].user("hi")
     pipeline.call(env)
     env[:messages].last.content.should == "ran:rewritten"
 
-    canned = hooked(inner, tools: [tool]) { |p| p.on(:before_tool) { |_env, call| call[:result] = "canned" } }
+    canned = hooked(inner, tools: [tool]) { |p| p.on(:tool_start) { |_env, call| call[:result] = "canned" } }
     env2 = hook_env
     env2[:messages].user("hi")
     canned.call(env2)
     env2[:messages].last.content.should == "canned" # never executed
   end
 
-  it "approve_tool denies on false (generic message) or String (custom)" do
+  it "tool_approve denies on false (generic message) or String (custom)" do
     tool = { name: "exec", description: "", execute: ->(**) { "ran" } }
     inner = ->(env) do
       env[:messages] << Brute::Message.new(role: :assistant, content: "",
         tool_calls: [{ id: "tc1", name: "exec", arguments: {} }])
     end
 
-    denied = hooked(inner, tools: [tool]) { |p| p.on(:approve_tool) { |_env, call| call[:denied] = true } }
+    denied = hooked(inner, tools: [tool]) { |p| p.on(:tool_approve) { |_env, call| call[:denied] = true } }
     env = hook_env
     env[:messages].user("hi")
     denied.call(env)
     env[:messages].last.content.should == %(Tool call to "exec" was denied.)
 
-    by_policy = hooked(inner, tools: [tool]) { |p| p.on(:approve_tool) { |_env, call| call[:denied] = "denied by policy" } }
+    by_policy = hooked(inner, tools: [tool]) { |p| p.on(:tool_approve) { |_env, call| call[:denied] = "denied by policy" } }
     env2 = hook_env
     env2[:messages].user("hi")
     by_policy.call(env2)
     env2[:messages].last.content.should == "denied by policy"
   end
 
-  it "after_tool may rewrite the result" do
+  it "tool_end may rewrite the result" do
     tool = { name: "echo", description: "", execute: ->(**) { "raw" } }
     inner = ->(env) do
       env[:messages] << Brute::Message.new(role: :assistant, content: "",
@@ -243,7 +230,7 @@ describe "brute/middleware/070_default_tool_pipeline" do
     end
 
     pipeline = hooked(inner, tools: [tool]) do |p|
-      p.on(:after_tool) { |_env, call| call[:result] = "rewrote(#{call[:result]})" }
+      p.on(:tool_end) { |_env, call| call[:result] = "rewrote(#{call[:result]})" }
     end
     env = hook_env
     env[:messages].user("hi")

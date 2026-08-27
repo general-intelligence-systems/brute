@@ -11,13 +11,13 @@ module Brute
     #
     #   class Shout < Brute::Middleware::Base
     #     def call(env)
-    #       emit(ENTER_EVENT, env, self)
+    #       env.emit(MIDDLEWARE_START_EVENT, self)
     #       @app.call(env)
     #     end
     #   end
     #
     # Brute::Hooks is included, so the event names are first class in every
-    # subclass — ENTER_EVENT, not Brute::Hooks::ENTER_EVENT.
+    # subclass — MIDDLEWARE_START_EVENT, not Brute::Hooks::MIDDLEWARE_START_EVENT.
     class Base
       include Brute::Hooks
 
@@ -49,9 +49,9 @@ describe "brute/middleware/000_base" do
     Brute::Middleware::Base.new(terminal, :extra, keyword: true).call({}).should == {}
 
     # The event names resolve through the class itself, so a subclass writes
-    # ENTER_EVENT rather than Brute::Hooks::ENTER_EVENT.
-    Brute::Middleware::Base.const_get(:ENTER_EVENT).should == :enter
-    Brute::Middleware::SystemPrompt.const_get(:AFTER_TOOL_EVENT).should == :after_tool
+    # MIDDLEWARE_START_EVENT rather than Brute::Hooks::MIDDLEWARE_START_EVENT.
+    Brute::Middleware::Base.const_get(:MIDDLEWARE_START_EVENT).should == :middleware_start
+    Brute::Middleware::SystemPrompt.const_get(:TOOL_END_EVENT).should == :tool_end
 
     # Every middleware in the chain descends from it.
     Brute::Middleware::SystemPrompt.ancestors.should.include Brute::Middleware::Base
