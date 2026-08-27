@@ -56,25 +56,29 @@ module Brute
 
     private
 
-    def locals(ctx)
-      @section_keys.to_h do |key|
-        value = self[key]
-        resolved = value.is_a?(Proc) ? (value.arity.zero? ? value.call : value.call(ctx)) : value
-        [key, resolved]
-      end.merge(ctx: ctx)
-    end
+      def locals(ctx)
+        @section_keys.to_h do |key|
+          value = self[key]
+          if value.is_a?(Proc)
+            resolved = (value.arity.zero? ? value.call : value.call(ctx))
+        else
+          resolved = value
+        end
+          [key, resolved]
+        end.merge(ctx: ctx)
+      end
 
-    def render(values)
-      context = binding
-      values.each { |key, value| context.local_variable_set(key, value) }
-      ERB.new(template_source, trim_mode: "-").result(context)
-    end
+      def render(values)
+        context = binding
+        values.each { |key, value| context.local_variable_set(key, value) }
+        ERB.new(template_source, trim_mode: "-").result(context)
+      end
 
     # A path that exists is re-read every time; anything else is treated as
     # an inline ERB source string.
-    def template_source
-      File.exist?(@template.to_s) ? File.read(@template) : @template.to_s
-    end
+      def template_source
+        File.exist?(@template.to_s) ? File.read(@template) : @template.to_s
+      end
   end
 end
 

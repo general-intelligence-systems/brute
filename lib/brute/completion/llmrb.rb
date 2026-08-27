@@ -81,16 +81,17 @@ module Brute
         attr_reader :options
 
         def params(env, history)
-          params = {
+          {
             role:        nil,
             model:       option(env, :model),
             messages:    history,
             temperature: temperature(env),
-          }.compact
-
-          functions = functions(env)
-          params[:tools] = functions if functions.any?
-          params
+          }.compact.tap do |params|
+            functions = functions(env)
+            if functions.any?
+              params[:tools] = functions
+            end
+          end
         end
 
         def client(env)

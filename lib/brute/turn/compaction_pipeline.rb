@@ -40,7 +40,9 @@ module Brute
     class CompactionPipeline
       def initialize(&block)
         @pipeline = Pipeline.new
-        @pipeline.instance_eval(&block) if block
+        if block
+          @pipeline.instance_eval(&block)
+        end
       end
 
       # Answer a smaller conversation, or nil when nothing was given up.

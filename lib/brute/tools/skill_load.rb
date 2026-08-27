@@ -49,52 +49,57 @@ module Brute
 
       def execute(name:)
         skill = Brute::Skill.get(name, cwd: @cwd)
-        return unknown_skill(name) unless skill
-
-        directory = File.dirname(skill.location)
-        files = bundled_files(directory)
-
-        render(skill, directory, files)
+        if skill
+          directory = File.dirname(skill.location)
+          files = bundled_files(directory)
+          render(skill, directory, files)
+        else
+          unknown_skill(name)
+        end
       end
 
       private
 
-      def unknown_skill(name)
-        available = Brute::Skill.all(cwd: @cwd).map(&:name)
-        listing = available.empty? ? "(none)" : available.join(", ")
-        "Error: unknown skill #{name.inspect}. Available skills: #{listing}"
-      end
-
-      def bundled_files(directory)
-        Dir.glob(File.join(directory, "**", "*"), File::FNM_DOTMATCH)
-           .select { |p| File.file?(p) }
-           .reject { |p| File.basename(p) == Brute::Skill::FILENAME }
-           .map { |p| Pathname.new(p).relative_path_from(Pathname.new(directory)).to_s }
-           .sort
-           .first(FILE_LIMIT)
-      end
-
-      def render(skill, directory, files)
-        lines = [
-          "<skill name=\"#{skill.name}\">",
-          "# Skill: #{skill.name}",
-          "",
-          skill.content,
-          "",
-          "Base directory for this skill: #{directory}",
-          "Relative paths in this skill (e.g. scripts/, references/, assets/) are relative to " \
-            "this base directory. Use your existing tools (read, shell) to access them.",
-        ]
-
-        unless files.empty?
-          lines << ""
-          lines << "Bundled files (sampled, up to #{FILE_LIMIT}):"
-          files.each { |f| lines << "  #{f}" }
+        def unknown_skill(name)
+          available = Brute::Skill.all(cwd: @cwd).map(&:name)
+          if available.empty?
+            listing = "(none)"
+        else
+          listing = available.join(", ")
+        end
+          "Error: unknown skill #{name.inspect}. Available skills: #{listing}"
         end
 
-        lines << "</skill>"
-        lines.join("\n")
-      end
+        def bundled_files(directory)
+          Dir.glob(File.join(directory, "**", "*"), File::FNM_DOTMATCH)
+             .select { |p| File.file?(p) }
+             .reject { |p| File.basename(p) == Brute::Skill::FILENAME }
+             .map { |p| Pathname.new(p).relative_path_from(Pathname.new(directory)).to_s }
+             .sort
+             .first(FILE_LIMIT)
+        end
+
+        def render(skill, directory, files)
+          lines = [
+            "<skill name=\"#{skill.name}\">",
+            "# Skill: #{skill.name}",
+            "",
+            skill.content,
+            "",
+            "Base directory for this skill: #{directory}",
+            "Relative paths in this skill (e.g. scripts/, references/, assets/) are relative to " \
+              "this base directory. Use your existing tools (read, shell) to access them.",
+          ]
+
+          unless files.empty?
+            lines << ""
+            lines << "Bundled files (sampled, up to #{FILE_LIMIT}):"
+            files.each { |f| lines << "  #{f}" }
+          end
+
+          lines << "</skill>"
+          lines.join("\n")
+        end
     end
   end
 end

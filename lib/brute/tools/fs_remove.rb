@@ -17,9 +17,13 @@ module Brute
       def execute(path:)
         target = File.expand_path(path)
         Brute::Tools::FS::FileMutationQueue.serialize(target) do
-          raise "Path not found: #{target}" unless File.exist?(target)
+          unless File.exist?(target)
+            raise "Path not found: #{target}"
+          end
 
-          Brute::Tools::FS::SnapshotStore.save(target) if File.file?(target)
+          if File.file?(target)
+            Brute::Tools::FS::SnapshotStore.save(target)
+          end
 
           if File.directory?(target)
             Dir.rmdir(target)

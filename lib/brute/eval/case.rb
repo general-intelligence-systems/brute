@@ -8,7 +8,12 @@ module Brute
     # The budget a case allows itself. Lenient on purpose: an agent that took
     # one search too many is worth knowing about, but it is not the same
     # fault as an agent that answered wrongly.
-    Budget = Data.define(:iterations, :tool_calls, :tokens, :seconds) do
+    Budget = Data.define(
+      :iterations,
+      :tool_calls,
+      :tokens,
+      :seconds,
+    ) do
       def initialize(iterations: 10, tool_calls: 8, tokens: 100_000, seconds: 180)
         super
       end
@@ -94,7 +99,7 @@ module Brute
             said_it(transcript),
             afforded(transcript),
             checked(transcript),
-          ].flatten.compact.uniq
+          ].flatten.compact.uniq,
         )
       end
 

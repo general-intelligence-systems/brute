@@ -36,17 +36,27 @@ module Brute
 
       def execute(pattern:, path: nil, glob: nil, ignore_case: false)
         dir = File.expand_path(path || Dir.pwd)
-        raise "Directory not found: #{dir}" unless File.directory?(dir)
+        unless File.directory?(dir)
+          raise "Directory not found: #{dir}"
+        end
 
         cmd = ["rg", "--line-number", "--max-columns=2000", "--max-columns-preview", "--sortr=modified"]
-        cmd << "--ignore-case" if ignore_case
-        cmd += ["--glob", glob] if glob
+        if ignore_case
+          cmd << "--ignore-case"
+        end
+        if glob
+          cmd += ["--glob", glob]
+        end
         cmd << pattern
         cmd << dir
 
         stdout, stderr, status = Open3.capture3(*cmd)
 
-        output = stdout.empty? ? stderr : stdout
+        if stdout.empty?
+          output = stderr
+        else
+          output = stdout
+        end
 
         # Global cap at MAX_TOTAL_MATCHES lines
         lines = output.lines

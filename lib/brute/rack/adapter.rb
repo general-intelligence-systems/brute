@@ -38,7 +38,9 @@ module Brute
       # @parameter agent [#start] Anything with `start(prompt) -> env` — an
       #   AgentPipeline, a SubAgent, or any turn-shaped callable.
       def initialize(agent)
-        raise ArgumentError, "agent must respond to #start" unless agent.respond_to?(:start)
+        unless agent.respond_to?(:start)
+          raise ArgumentError, "agent must respond to #start"
+        end
 
         @agent = agent
       end
@@ -48,10 +50,12 @@ module Brute
       # (client's fault); anything the turn raises is a 500.
       def call(env)
         prompt = prompt_from(env)
-        return response_for(env, 400, "No prompt provided.") if prompt.nil? || prompt.empty?
-
-        turn = @agent.start(prompt)
-        response_for(env, 200, output_of(turn))
+        if prompt.nil? || prompt.empty?
+          response_for(env, 400, "No prompt provided.")
+        else
+          turn = @agent.start(prompt)
+          response_for(env, 200, output_of(turn))
+        end
       rescue => error
         response_for(env, 500, error.message)
       end
@@ -68,24 +72,29 @@ module Brute
         request = ::Rack::Request.new(env)
 
         if (query = request.GET["prompt"]) && !query.empty?
-          return query
-        end
+          query
+        else
+          body = read_body(request)
+          if body.nil? || body.strip.empty?
+            nil
+          else
+            from_json = nil
+            if json?(request.media_type)
+              case data = parse_json(body)
+              when ::Hash   then from_json = PROMPT_KEYS.filter_map { |key| data[key] }.first&.to_s || body
+              when ::String then from_json = data
+              end
+            end
 
-        body = read_body(request)
-        return nil if body.nil? || body.strip.empty?
-
-        if json?(request.media_type)
-          case data = parse_json(body)
-          when ::Hash   then return PROMPT_KEYS.filter_map { |key| data[key] }.first&.to_s || body
-          when ::String then return data
+            if from_json
+              from_json
+            elsif request.form_data? && (field = ::Rack::Utils.parse_nested_query(body)["prompt"])
+              field
+            else
+              body
+            end
           end
         end
-
-        if request.form_data? && (field = ::Rack::Utils.parse_nested_query(body)["prompt"])
-          return field
-        end
-
-        body
       end
 
       # output -> [status, headers, body]. Content-negotiated: JSON in (or an
@@ -96,7 +105,11 @@ module Brute
         text = output.to_s
 
         if wants_json?(env)
-          key = status == 200 ? :response : :error
+          if status == 200
+            key = :response
+          else
+            key = :error
+          end
           [status, {"content-type" => "application/json"}, [::JSON.generate(key => text)]]
         else
           [status, {"content-type" => "text/plain; charset=utf-8"}, [text]]
@@ -107,7 +120,11 @@ module Brute
 
         # The agent's answer is the last message it appended to the log.
         def output_of(turn)
-          messages = turn.is_a?(::Hash) ? turn[:messages] : turn
+          if turn.is_a?(::Hash)
+            messages = turn[:messages]
+          else
+            messages = turn
+          end
           messages&.last&.content.to_s
         end
 

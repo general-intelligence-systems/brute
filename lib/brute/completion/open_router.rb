@@ -101,7 +101,9 @@ module Brute
 
           unless @options.tools?
             tools = tool_definitions(env)
-            overrides[:tools] = tools if tools.any?
+            if tools.any?
+              overrides[:tools] = tools
+            end
           end
 
           if !@model_given && (model = env[:model])

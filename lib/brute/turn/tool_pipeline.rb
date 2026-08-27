@@ -38,7 +38,9 @@ module Brute
         @description = description
         @params      = params
         @pipeline    = Pipeline.new
-        @pipeline.instance_eval(&block) if block
+        if block
+          @pipeline.instance_eval(&block)
+        end
       end
 
       def call(**arguments)

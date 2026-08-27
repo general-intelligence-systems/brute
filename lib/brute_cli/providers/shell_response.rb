@@ -25,22 +25,24 @@ module BruteCLI
       end
 
       def messages
-        return [empty_assistant] if @command.nil?
-
-        call_id = "shell_#{SecureRandom.hex(8)}"
-        tool_calls = [
-          Brute::ToolCall.new(
-            id: call_id,
-            name: "shell",
-            arguments: { "command" => @command },
+        if @command.nil?
+          [empty_assistant]
+        else
+          call_id = "shell_#{SecureRandom.hex(8)}"
+          tool_calls = [
+            Brute::ToolCall.new(
+              id:        call_id,
+              name:      "shell",
+              arguments: { "command" => @command },
+            )
+          ]
+          [Brute::Message.new(
+            role:       :assistant,
+            content:    "",
+            tool_calls: tool_calls,
           )
-        ]
-
-        [Brute::Message.new(
-          role: :assistant,
-          content: "",
-          tool_calls: tool_calls,
-        )]
+  ]
+        end
       end
       alias_method :choices, :messages
 
@@ -83,9 +85,9 @@ module BruteCLI
 
       private
 
-      def empty_assistant
-        Brute::Message.new(role: :assistant, content: "")
-      end
+        def empty_assistant
+          Brute::Message.new(role: :assistant, content: "")
+        end
     end
   end
 end

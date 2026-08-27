@@ -8,13 +8,15 @@ module Brute
     module Instructions
       def self.call(ctx)
         rules = ctx[:custom_rules]
-        return nil if rules.nil? || rules.strip.empty?
+        if rules.nil? || rules.strip.empty?
+          nil
+        else
+          <<~TXT
+            # Project-Specific Rules
 
-        <<~TXT
-          # Project-Specific Rules
-
-          #{rules}
-        TXT
+            #{rules}
+          TXT
+        end
       end
     end
   end

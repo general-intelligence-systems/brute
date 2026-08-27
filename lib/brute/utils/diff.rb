@@ -12,17 +12,25 @@ module Brute
       old_lines = old_text.lines
       new_lines = new_text.lines
       diffs = ::Diff::LCS.diff(old_lines, new_lines)
-      return '' if diffs.empty?
-
-      output = +''
-      file_length_difference = 0
-      diffs.each do |piece|
-        hunk = ::Diff::LCS::Hunk.new(old_lines, new_lines, piece, context, file_length_difference)
-        file_length_difference = hunk.file_length_difference
-        output << hunk.diff(:unified)
-        output << "\n"
+      if diffs.empty?
+        ''
+      else
+        output = +''
+        file_length_difference = 0
+        diffs.each do |piece|
+          hunk = ::Diff::LCS::Hunk.new(
+            old_lines,
+            new_lines,
+            piece,
+            context,
+            file_length_difference,
+          )
+          file_length_difference = hunk.file_length_difference
+          output << hunk.diff(:unified)
+          output << "\n"
+        end
+        output
       end
-      output
     end
   end
 end

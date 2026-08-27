@@ -76,18 +76,20 @@ module Brute
         attr_reader :options
 
         def params(env)
-          params = {
+          {
             messages:    Brute::MessageTransport::LangChain.dump_all(env[:messages]),
             temperature: temperature(env),
-          }
+          }.tap do |params|
+            tools = tool_definitions(env)
+            if tools.any?
+              params[:tools] = tools
+            end
 
-          tools = tool_definitions(env)
-          params[:tools] = tools if tools.any?
-
-          model = option(env, :model)
-          params[:model] = model if model
-
-          params
+            model = option(env, :model)
+            if model
+              params[:model] = model
+            end
+          end
         end
 
         def reply(response)

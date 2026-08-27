@@ -151,7 +151,7 @@ module Brute
           env.emit(COMPACT_DURATION_EVENT, env[:compactor]) do
             compacted = env[:compactor].compact(
               env[:messages],
-              target: target,
+              target:        target,
               token_counter: @token_counter,
             )
           end

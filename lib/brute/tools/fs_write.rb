@@ -19,7 +19,11 @@ module Brute
       def execute(file_path:, content:)
         path = File.expand_path(file_path)
         Brute::Tools::FS::FileMutationQueue.serialize(path) do
-          old_content = File.exist?(path) ? File.read(path) : ''
+          if File.exist?(path)
+            old_content = File.read(path)
+          else
+            old_content = ''
+          end
           Brute::Tools::FS::SnapshotStore.save(path)
           FileUtils.mkdir_p(File.dirname(path))
           File.write(path, content)

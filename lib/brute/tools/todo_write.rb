@@ -10,30 +10,34 @@ module Brute
       description "Create or update the todo list. Send the complete list each time — " \
                   "this replaces the existing list entirely."
 
-      params({
-        type: 'object',
-        properties: {
-          todos: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                id: { type: 'string' },
-                content: { type: 'string' },
-                status: { type: 'string', enum: %w[pending in_progress completed cancelled] },
+      params(
+        {
+          type:       'object',
+          properties: {
+            todos: {
+              type:  'array',
+              items: {
+                type:       'object',
+                properties: {
+                  id:      { type: 'string' },
+                  content: { type: 'string' },
+                  status:  { type: 'string', enum: %w[pending in_progress completed cancelled] },
+                },
+                required:   %w[id content status],
               },
-              required: %w[id content status],
             },
           },
+          required:   %w[todos],
         },
-        required: %w[todos],
-      })
+      )
 
       def name; "todo_write"; end
 
       def execute(todos:)
         items = todos.map do |t|
-          t = t.transform_keys(&:to_sym) if t.is_a?(Hash)
+          if t.is_a?(Hash)
+            t = t.transform_keys(&:to_sym)
+          end
           {id: t[:id], content: t[:content], status: t[:status]}
         end
         Brute::Tools::TodoList::Store.replace(items)

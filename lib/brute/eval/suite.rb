@@ -21,7 +21,12 @@ module Brute
     #
     # #run answers a process exit status, so an eval script ends `exit(...)`.
     class Suite
-      Result = Data.define(:kase, :run, :transcript, :verdict)
+      Result = Data.define(
+        :kase,
+        :run,
+        :transcript,
+        :verdict,
+      )
 
       def initialize(agent:, cases:, world: World.new, out: $stdout)
         @agent = agent
@@ -67,10 +72,10 @@ module Brute
           transcript.published = @world.published.dup
 
           Result.new(
-            kase: kase,
-            run: run,
+            kase:       kase,
+            run:        run,
             transcript: transcript,
-            verdict: kase.verdict(transcript)
+            verdict:    kase.verdict(transcript),
           )
         end
 
@@ -93,7 +98,7 @@ module Brute
             "  spent: #{transcript.iterations}/#{budget.iterations} iterations, " \
             "#{transcript.calls.length}/#{budget.tool_calls} calls, " \
             "#{transcript.tokens}/#{budget.tokens} tokens, " \
-            "#{transcript.seconds.round(1)}s"
+            "#{transcript.seconds.round(1)}s",
           )
           result.verdict.failures.each { |failure| @out.puts "  - #{failure}" }
           @out.puts "  said:"

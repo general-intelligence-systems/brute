@@ -27,7 +27,12 @@ module Brute
         def use(middleware, *args, &block)
           tap do
             super
-            hooks.emit(MIDDLEWARE_ADDED_EVENT, {}, middleware, *args)
+            hooks.emit(
+              MIDDLEWARE_ADDED_EVENT,
+              {},
+              middleware,
+              *args,
+            )
 
             @use.pop.then do |builder|
               @use << lambda do |app|
@@ -64,7 +69,9 @@ module Brute
         # Keeps a trailing hash flagged as keywords through `super`, the way
         # Rack::Builder#use does — without it `use Mw, label: "x"` arrives at
         # the middleware's constructor as a positional Hash.
-        ruby2_keywords(:use) if respond_to?(:ruby2_keywords, true)
+        if respond_to?(:ruby2_keywords, true)
+          ruby2_keywords(:use)
+        end
 
         def run(app = nil, &block)
           tap do
@@ -85,7 +92,7 @@ module Brute
         private
 
 
-        public
+          public
       end
 
       include Chainable

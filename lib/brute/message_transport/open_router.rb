@@ -26,9 +26,11 @@ module Brute
       # An OpenRouter::Response's messages (one per choice; in practice
       # OpenRouter returns exactly one).
       def messages
-        return @result.choices.map { |choice| choice["message"] || choice[:message] } if @result.respond_to?(:choices)
-
-        super
+        if @result.respond_to?(:choices)
+          @result.choices.map { |choice| choice["message"] || choice[:message] }
+        else
+          super
+        end
       end
 
       private
@@ -36,14 +38,25 @@ module Brute
         def wrap(message)
           # Coerce string keys to symbol keys if necessary
           hash = message.to_h.transform_keys(&:to_sym)
-          hash[:role] = hash[:role].to_sym if hash.key?(:role)
-          hash[:tool_calls] = hash[:tool_calls].map { |tc| wrap_tool_call(tc) } if hash[:tool_calls]
+          if hash.key?(:role)
+            hash[:role] = hash[:role].to_sym
+          end
+          if hash[:tool_calls]
+            hash[:tool_calls] = hash[:tool_calls].map { |tc| wrap_tool_call(tc) }
+          end
 
           case hash
           in { role: (:system | :user | :assistant | :tool) }
             # Slice away provider extras (refusal, reasoning, model, ...)
             # that Brute::Message doesn't know.
-            Brute::Message.new(**hash.slice(:role, :content, :tool_calls, :tool_call_id))
+            Brute::Message.new(
+              **hash.slice(
+                :role,
+                :content,
+                :tool_calls,
+                :tool_call_id,
+              ),
+            )
           else
             raise "Unrecognised message format #{message.inspect}"
           end
@@ -53,16 +66,17 @@ module Brute
         # -> the flat { id:, name:, arguments: Hash } Brute::Message understands.
         def wrap_tool_call(tool_call)
           tc = tool_call.to_h.transform_keys(&:to_sym)
-          return tc unless tc[:function] # already flat { id:, name:, arguments: }
-
-          function = tc[:function].to_h.transform_keys(&:to_sym)
-          arguments = function[:arguments].to_s
-
-          {
-            id: tc[:id],
-            name: function[:name],
-            arguments: JSON.parse(arguments.empty? ? "{}" : arguments),
-          }
+          if tc[:function]
+            function = tc[:function].to_h.transform_keys(&:to_sym)
+            arguments = function[:arguments].to_s
+            {
+              id:        tc[:id],
+              name:      function[:name],
+              arguments: JSON.parse(arguments.empty? ? "{}" : arguments),
+            }
+          else
+            tc
+          end
         end
     end
   end

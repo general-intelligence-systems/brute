@@ -19,7 +19,16 @@ module Brute
   # turn are the env's business, not the reader's. A strategy answers nil when
   # the provider reported nothing at all.
   module UsageDetection
-    Usage = Data.define(:input, :output, :total, :reasoning, :cache_read, :cache_write, :cost, :raw) do
+    Usage = Data.define(
+      :input,
+      :output,
+      :total,
+      :reasoning,
+      :cache_read,
+      :cache_write,
+      :cost,
+      :raw,
+    ) do
       def initialize(input: nil, output: nil, total: nil, reasoning: nil,
                      cache_read: nil, cache_write: nil, cost: nil, raw: nil)
         super

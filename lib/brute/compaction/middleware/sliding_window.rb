@@ -33,7 +33,7 @@ module Brute
           # it anyway; declining here says why.
           if dropped.any? && !dropped.all? { |index| Brute::Compaction::Transcript.marked?(messages[index], strategy) }
             note = Brute::Message.new(
-              role: :user,
+              role:    :user,
               content: Brute::Compaction::Transcript.mark(strategy, format(NOTE, dropped.length)),
             )
             [*kept[...note_index], note, *kept[note_index..]]

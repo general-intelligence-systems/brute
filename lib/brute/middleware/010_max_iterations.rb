@@ -23,7 +23,7 @@ module Brute
       def call(env)
         if max_iterations_reached?(env)
           env[:messages] << Brute::Message.new(
-            role: :user,
+            role:    :user,
             content: "Maximum iterations reached.",
           )
         else

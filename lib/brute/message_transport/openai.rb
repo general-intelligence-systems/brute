@@ -28,9 +28,14 @@ module Brute
           { role: "tool", tool_call_id: message.tool_call_id, content: message.content.to_s }
         when :assistant
           if message.tool_call?
+            content = message.content
+            if content.to_s.empty?
+              content = nil
+            end
+
             {
               role:       "assistant",
-              content:    (message.content unless message.content.to_s.empty?),
+              content:    content,
               tool_calls: message.tool_calls.map { |tc|
                 { id: tc.id, type: "function", function: { name: tc.name, arguments: JSON.generate(tc.arguments) } }
               },
@@ -45,9 +50,11 @@ module Brute
 
       # A chat completion response's messages (one per choice).
       def messages
-        return @result.choices.map(&:message) if @result.respond_to?(:choices)
-
-        super
+        if @result.respond_to?(:choices)
+          @result.choices.map(&:message)
+        else
+          super
+        end
       end
 
       private
@@ -56,10 +63,10 @@ module Brute
         # arguments arrive as a JSON string; parse them into a Hash.
         def wrap(message)
           tool_calls = message.tool_calls&.map do |tc|
-            arguments = begin
-              JSON.parse(tc.function.arguments.to_s)
+            begin
+              arguments = JSON.parse(tc.function.arguments.to_s)
             rescue JSON::ParserError
-              {}
+              arguments = {}
             end
             Brute::ToolCall.new(id: tc.id, name: tc.function.name, arguments: arguments)
           end

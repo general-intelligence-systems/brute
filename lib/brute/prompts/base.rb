@@ -14,9 +14,14 @@ module Brute
     def self.read(section, provider_name)
       provider = provider_name.to_s
       path = File.join(TEXT_DIR, section, "#{provider}.txt")
-      path = File.join(TEXT_DIR, section, "default.txt") unless File.exist?(path)
-      return nil unless File.exist?(path)
-      File.read(path)
+      unless File.exist?(path)
+        path = File.join(TEXT_DIR, section, "default.txt")
+      end
+      if File.exist?(path)
+        File.read(path)
+      else
+        nil
+      end
     end
 
     # Read a named agent prompt (e.g. "explore", "compaction").
@@ -33,9 +38,11 @@ module Brute
       end
 
       def method_missing(name, *args)
-        return @ctx[name] if args.empty? && @ctx.key?(name)
-
-        super
+        if args.empty? && @ctx.key?(name)
+          @ctx[name]
+        else
+          super
+        end
       end
 
       def respond_to_missing?(name, include_private = false)
@@ -69,10 +76,12 @@ module Brute
       path = [provider, "default"]
              .map { |variant| File.join(TEXT_DIR, section, "#{variant}.erb") }
              .find { |candidate| File.exist?(candidate) }
-      return read(section, provider) unless path
-
-      erb = TEMPLATES[path] ||= ERB.new(File.read(path), trim_mode: "-")
-      erb.result(Context.new(ctx).get_binding)
+      if path
+        erb = TEMPLATES[path] ||= ERB.new(File.read(path), trim_mode: "-")
+        erb.result(Context.new(ctx).get_binding)
+      else
+        read(section, provider)
+      end
     end
   end
 end

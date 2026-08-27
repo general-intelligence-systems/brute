@@ -24,32 +24,36 @@ module Brute
           role:         message.role,
           content:      message.content,
           tool_calls:   tool_calls,
-          tool_call_id: message.tool_call_id
+          tool_call_id: message.tool_call_id,
         )
       end
 
       private
 
       # RubyLLM::Message -> Brute::Message.
-      def wrap(message)
-        raw_calls = message.tool_calls
-        calls_list = raw_calls.respond_to?(:values) ? raw_calls.values : raw_calls
-
-        tool_calls = calls_list&.map do |tc|
-          Brute::ToolCall.new(
-            id:        tc.id,
-            name:      tc.name,
-            arguments: tc.arguments
-          )
+        def wrap(message)
+          raw_calls = message.tool_calls
+          if raw_calls.respond_to?(:values)
+            calls_list = raw_calls.values
+        else
+          calls_list = raw_calls
         end
 
-        Brute::Message.new(
-          role:         message.role,
-          content:      message.content&.to_s, # Preserves nil safely
-          tool_calls:   tool_calls,
-          tool_call_id: message.tool_call_id
-        )
-      end
+          tool_calls = calls_list&.map do |tc|
+            Brute::ToolCall.new(
+              id:        tc.id,
+              name:      tc.name,
+              arguments: tc.arguments,
+            )
+          end
+
+          Brute::Message.new(
+            role:         message.role,
+            content:      message.content&.to_s, # Preserves nil safely
+            tool_calls:   tool_calls,
+            tool_call_id: message.tool_call_id,
+          )
+        end
     end
   end
 end

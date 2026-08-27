@@ -39,8 +39,11 @@ module Brute
             wire = message.tool_calls.map do |tc|
               { id: tc.id, type: "function", function: { name: tc.name, arguments: JSON.generate(tc.arguments) } }
             end
-            ::LLM::Message.new(:assistant, message.content.to_s,
-                               { tool_calls: wire, original_tool_calls: wire })
+            ::LLM::Message.new(
+              :assistant,
+              message.content.to_s,
+              { tool_calls: wire, original_tool_calls: wire },
+            )
           else
             ::LLM::Message.new(:assistant, message.content)
           end
@@ -53,8 +56,9 @@ module Brute
 
         # LLM::Message (from an LLM::Response) -> Brute::Message.
         def wrap(message)
-          tool_calls = if message.tool_call?
-            message.tool_calls.map do |tc|
+          tool_calls = nil
+          if message.tool_call?
+            tool_calls = message.tool_calls.map do |tc|
               Brute::ToolCall.new(id: tc.id, name: tc["name"], arguments: tc.arguments.to_h)
             end
           end

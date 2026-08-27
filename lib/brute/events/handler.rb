@@ -18,7 +18,9 @@ module Brute
       # thing, then call super (or don't, to swallow the event).
       def <<(event)
         tap do
-          @inner << event if @inner
+          if @inner
+            @inner << event
+          end
         end
       end
     end

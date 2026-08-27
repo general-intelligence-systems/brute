@@ -18,10 +18,14 @@ module Brute
         target = File.expand_path(path)
         Brute::Tools::FS::FileMutationQueue.serialize(target) do
           snapshot = Brute::Tools::FS::SnapshotStore.pop(target)
-          raise "No undo history available for: #{target}" unless snapshot
+          unless snapshot
+            raise "No undo history available for: #{target}"
+          end
 
           if snapshot == :did_not_exist
-            File.delete(target) if File.exist?(target)
+            if File.exist?(target)
+              File.delete(target)
+            end
             {success: true, action: "deleted (file did not exist before)"}
           else
             File.write(target, snapshot)

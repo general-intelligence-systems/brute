@@ -37,7 +37,9 @@ module Brute
     # the schemas, which are already inside it. Anything else double counts.
     def self.estimate(env, counter: nil, tools: nil)
       counter ||= env[:token_counter] || default
-      tools = env[:tools] if tools.nil?
+      if tools.nil?
+        tools = env[:tools]
+      end
       messages = env[:messages] || []
       reported = env.dig(:metadata, :last_llm_usage)&.total.to_i
       answered = messages.rindex { |message| message.role == :assistant }

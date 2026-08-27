@@ -127,7 +127,7 @@ module Brute
         def swap(env, indices, text)
           before = tokens(env[:conversation])
           summary = Brute::Message.new(
-            role: :user,
+            role:    :user,
             content: Brute::Compaction::Transcript.mark(STRATEGY, text),
           )
           compacted = splice(env[:conversation], indices, summary)
@@ -175,27 +175,34 @@ module Brute
           conversation = env[:conversation]
           system_end = Brute::Compaction::Transcript.system_end(conversation)
           task = Brute::Compaction::Transcript.task_index(conversation)
+          target = env[:target]
 
-          turns(conversation, system_end, task, env[:target]) ||
-            history_summaries(conversation, system_end, task || system_end, env[:target]) ||
-            steps(conversation, env[:target]) ||
-            task_summaries(conversation, task, env[:target])
+          # Everything before the current task: what tiers 1 and 2 are allowed
+          # to give up, and the only thing either of them needs to be told.
+          history = system_end...(task || system_end)
+
+          t = turns(conversation, history, target)
+          h = history_summaries(conversation, history, target)
+          s = steps(conversation, target)
+          ts = task_summaries(conversation, task, target)
+
+          t || h || s || ts
         end
 
         # Tier 1. Whole historical turns, oldest first.
-        def turns(conversation, system_end, task, target)
+        def turns(conversation, history, target)
           groups = Brute::Compaction::Transcript.turns(
             conversation,
-            from: system_end,
-            to: task || system_end,
+            from: history.begin,
+            to:   history.end,
           ).map(&:to_a)
 
           enough(conversation, groups, target)
         end
 
         # Tier 2. History is nothing but summaries, so combine the oldest.
-        def history_summaries(conversation, system_end, history_end, target)
-          combine(conversation, summaries(conversation, system_end, history_end), target)
+        def history_summaries(conversation, history, target)
+          combine(conversation, summaries(conversation, history), target)
         end
 
         # Tier 3. The current task's own oldest steps, keeping the newest.
@@ -210,12 +217,17 @@ module Brute
 
         # Tier 4. No step may go, so combine the task's own summaries.
         def task_summaries(conversation, task, target)
-          start = task.nil? ? 0 : task + 1
-          combine(conversation, summaries(conversation, start, conversation.length), target)
+          if task.nil?
+            start = 0
+          else
+            start = task + 1
+          end
+
+          combine(conversation, summaries(conversation, start...conversation.length), target)
         end
 
-        def summaries(conversation, from, to)
-          (from...to).select do |index|
+        def summaries(conversation, range)
+          range.select do |index|
             Brute::Compaction::Transcript.marked?(conversation[index], STRATEGY)
           end
         end

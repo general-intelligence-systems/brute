@@ -11,23 +11,26 @@ module Brute
     # arrive nested under completion_tokens_details.
     module OpenRouter
       def self.detect(response)
-        return nil unless response.respond_to?(:usage)
-
-        usage = response.usage
-        return nil if usage.nil?
-
-        usage = usage.to_h
-        details = (usage["completion_tokens_details"] || usage[:completion_tokens_details] || {}).to_h
-
-        Usage.new(
-          input:     field(usage, "prompt_tokens"),
-          output:    field(usage, "completion_tokens"),
-          total:     field(usage, "total_tokens"),
-          reasoning: field(details, "reasoning_tokens"),
-          cache_read: field(usage, "cached_tokens"),
-          cost:      field(usage, "cost"),
-          raw:       usage,
-        )
+        if response.respond_to?(:usage)
+          usage = response.usage
+          if usage.nil?
+            nil
+          else
+            usage = usage.to_h
+            details = (usage["completion_tokens_details"] || usage[:completion_tokens_details] || {}).to_h
+            Usage.new(
+              input:      field(usage, "prompt_tokens"),
+              output:     field(usage, "completion_tokens"),
+              total:      field(usage, "total_tokens"),
+              reasoning:  field(details, "reasoning_tokens"),
+              cache_read: field(usage, "cached_tokens"),
+              cost:       field(usage, "cost"),
+              raw:        usage,
+            )
+          end
+        else
+          nil
+        end
       end
 
       # OpenRouter hands back string keys; a hand-built response may not.

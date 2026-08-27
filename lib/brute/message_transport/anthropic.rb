@@ -55,7 +55,9 @@ module Brute
         when :assistant
           if message.tool_call?
             blocks = []
-            blocks << { type: "text", text: message.content } unless message.content.to_s.empty?
+            unless message.content.to_s.empty?
+              blocks << { type: "text", text: message.content }
+            end
             blocks += message.tool_calls.map { |tc| { type: "tool_use", id: tc.id, name: tc.name, input: tc.arguments } }
             { role: "assistant", content: blocks }
           else
@@ -79,14 +81,22 @@ module Brute
 
           text = blocks.select { |b| b.type == :text }.map(&:text).join
           tool_calls = blocks.select { |b| b.type == :tool_use }.map do |b|
-            arguments = b.input.respond_to?(:to_h) ? b.input.to_h : b.input
+            if b.input.respond_to?(:to_h)
+              arguments = b.input.to_h
+            else
+              arguments = b.input
+            end
             Brute::ToolCall.new(id: b.id, name: b.name, arguments: arguments)
+          end
+
+          if tool_calls.empty?
+            tool_calls = nil
           end
 
           Brute::Message.new(
             role:       :assistant,
             content:    text,
-            tool_calls: (tool_calls unless tool_calls.empty?),
+            tool_calls: tool_calls,
           )
         end
     end

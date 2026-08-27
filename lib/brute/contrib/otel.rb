@@ -35,33 +35,50 @@ module Brute
 
       class << self
         def subscribe(agent, tracer: default_tracer)
-          return agent if tracer.nil?
-
-          agent
-            .on(Brute::Hooks::TURN_START_EVENT) { |env| start(env, tracer) }
-            .on(Brute::Hooks::TURN_END_EVENT) { |env| finish(env) }
-            .on(Brute::Hooks::LLM_END_EVENT) { |env| record_usage(env) }
-            .on(Brute::Hooks::TOOL_START_EVENT) { |env, call| tool_called(env, call) }
-            .on(Brute::Hooks::TOOL_END_EVENT) { |env, call| tool_returned(env, call) }
-            .on(Brute::Hooks::LLM_FAILURE_EVENT) { |env| failed(env) }
-            .on(Brute::Hooks::MIDDLEWARE_DURATION_EVENT) { |env, started, finished, layer| layer_finished(env, started, finished, layer) }
-            .on(Brute::Hooks::TURN_DURATION_EVENT) { |env, started, finished| timed(env, "turn", finished - started) }
-            .on(Brute::Hooks::LLM_DURATION_EVENT) { |env, started, finished| timed(env, "llm", finished - started) }
-            .on(Brute::Hooks::TOOL_DURATION_EVENT) { |env, started, finished, call| timed(env, "tool", finished - started, "tool.name" => call[:name].to_s) }
+          if tracer.nil?
+            agent
+          else
+            agent
+              .on(Brute::Hooks::TURN_START_EVENT) { |env| start(env, tracer) }
+              .on(Brute::Hooks::TURN_END_EVENT) { |env| finish(env) }
+              .on(Brute::Hooks::LLM_END_EVENT) { |env| record_usage(env) }
+              .on(Brute::Hooks::TOOL_START_EVENT) { |env, call| tool_called(env, call) }
+              .on(Brute::Hooks::TOOL_END_EVENT) { |env, call| tool_returned(env, call) }
+              .on(Brute::Hooks::LLM_FAILURE_EVENT) { |env| failed(env) }
+              .on(Brute::Hooks::MIDDLEWARE_DURATION_EVENT) { |env, started, finished, layer| layer_finished(
+                env,
+                started,
+                finished,
+                layer,
+              ) }
+              .on(Brute::Hooks::TURN_DURATION_EVENT) { |env, started, finished| timed(env, "turn", finished - started) }
+              .on(Brute::Hooks::LLM_DURATION_EVENT) { |env, started, finished| timed(env, "llm", finished - started) }
+              .on(Brute::Hooks::TOOL_DURATION_EVENT) { |env, started, finished, call| timed(
+                env,
+                "tool",
+                finished - started,
+                "tool.name" => call[:name].to_s,
+              ) }
+          end
         end
 
         def default_tracer
-          return nil unless defined?(::OpenTelemetry)
-
-          ::OpenTelemetry.tracer_provider.tracer("brute", Brute::VERSION)
+          if defined?(::OpenTelemetry)
+            ::OpenTelemetry.tracer_provider.tracer("brute", Brute::VERSION)
+          else
+            nil
+          end
         end
 
         private
 
           def start(env, tracer)
-            env[:span] = tracer.start_span(SPAN_NAME, attributes: {
-              "brute.messages" => env[:messages]&.size,
-            }.compact)
+            env[:span] = tracer.start_span(
+              SPAN_NAME,
+              attributes: {
+                "brute.messages" => env[:messages]&.size,
+              }.compact,
+            )
           end
 
           def finish(env)
@@ -73,40 +90,55 @@ module Brute
           # arrives under the same names, and what it did not report is
           # absent rather than zero.
           def record_usage(env)
-            span = env[:span] or return
-            usage = env.dig(:metadata, :last_llm_usage) or return
+            span  = env[:span]
+            usage = env.dig(:metadata, :last_llm_usage)
 
-            {
-              "gen_ai.usage.input_tokens"     => usage.input,
-              "gen_ai.usage.output_tokens"    => usage.output,
-              "gen_ai.usage.total_tokens"     => usage.total,
-              "gen_ai.usage.reasoning_tokens" => usage.reasoning,
-              "gen_ai.usage.cache_read_tokens" => usage.cache_read,
-              "gen_ai.usage.cost"             => usage.cost,
-            }.each { |name, value| span.set_attribute(name, value) unless value.nil? }
+            if span && usage
+              {
+                "gen_ai.usage.input_tokens"      => usage.input,
+                "gen_ai.usage.output_tokens"     => usage.output,
+                "gen_ai.usage.total_tokens"      => usage.total,
+                "gen_ai.usage.reasoning_tokens"  => usage.reasoning,
+                "gen_ai.usage.cache_read_tokens" => usage.cache_read,
+                "gen_ai.usage.cost"              => usage.cost,
+              }.each do |name, value|
+                unless value.nil?
+                  span.set_attribute(name, value)
+                end
+              end
+            end
           end
 
           def tool_called(env, call)
-            env[:span]&.add_event("tool_call", attributes: {
-              "tool.name"      => call[:name].to_s,
-              "tool.arguments" => call[:arguments].to_s,
-            })
+            env[:span]&.add_event(
+              "tool_call",
+              attributes: {
+                "tool.name"      => call[:name].to_s,
+                "tool.arguments" => call[:arguments].to_s,
+              },
+            )
           end
 
           def tool_returned(env, call)
-            env[:span]&.add_event("tool_result", attributes: {
-              "tool.name"  => call[:name].to_s,
-              "tool.bytes" => call[:result].to_s.bytesize,
-            })
+            env[:span]&.add_event(
+              "tool_result",
+              attributes: {
+                "tool.name"  => call[:name].to_s,
+                "tool.bytes" => call[:result].to_s.bytesize,
+              },
+            )
           end
 
           # The layer's work is :middleware_duration's block, so start and finish arrive
           # with it rather than having to be correlated with :middleware_start by hand.
           def layer_finished(env, started, finished, layer)
-            env[:span]&.add_event("middleware", attributes: {
-              "middleware.name"     => layer.class.name.to_s,
-              "middleware.duration" => finished - started,
-            })
+            env[:span]&.add_event(
+              "middleware",
+              attributes: {
+                "middleware.name"     => layer.class.name.to_s,
+                "middleware.duration" => finished - started,
+              },
+            )
           end
 
           # Every pair in the turn has a timed middle, so each one's duration

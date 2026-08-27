@@ -37,7 +37,7 @@ module Brute
           result = @system_prompt.prepare(ctx)
           unless result.empty?
             env[:messages].unshift(
-              Brute::Message.new(role: :system, content: result.to_s)
+              Brute::Message.new(role: :system, content: result.to_s),
             )
           end
         end

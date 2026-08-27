@@ -12,7 +12,9 @@ module Brute
         git = File.exist?(File.join(cwd, ".git"))
 
         parts = []
-        parts << "You are powered by the model named #{model}." unless model.empty?
+        unless model.empty?
+          parts << "You are powered by the model named #{model}."
+        end
         parts << ""
         parts << "Here is some useful information about the environment you are running in:"
         parts << "<env>"

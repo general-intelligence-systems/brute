@@ -16,9 +16,11 @@ module Brute
       def self.call(ctx)
         skills = ctx[:skills] || Brute::Skill.all(cwd: ctx[:cwd] || Dir.pwd)
         visible = skills.reject(&:disable_model_invocation?)
-        return nil if visible.empty?
-
-        Prompts.render("skills", ctx.merge(skills: visible))
+        if visible.empty?
+          nil
+        else
+          Prompts.render("skills", ctx.merge(skills: visible))
+        end
       end
     end
   end

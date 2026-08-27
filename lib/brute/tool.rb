@@ -30,9 +30,11 @@ module Brute
   class Tool
     class << self
       def description(text = nil)
-        return @description unless text
-
-        @description = text
+        if text
+          @description = text
+        else
+          @description
+        end
       end
 
       # Declare one parameter: param :key, type:, desc:, required:
@@ -46,9 +48,11 @@ module Brute
 
       # Raw JSON-schema override for complex argument shapes.
       def params(schema = nil)
-        return @params_schema unless schema
-
-        @params_schema = schema.deep_symbolize_keys
+        if schema
+          @params_schema = schema.deep_symbolize_keys
+        else
+          @params_schema
+        end
       end
     end
 

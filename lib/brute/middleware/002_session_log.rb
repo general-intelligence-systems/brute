@@ -30,9 +30,13 @@ module Brute
       end
 
       def call(env)
-        load_into(env[:messages]) if @path && File.exist?(@path)
+        if @path && File.exist?(@path)
+          load_into(env[:messages])
+        end
         @app.call(env)
-        persist(env[:messages]) if @path
+        if @path
+          persist(env[:messages])
+        end
         env
       end
 
@@ -42,7 +46,9 @@ module Brute
           loaded = []
           File.foreach(@path) do |line|
             line = line.strip
-            loaded << Brute::Message.new(**JSON.parse(line, symbolize_names: true)) unless line.empty?
+            unless line.empty?
+              loaded << Brute::Message.new(**JSON.parse(line, symbolize_names: true))
+            end
           end
           messages.unshift(*loaded)
         end
@@ -51,7 +57,9 @@ module Brute
           FileUtils.mkdir_p(File.dirname(@path))
           File.open(@path, "w") do |f|
             messages.each do |message|
-              next if message.role == :system
+              if message.role == :system
+                next
+              end
 
               f.puts(JSON.generate(message.to_h))
             end

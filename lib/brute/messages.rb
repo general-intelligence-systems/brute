@@ -22,27 +22,34 @@ module Brute
   #     Brute::ToolCall.new(id: "tc1", name: "shell", arguments: { "command" => "ls" }),
   #   ])
   #   Brute::Message.new(role: :tool, content: "result", tool_call_id: "tc1")
-  Message = Data.define(:role, :content, :tool_calls, :tool_call_id) do
+  Message = Data.define(
+    :role,
+    :content,
+    :tool_calls,
+    :tool_call_id,
+  ) do
     def initialize(role:, content: nil, tool_calls: nil, tool_call_id: nil)
       formatted_calls = tool_calls&.map do |tc|
         tc.is_a?(ToolCall) ? tc : ToolCall.new(**tc.to_h.transform_keys(&:to_sym))
       end
-  
+
       super(
-        role: role.to_sym,
-        content: content,
-        tool_calls: formatted_calls,
+        role:         role.to_sym,
+        content:      content,
+        tool_calls:   formatted_calls,
         tool_call_id: tool_call_id
       )
     end
-  
+
     def tool_call? = !tool_calls.nil? && !tool_calls.empty?
     alias_method :has_tool_calls?, :tool_call?
-  
+
     # Clean, JSON-ready hash export dropping nil values
     def to_h(...)
       hash = super
-      hash[:tool_calls] = tool_calls.map(&:to_h) if tool_calls
+      if tool_calls
+        hash[:tool_calls] = tool_calls.map(&:to_h)
+      end
       hash.compact
     end
   end

@@ -34,8 +34,16 @@ module Brute
   # (https://agentskills.io/specification). A skill whose frontmatter violates
   # a rule is skipped with a stderr warning naming the rule — never raised.
   class Skill
-    attr_reader :name, :description, :file_path, :base_dir, :content,
-                :source, :license, :compatibility, :metadata, :allowed_tools
+    attr_reader :name,
+      :description,
+      :file_path,
+      :base_dir,
+      :content,
+      :source,
+      :license,
+      :compatibility,
+      :metadata,
+      :allowed_tools
 
     FILENAME = "SKILL.md"
 
@@ -74,38 +82,42 @@ module Brute
     def self.load(path, source: :path)
       raw = File.read(path)
       frontmatter, content = parse_frontmatter(path, raw)
-      return nil unless frontmatter
+      if frontmatter
+        dir_name = File.basename(File.dirname(path))
+        # Spec requires `name`; brute keeps the convenience of defaulting to the
+        # directory name when omitted (which trivially satisfies the dir-match rule).
+        unless frontmatter.key?("name")
+          frontmatter = { "name" => dir_name }.merge(frontmatter)
+        end
 
-      dir_name = File.basename(File.dirname(path))
-      # Spec requires `name`; brute keeps the convenience of defaulting to the
-      # directory name when omitted (which trivially satisfies the dir-match rule).
-      frontmatter = { "name" => dir_name }.merge(frontmatter) unless frontmatter.key?("name")
+        # Unknown fields are a soft violation: warn and drop them rather than
+        # reject the skill. The reference validator hard-fails here, but a runtime
+        # loader must tolerate vendor/forward extensions (e.g. `tags`), which real
+        # published skills carry, instead of silently dropping the whole skill.
+        extra = frontmatter.keys - ALLOWED_FIELDS
+        unless extra.empty?
+          warn "Skill #{path} has unexpected frontmatter fields (ignored): #{extra.sort.join(', ')}"
+        end
 
-      # Unknown fields are a soft violation: warn and drop them rather than
-      # reject the skill. The reference validator hard-fails here, but a runtime
-      # loader must tolerate vendor/forward extensions (e.g. `tags`), which real
-      # published skills carry, instead of silently dropping the whole skill.
-      extra = frontmatter.keys - ALLOWED_FIELDS
-      warn "Skill #{path} has unexpected frontmatter fields (ignored): #{extra.sort.join(', ')}" unless extra.empty?
-
-      errors = validate(frontmatter, dir_name)
-      unless errors.empty?
-        warn "Skipping invalid skill #{path}: #{errors.join('; ')}"
-        return nil
+        errors = validate(frontmatter, dir_name)
+        if errors.empty?
+          new(
+            name:                     frontmatter["name"].to_s.strip,
+            description:              frontmatter["description"].to_s.strip,
+            file_path:                path,
+            content:                  content.to_s.strip,
+            source:                   source,
+            license:                  frontmatter["license"]&.to_s,
+            compatibility:            frontmatter["compatibility"]&.to_s,
+            metadata:                 frontmatter["metadata"],
+            allowed_tools:            parse_allowed_tools(frontmatter["allowed-tools"]),
+            disable_model_invocation: frontmatter["disable-model-invocation"] == true,
+          )
+        else
+          warn "Skipping invalid skill #{path}: #{errors.join('; ')}"
+          nil
+        end
       end
-
-      new(
-        name: frontmatter["name"].to_s.strip,
-        description: frontmatter["description"].to_s.strip,
-        file_path: path,
-        content: content.to_s.strip,
-        source: source,
-        license: frontmatter["license"]&.to_s,
-        compatibility: frontmatter["compatibility"]&.to_s,
-        metadata: frontmatter["metadata"],
-        allowed_tools: parse_allowed_tools(frontmatter["allowed-tools"]),
-        disable_model_invocation: frontmatter["disable-model-invocation"] == true,
-      )
     rescue => e
       warn "Failed to load skill #{path}: #{e.message}"
       nil
@@ -122,25 +134,28 @@ module Brute
 
       add = lambda do |path, source|
         skill = load(path, source: source)
-        return unless skill
+        real  = skill && realpath(path)
 
-        real = realpath(path)
-        return if seen_files[real]
-
-        if (winner = skills[skill.name])
-          warn "Skill name collision: '#{skill.name}' at #{path} ignored; " \
-               "already loaded from #{winner.file_path}"
-          return
+        if skill && !seen_files[real]
+          if (winner = skills[skill.name])
+            warn "Skill name collision: '#{skill.name}' at #{path} ignored; " \
+                 "already loaded from #{winner.file_path}"
+          else
+            seen_files[real] = true
+            skills[skill.name] = skill
+          end
         end
-
-        seen_files[real] = true
-        skills[skill.name] = skill
       end
 
       project = File.join(cwd, ".brute", "skills")
       glob(project) { |path| add.call(path, :project) }
 
-      global = File.join(Dir.home, ".config", "brute", "skills")
+      global = File.join(
+        Dir.home,
+        ".config",
+        "brute",
+        "skills",
+      )
       glob(global) { |path| add.call(path, :user) }
 
       paths.each do |raw|
@@ -163,9 +178,11 @@ module Brute
     end
 
     def self.glob(dir, &block)
-      return unless File.directory?(dir)
-
-      Dir.glob(File.join(dir, "**", FILENAME)).sort.each(&block)
+      if File.directory?(dir)
+        Dir.glob(File.join(dir, "**", FILENAME)).sort.each(&block)
+      else
+        nil
+      end
     end
 
     def self.realpath(path)
@@ -177,70 +194,100 @@ module Brute
     # Validate frontmatter against the spec. Returns an array of error strings
     # (empty means valid), each naming the violated rule.
     def self.validate(frontmatter, dir_name)
-      errors = []
+      [].tap do |errors|
+        errors.concat(validate_name(frontmatter["name"], dir_name))
+        errors.concat(validate_description(frontmatter["description"]))
 
-      errors.concat(validate_name(frontmatter["name"], dir_name))
-      errors.concat(validate_description(frontmatter["description"]))
-
-      if frontmatter.key?("compatibility")
-        compatibility = frontmatter["compatibility"]
-        if !compatibility.is_a?(String)
-          errors << "'compatibility' must be a string"
-        elsif compatibility.length > MAX_COMPATIBILITY_LENGTH
-          errors << "'compatibility' exceeds #{MAX_COMPATIBILITY_LENGTH} characters"
+        if frontmatter.key?("compatibility")
+          compatibility = frontmatter["compatibility"]
+          if !compatibility.is_a?(String)
+            errors << "'compatibility' must be a string"
+          elsif compatibility.length > MAX_COMPATIBILITY_LENGTH
+            errors << "'compatibility' exceeds #{MAX_COMPATIBILITY_LENGTH} characters"
+          end
         end
       end
-
-      errors
     end
 
     def self.validate_name(name, dir_name)
-      return ["missing required field 'name'"] unless name.is_a?(String) && !name.strip.empty?
-
-      name = name.strip.unicode_normalize(:nfkc)
-      errors = []
-      errors << "'name' exceeds #{MAX_NAME_LENGTH} characters" if name.length > MAX_NAME_LENGTH
-      errors << "'name' must be lowercase" if name != name.downcase
-      errors << "'name' cannot start or end with a hyphen" if name.start_with?("-") || name.end_with?("-")
-      errors << "'name' cannot contain consecutive hyphens" if name.include?("--")
-      errors << "'name' may only contain letters, digits, and hyphens" unless name.match?(/\A[\p{Alnum}\-]+\z/)
-      errors << "directory name '#{dir_name}' must match skill name '#{name}'" if dir_name.unicode_normalize(:nfkc) != name
-      errors
+      if name.is_a?(String) && !name.strip.empty?
+        name = name.strip.unicode_normalize(:nfkc)
+        errors = []
+        if name.length > MAX_NAME_LENGTH
+          errors << "'name' exceeds #{MAX_NAME_LENGTH} characters"
+        end
+        if name != name.downcase
+          errors << "'name' must be lowercase"
+        end
+        if name.start_with?("-") || name.end_with?("-")
+          errors << "'name' cannot start or end with a hyphen"
+        end
+        if name.include?("--")
+          errors << "'name' cannot contain consecutive hyphens"
+        end
+        unless name.match?(/\A[\p{Alnum}\-]+\z/)
+          errors << "'name' may only contain letters, digits, and hyphens"
+        end
+        if dir_name.unicode_normalize(:nfkc) != name
+          errors << "directory name '#{dir_name}' must match skill name '#{name}'"
+        end
+        errors
+      else
+        ["missing required field 'name'"]
+      end
     end
 
     def self.validate_description(description)
-      return ["missing required field 'description'"] unless description.is_a?(String) && !description.strip.empty?
-      return ["'description' exceeds #{MAX_DESCRIPTION_LENGTH} characters"] if description.length > MAX_DESCRIPTION_LENGTH
-
-      []
+      if description.is_a?(String) && !description.strip.empty?
+        if description.length > MAX_DESCRIPTION_LENGTH
+          ["'description' exceeds #{MAX_DESCRIPTION_LENGTH} characters"]
+        else
+          []
+        end
+      else
+        ["missing required field 'description'"]
+      end
     end
 
     # `allowed-tools` is an experimental, space-separated list of tool names.
     def self.parse_allowed_tools(value)
-      return nil if value.nil?
-
-      value.to_s.split(/\s+/).reject(&:empty?)
+      if value.nil?
+        nil
+      else
+        value.to_s.split(/\s+/).reject(&:empty?)
+      end
     end
 
     # Split YAML frontmatter from markdown body.
     # Returns [hash, string] or [nil, nil].
     def self.parse_frontmatter(path, raw)
-      return [nil, nil] unless raw.start_with?("---")
+      parts = nil
+      if raw.start_with?("---")
+        parts = raw.split(/^---\s*$/, 3)
+      end
 
-      parts = raw.split(/^---\s*$/, 3)
-      return [nil, nil] if parts.length < 3
+      frontmatter = nil
+      if parts && parts.length >= 3
+        frontmatter = YAML.safe_load(parts[1])
+      end
 
-      frontmatter = YAML.safe_load(parts[1])
-      return [nil, nil] unless frontmatter.is_a?(Hash)
-
-      [frontmatter, parts[2]]
+      if frontmatter.is_a?(Hash)
+        [frontmatter, parts[2]]
+      else
+        [nil, nil]
+      end
     rescue => e
       warn "Failed to parse frontmatter in #{path}: #{e.message}"
       [nil, nil]
     end
 
-    private_class_method :glob, :realpath, :validate, :validate_name,
-                         :validate_description, :parse_allowed_tools, :parse_frontmatter
+    private_class_method :glob,
+      :realpath,
+      :validate,
+      :validate_name,
+      :validate_description,
+      :parse_allowed_tools,
+      :parse_frontmatter
   end
 end
 

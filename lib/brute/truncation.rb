@@ -40,7 +40,13 @@ module Brute
     MAX_LINE_LENGTH = 2000
     TRUNCATION_MARKER = "[Output truncated:"
 
-    TRUNCATION_DIR = File.join(Dir.home, ".local", "share", "brute", "tool-output")
+    TRUNCATION_DIR = File.join(
+      Dir.home,
+      ".local",
+      "share",
+      "brute",
+      "tool-output",
+    )
 
     # Truncate text to fit within line and byte limits.
     #
@@ -55,38 +61,48 @@ module Brute
     # @returns [String] the (possibly truncated) text
     #
     def self.truncate(text, max_lines: MAX_LINES, max_bytes: MAX_BYTES, direction: :head, truncation_dir: nil)
-      return text if text.nil? || text.empty?
+      if text.nil? || text.empty?
+        text
+      else
+        # Per-line truncation first — cap individual lines
+        lines = text.lines.map { |line| truncate_line(line) }
+        text = lines.join
 
-      # Per-line truncation first — cap individual lines
-      lines = text.lines.map { |line| truncate_line(line) }
-      text = lines.join
+        if lines.size <= max_lines && text.bytesize <= max_bytes
+          text
+        else
+          # Determine how many lines we can keep within both caps
+          if direction == :tail
+            kept = lines.last(max_lines)
+          else
+            kept = lines.first(max_lines)
+          end
 
-      return text if lines.size <= max_lines && text.bytesize <= max_bytes
+          # Enforce byte cap
+          result_lines = []
+          bytes = 0
+          kept.each do |line|
+            if bytes + line.bytesize > max_bytes
+              break
+            end
+            result_lines << line
+            bytes += line.bytesize
+          end
 
-      # Determine how many lines we can keep within both caps
-      kept = direction == :tail ? lines.last(max_lines) : lines.first(max_lines)
+          result = result_lines.join
+          total = lines.size
+          shown = result_lines.size
 
-      # Enforce byte cap
-      result_lines = []
-      bytes = 0
-      kept.each do |line|
-        break if bytes + line.bytesize > max_bytes
-        result_lines << line
-        bytes += line.bytesize
+          # Overflow to disk — save the full output so it can be inspected later
+          saved_path = save_to_disk(text, truncation_dir)
+
+          hint = "\n#{TRUNCATION_MARKER} showing #{shown} of #{total} lines]"
+          if saved_path
+            hint += "\nFull output saved to: #{saved_path}. Use Read with offset/limit to view specific sections."
+          end
+          result + hint
+        end
       end
-
-      result = result_lines.join
-      total = lines.size
-      shown = result_lines.size
-
-      # Overflow to disk — save the full output so it can be inspected later
-      saved_path = save_to_disk(text, truncation_dir)
-
-      hint = "\n#{TRUNCATION_MARKER} showing #{shown} of #{total} lines]"
-      if saved_path
-        hint += "\nFull output saved to: #{saved_path}. Use Read with offset/limit to view specific sections."
-      end
-      result + hint
     end
 
     # Check whether text already contains a truncation marker.
@@ -96,27 +112,36 @@ module Brute
 
     # Truncate a single line if it exceeds MAX_LINE_LENGTH.
     def self.truncate_line(line, max: MAX_LINE_LENGTH)
-      return line if line.length <= max
-      line[0, max] + "... (line truncated to #{max} chars)\n"
+      if line.length <= max
+        line
+      else
+        line[0, max] + "... (line truncated to #{max} chars)\n"
+      end
     end
 
     # Purge files older than retention_days from the given directory.
     def self.cleanup!(dir, retention_days: 7)
-      return unless File.directory?(dir)
-      cutoff = Time.now - (retention_days * 86400)
-      Dir.glob(File.join(dir, "*")).each do |path|
-        File.delete(path) if File.file?(path) && File.mtime(path) < cutoff
+      if File.directory?(dir)
+        cutoff = Time.now - (retention_days * 86400)
+        Dir.glob(File.join(dir, "*")).each do |path|
+          if File.file?(path) && File.mtime(path) < cutoff
+            File.delete(path)
+          end
+        end
+      else
+        nil
       end
     end
 
     # Save text to a file in truncation_dir. Returns the file path, or nil.
     def self.save_to_disk(text, truncation_dir)
       dir = truncation_dir || TRUNCATION_DIR
-      return nil unless dir
-      FileUtils.mkdir_p(dir)
-      path = File.join(dir, "tool_#{SecureRandom.hex(8)}.txt")
-      File.write(path, text)
-      path
+      if dir
+        FileUtils.mkdir_p(dir)
+        path = File.join(dir, "tool_#{SecureRandom.hex(8)}.txt")
+        File.write(path, text)
+        path
+      end
     rescue => _e
       nil
     end

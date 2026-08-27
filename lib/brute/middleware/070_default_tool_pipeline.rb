@@ -44,7 +44,7 @@ module Brute
             barrier = Async::Barrier.new
 
             tools_to_run.each do |tool_call|
-              barrier.async do 
+              barrier.async do
                 name = tool_call.name.to_sym
                 args = tool_call.arguments
 
@@ -69,7 +69,11 @@ module Brute
                     env.emit(TOOL_APPROVE_EVENT, call_env)
 
                     if (denial = call_env[:denied])
-                      call_env[:result] = denial.is_a?(String) ? denial : %(Tool call to "#{name}" was denied.)
+                      if denial.is_a?(String)
+                        call_env[:result] = denial
+                      else
+                        call_env[:result] = %(Tool call to "#{name}" was denied.)
+                      end
                     end
                   end
 

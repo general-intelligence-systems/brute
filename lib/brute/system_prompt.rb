@@ -34,11 +34,11 @@ module Brute
         # upstream model family from the model name so we use the most
         # appropriate prompt stack (e.g., anthropic stack for claude-*).
         provider = ctx[:provider_name].to_s
-        stack_key = if provider.start_with?("opencode")
-                      infer_stack_from_model(ctx[:model_name].to_s)
-                    else
-                      provider
-                    end
+        if provider.start_with?("opencode")
+          stack_key = infer_stack_from_model(ctx[:model_name].to_s)
+        else
+          stack_key = provider
+        end
         STACKS.fetch(stack_key, STACKS["default"]).each do |mod|
           prompt << mod.call(ctx)
         end
@@ -78,7 +78,7 @@ module Brute
       ],
 
       # GPT-4 / o1 / o3 — pragmatic engineer persona, editing focus, autonomy
-      "openai" => [
+      "openai"    => [
         Prompts::Identity,
         Prompts::EditingApproach,
         Prompts::Autonomy,
@@ -94,7 +94,7 @@ module Brute
       ],
 
       # Gemini — formal/structured, explicit workflows, security focus
-      "google" => [
+      "google"    => [
         Prompts::Identity,
         Prompts::Conventions,
         Prompts::DoingTasks,
@@ -109,7 +109,7 @@ module Brute
       ],
 
       # Ollama — lean stack for local models with smaller context windows
-      "ollama" => [
+      "ollama"    => [
         Prompts::Identity,
         Prompts::ToneAndStyle,
         Prompts::Conventions,
@@ -121,7 +121,7 @@ module Brute
       ],
 
       # Fallback — conservative, concise, fewer than 4 lines
-      "default" => [
+      "default"   => [
         Prompts::Identity,
         Prompts::ToneAndStyle,
         Prompts::Proactiveness,

@@ -11,20 +11,24 @@ module Brute
     # reading of the response and it is reported as given.
     module LLMrb
       def self.detect(response)
-        return nil unless response.respond_to?(:usage)
-
-        usage = response.usage
-        return nil if usage.nil?
-
-        Usage.new(
-          input:       read(usage, :input_tokens),
-          output:      read(usage, :output_tokens),
-          total:       read(usage, :total_tokens),
-          reasoning:   read(usage, :reasoning_tokens),
-          cache_read:  read(usage, :cache_read_tokens),
-          cache_write: read(usage, :cache_write_tokens),
-          raw:         usage,
-        )
+        if response.respond_to?(:usage)
+          usage = response.usage
+          if usage.nil?
+            nil
+          else
+            Usage.new(
+              input:       read(usage, :input_tokens),
+              output:      read(usage, :output_tokens),
+              total:       read(usage, :total_tokens),
+              reasoning:   read(usage, :reasoning_tokens),
+              cache_read:  read(usage, :cache_read_tokens),
+              cache_write: read(usage, :cache_write_tokens),
+              raw:         usage,
+            )
+          end
+        else
+          nil
+        end
       end
 
       def self.read(usage, name) = usage.respond_to?(name) ? usage.public_send(name) : nil

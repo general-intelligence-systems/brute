@@ -21,7 +21,9 @@ module Brute
 
       def execute(url:)
         uri = URI.parse(url)
-        raise "Invalid URL scheme: #{uri.scheme}" unless %w[http https].include?(uri.scheme)
+        unless %w[http https].include?(uri.scheme)
+          raise "Invalid URL scheme: #{uri.scheme}"
+        end
 
         http = Net::HTTP.new(uri.host, uri.port)
         http.use_ssl = uri.scheme == "https"
@@ -33,7 +35,9 @@ module Brute
 
         response = http.request(request)
         body = response.body.to_s
-        body = body[0...MAX_BODY] + "\n...(truncated)" if body.size > MAX_BODY
+        if body.size > MAX_BODY
+          body = body[0...MAX_BODY] + "\n...(truncated)"
+        end
 
         {status: response.code.to_i, body: body, content_type: response["content-type"]}
       end

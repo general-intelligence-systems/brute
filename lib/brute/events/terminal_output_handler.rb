@@ -15,7 +15,7 @@ module Brute
         method = "on_#{type}"
 
         if respond_to?(method, true)
-          send(method, data) 
+          send(method, data)
         end
 
         super

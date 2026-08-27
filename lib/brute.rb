@@ -12,13 +12,13 @@ require_relative 'brute/version'
 
 module Brute
   LOGO = <<-LOGO
- .o8                                .             
-"888                              .o8             
- 888oooo.  oooo d8b oooo  oooo  .o888oo  .ooooo.  
- d88' `88b `888""8P `888  `888    888   d88' `88b 
- 888   888  888      888   888    888   888ooo888 
- 888   888  888      888   888    888 . 888    .o 
- `Y8bod8P' d888b     `V88V"V8P'   "888" `Y8bod8P' 
+ .o8                                .
+"888                              .o8
+ 888oooo.  oooo d8b oooo  oooo  .o888oo  .ooooo.
+ d88' `88b `888""8P `888  `888    888   d88' `88b
+ 888   888  888      888   888    888   888ooo888
+ 888   888  888      888   888    888 . 888    .o
+ `Y8bod8P' d888b     `V88V"V8P'   "888" `Y8bod8P'
   LOGO
 
   # NOTE: Brute owns no LLM configuration and no LLM library. All
@@ -68,7 +68,9 @@ module Brute
   #
   def self.load_agent(path = "agent.ru")
     path = File.expand_path(path)
-    raise ArgumentError, "no such agent file: #{path}" unless File.file?(path)
+    unless File.file?(path)
+      raise ArgumentError, "no such agent file: #{path}"
+    end
 
     Brute::Turn::AgentPipeline.parse_file(path)
   end

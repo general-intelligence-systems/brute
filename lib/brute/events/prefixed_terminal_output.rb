@@ -29,7 +29,9 @@ module Brute
         data = event.to_h[:data]
 
         method = "on_#{type}"
-        send(method, data) if respond_to?(method, true)
+        if respond_to?(method, true)
+          send(method, data)
+        end
 
         super
       end

@@ -54,13 +54,23 @@ module Brute
 
       def initialize(env, hooks: nil, id: SecureRandom.uuid)
         super(env)
-        @hooks = hooks || (env.hooks if env.is_a?(Trace))
+        if hooks
+          @hooks = hooks
+        elsif env.is_a?(Trace)
+          @hooks = env.hooks
+        end
         @id = id
       end
 
       def current_trace = self
 
-      def emit(event, *extras, &work) = @hooks.emit(event, self, *extras, @id, &work)
+      def emit(event, *extras, &work) = @hooks.emit(
+        event,
+        self,
+        *extras,
+        @id,
+        &work
+      )
 
       def emit_trace(&block) = self.class.new(self).tap(&block).then { |trace| trace.__getobj__ }
     end
@@ -88,18 +98,22 @@ module Brute
       # Subscribers fire from an ensure, so work that raises is still timed
       # and still reported before the exception carries on up.
       def emit(event, env, *extras, &block)
-        unless block
+        if block
+          started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+          begin
+            block.call
+          ensure
+            finished = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            @subscribers[event.to_sym].each { |subscriber| subscriber.call(
+              env,
+              started,
+              finished,
+              *extras,
+            ) }
+          end
+        else
           @subscribers[event.to_sym].each { |subscriber| subscriber.call(env, *extras) }
-          return nil
-        end
-
-        started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-
-        begin
-          block.call
-        ensure
-          finished = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-          @subscribers[event.to_sym].each { |subscriber| subscriber.call(env, started, finished, *extras) }
         end
 
         nil

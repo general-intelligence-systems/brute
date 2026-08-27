@@ -35,13 +35,24 @@ module Brute
       DEFAULT_TIMEOUT = 300 # 5 minutes
 
       def execute(command:, cwd: nil, timeout: nil)
-        dir = cwd ? File.expand_path(cwd) : Dir.pwd
-        raise "Directory not found: #{dir}" unless File.directory?(dir)
+        if cwd
+          dir = File.expand_path(cwd)
+        else
+          dir = Dir.pwd
+        end
+        unless File.directory?(dir)
+          raise "Directory not found: #{dir}"
+        end
 
         timeout_secs = timeout || DEFAULT_TIMEOUT
         stdout, stderr, status = nil
         Timeout.timeout(timeout_secs) do
-          stdout, stderr, status = Open3.capture3("bash", "-c", command, chdir: dir)
+          stdout, stderr, status = Open3.capture3(
+            "bash",
+            "-c",
+            command,
+            chdir: dir,
+          )
         end
 
         out = stdout.to_s
@@ -49,8 +60,12 @@ module Brute
 
         # Combine output, preferring tail-mode truncation so errors/summaries at end are preserved
         combined = out
-        combined += "\nSTDERR:\n#{err}" unless err.empty?
-        combined += "\n[exit code: #{status.exitstatus}]" if status.exitstatus != 0
+        unless err.empty?
+          combined += "\nSTDERR:\n#{err}"
+        end
+        if status.exitstatus != 0
+          combined += "\n[exit code: #{status.exitstatus}]"
+        end
 
         Brute::Truncation.truncate(combined, direction: :tail)
       rescue Timeout::Error

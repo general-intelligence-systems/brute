@@ -11,20 +11,24 @@ module Brute
     # provider's own reported_cost when it gives one.
     module RubyLLM
       def self.detect(message)
-        return nil unless message.respond_to?(:tokens)
-
-        tokens = message.tokens
-        return nil if tokens.nil?
-
-        Usage.new(
-          input:       read(tokens, :input),
-          output:      read(tokens, :output),
-          reasoning:   read(tokens, :thinking),
-          cache_read:  read(tokens, :cache_read),
-          cache_write: read(tokens, :cache_write),
-          cost:        read(tokens, :reported_cost),
-          raw:         tokens,
-        )
+        if message.respond_to?(:tokens)
+          tokens = message.tokens
+          if tokens.nil?
+            nil
+          else
+            Usage.new(
+              input:       read(tokens, :input),
+              output:      read(tokens, :output),
+              reasoning:   read(tokens, :thinking),
+              cache_read:  read(tokens, :cache_read),
+              cache_write: read(tokens, :cache_write),
+              cost:        read(tokens, :reported_cost),
+              raw:         tokens,
+            )
+          end
+        else
+          nil
+        end
       end
 
       def self.read(tokens, name) = tokens.respond_to?(name) ? tokens.public_send(name) : nil

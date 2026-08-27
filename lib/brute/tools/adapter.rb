@@ -39,29 +39,32 @@ module Brute
 
       # Wrap a single tool of any supported shape. Idempotent.
       def self.wrap(tool)
-        return tool if tool.is_a?(Adapter)
-
-        tool = tool.new if tool.is_a?(Class)
-
-        case tool
-        when Hash                then from_hash(tool)
-        when ::Brute::Tool       then from_brute_tool(tool)
-        when Brute::Tools::SubAgent then new(
-          name:        tool.name,
-          description: tool.description,
-          params:      tool.params,
-          handler:     ->(**args) { tool.execute(args) },
-          original:    tool,
-        )
-        when Brute::Turn::ToolPipeline then new(
-          name:        tool.name,
-          description: tool.description,
-          params:      tool.params,
-          handler:     ->(**args) { tool.call(**args) },
-          original:    tool,
-        )
+        if tool.is_a?(Adapter)
+          tool
         else
-          from_duck_type(tool)
+          if tool.is_a?(Class)
+            tool = tool.new
+          end
+          case tool
+          when Hash                then from_hash(tool)
+          when ::Brute::Tool       then from_brute_tool(tool)
+          when Brute::Tools::SubAgent then new(
+            name:        tool.name,
+            description: tool.description,
+            params:      tool.params,
+            handler:     ->(**args) { tool.execute(args) },
+            original:    tool,
+          )
+          when Brute::Turn::ToolPipeline then new(
+            name:        tool.name,
+            description: tool.description,
+            params:      tool.params,
+            handler:     ->(**args) { tool.call(**args) },
+            original:    tool,
+          )
+          else
+            from_duck_type(tool)
+          end
         end
       end
 
@@ -78,7 +81,9 @@ module Brute
       def self.from_hash(definition)
         definition = definition.transform_keys(&:to_sym)
         handler = definition.fetch(:execute) { definition[:handler] }
-        raise ArgumentError, "inline tool needs an :execute proc" unless handler.respond_to?(:call)
+        unless handler.respond_to?(:call)
+          raise ArgumentError, "inline tool needs an :execute proc"
+        end
 
         new(
           name:        definition.fetch(:name).to_s,
@@ -108,7 +113,11 @@ module Brute
           raise ArgumentError, "don't know how to adapt #{tool.inspect} into a tool"
         end
 
-        entry = tool.respond_to?(:execute) ? tool.method(:execute) : tool.method(:call)
+        if tool.respond_to?(:execute)
+          entry = tool.method(:execute)
+        else
+          entry = tool.method(:call)
+        end
         new(
           name:        tool.name.to_s,
           description: tool.respond_to?(:description) ? tool.description : "",
@@ -141,27 +150,28 @@ module Brute
       # Library-neutral tool definition (JSON-Schema-ish). The inline `run`
       # proc reshapes this into whatever its LLM library expects.
       def to_h
-        return { name: @name, description: @description, parameters: @schema.deep_symbolize_keys } if @schema
-
-        properties = @params.transform_values do |opts|
+        if @schema
+          { name: @name, description: @description, parameters: @schema.deep_symbolize_keys }
+        else
+          properties = @params.transform_values do |opts|
+            {
+              type:        opts[:type] || "string",
+              description: opts[:desc] || opts[:description],
+              items:       opts[:items],
+              enum:        opts[:enum],
+            }.compact
+          end
+          required = @params.select { |_k, opts| opts[:required] }.keys
           {
-            type:        opts[:type] || "string",
-            description: opts[:desc] || opts[:description],
-            items:       opts[:items],
-            enum:        opts[:enum],
-          }.compact
+            name:        @name,
+            description: @description,
+            parameters:  {
+              type:       "object",
+              properties: properties,
+              required:   required.map(&:to_s),
+            },
+          }
         end
-        required = @params.select { |_k, opts| opts[:required] }.keys
-
-        {
-          name:        @name,
-          description: @description,
-          parameters: {
-            type:       "object",
-            properties: properties,
-            required:   required.map(&:to_s),
-          },
-        }
       end
     end
   end

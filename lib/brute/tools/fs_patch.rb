@@ -20,22 +20,30 @@ module Brute
       def execute(file_path:, old_string:, new_string:, replace_all: false)
         path = File.expand_path(file_path)
         Brute::Tools::FS::FileMutationQueue.serialize(path) do
-          raise "File not found: #{path}" unless File.exist?(path)
+          unless File.exist?(path)
+            raise "File not found: #{path}"
+          end
 
           original = File.read(path)
-          raise "old_string not found in #{path}" unless original.include?(old_string)
+          unless original.include?(old_string)
+            raise "old_string not found in #{path}"
+          end
 
           Brute::Tools::FS::SnapshotStore.save(path)
 
-          updated = if replace_all
-                      original.gsub(old_string, new_string)
-                    else
-                      original.sub(old_string, new_string)
-                    end
+          if replace_all
+            updated = original.gsub(old_string, new_string)
+          else
+            updated = original.sub(old_string, new_string)
+          end
 
           File.write(path, updated)
           diff = Brute::Diff.unified(original, updated)
-          count = replace_all ? original.scan(old_string).size : 1
+          if replace_all
+            count = original.scan(old_string).size
+          else
+            count = 1
+          end
           { success: true, file_path: path, replacements: count, diff: diff }
         end
       end

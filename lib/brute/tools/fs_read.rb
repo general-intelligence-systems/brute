@@ -47,101 +47,128 @@ module Brute
         path = File.expand_path(file_path)
 
         # Directory listing
-        return list_directory(path) if File.directory?(path)
-
-        # File-not-found suggestions
-        unless File.exist?(path)
-          suggestions = find_similar(path)
-          msg = "File not found: #{path}"
-          msg += ". Did you mean: #{suggestions.join(', ')}?" if suggestions.any?
-          raise msg
-        end
-
-        raise "Not a file: #{path}" unless File.file?(path)
-
-        # Binary file detection
-        ext = File.extname(path).downcase
-        raise "Cannot read binary file: #{path}" if BINARY_EXTENSIONS.include?(ext)
-
-        sample = File.binread(path, 4096) || ""
-        raise "Cannot read binary file: #{path}" if sample.include?("\x00")
-
-        lines = File.readlines(path)
-        total = lines.size
-        first = start_line ? [start_line - 1, 0].max : 0
-
-        # Apply default line cap when no explicit range given
-        default_last = end_line ? [end_line - 1, total - 1].min : [first + DEFAULT_LINE_CAP - 1, total - 1].min
-        last = default_last
-
-        selected = lines[first..last] || []
-
-        # Per-line truncation + byte cap
-        numbered = []
-        bytes = 0
-        selected.each_with_index do |line, i|
-          truncated_line = Brute::Truncation.truncate_line(line, max: MAX_LINE_LENGTH)
-          numbered_line = "#{first + i + 1}\t#{truncated_line}"
-          break if bytes + numbered_line.bytesize > MAX_BYTES
-          numbered << numbered_line
-          bytes += numbered_line.bytesize
-        end
-
-        actual_last = first + numbered.size - 1
-        content = numbered.join
-        truncated = (actual_last < total - 1) && end_line.nil?
-
-        if truncated
-          content + "\n(Showing lines #{first + 1}-#{actual_last + 1} of #{total}. Use start_line=#{actual_last + 2} to continue.)"
+        if File.directory?(path)
+          list_directory(path)
         else
-          content
+          # File-not-found suggestions
+          unless File.exist?(path)
+            suggestions = find_similar(path)
+            msg = "File not found: #{path}"
+            if suggestions.any?
+              msg += ". Did you mean: #{suggestions.join(', ')}?"
+            end
+            raise msg
+          end
+
+          unless File.file?(path)
+            raise "Not a file: #{path}"
+          end
+
+          # Binary file detection
+          ext = File.extname(path).downcase
+          if BINARY_EXTENSIONS.include?(ext)
+            raise "Cannot read binary file: #{path}"
+          end
+          sample = File.binread(path, 4096) || ""
+          if sample.include?("\x00")
+            raise "Cannot read binary file: #{path}"
+          end
+
+          lines = File.readlines(path)
+          total = lines.size
+          if start_line
+            first = [start_line - 1, 0].max
+          else
+            first = 0
+          end
+
+          # Apply default line cap when no explicit range given
+          if end_line
+            default_last = [end_line - 1, total - 1].min
+          else
+            default_last = [first + DEFAULT_LINE_CAP - 1, total - 1].min
+          end
+          last = default_last
+          selected = lines[first..last] || []
+
+          # Per-line truncation + byte cap
+          numbered = []
+          bytes = 0
+          selected.each_with_index do |line, i|
+            truncated_line = Brute::Truncation.truncate_line(line, max: MAX_LINE_LENGTH)
+            numbered_line = "#{first + i + 1}\t#{truncated_line}"
+            if bytes + numbered_line.bytesize > MAX_BYTES
+              break
+            end
+            numbered << numbered_line
+            bytes += numbered_line.bytesize
+          end
+
+          actual_last = first + numbered.size - 1
+          content = numbered.join
+          truncated = (actual_last < total - 1) && end_line.nil?
+          if truncated
+            content + "\n(Showing lines #{first + 1}-#{actual_last + 1} of #{total}. Use start_line=#{actual_last + 2} to continue.)"
+          else
+            content
+          end
         end
       end
 
       private
 
-      def list_directory(path)
-        entries = Dir.entries(path).reject { |e| e.start_with?(".") }.sort
-        total = entries.size
-        capped = entries.first(DEFAULT_LINE_CAP)
-        result = capped.map do |entry|
-          full = File.join(path, entry)
-          type = File.directory?(full) ? "dir" : "file"
-          "#{entry} (#{type})"
-        end.join("\n")
+        def list_directory(path)
+          entries = Dir.entries(path).reject { |e| e.start_with?(".") }.sort
+          total = entries.size
+          capped = entries.first(DEFAULT_LINE_CAP)
+          result = capped.map do |entry|
+            full = File.join(path, entry)
+            if File.directory?(full)
+              type = "dir"
+          else
+            type = "file"
+          end
+            "#{entry} (#{type})"
+          end.join("\n")
 
-        if total > DEFAULT_LINE_CAP
-          result += "\n(Showing #{DEFAULT_LINE_CAP} of #{total} entries)"
+          if total > DEFAULT_LINE_CAP
+            result += "\n(Showing #{DEFAULT_LINE_CAP} of #{total} entries)"
+          end
+          result
         end
-        result
-      end
 
-      def find_similar(path)
-        dir = File.dirname(path)
-        target = File.basename(path)
-        return [] unless File.directory?(dir)
-
-        entries = Dir.entries(dir).reject { |e| e.start_with?(".") }
-        entries.select { |e| levenshtein(e.downcase, target.downcase) <= 3 }
-               .sort_by { |e| levenshtein(e.downcase, target.downcase) }
-               .first(3)
-      end
-
-      def levenshtein(a, b)
-        m, n = a.length, b.length
-        d = Array.new(m + 1) { |i| i }
-        (1..n).each do |j|
-          prev = d[0]
-          d[0] = j
-          (1..m).each do |i|
-            cost = a[i - 1] == b[j - 1] ? 0 : 1
-            temp = d[i]
-            d[i] = [d[i] + 1, d[i - 1] + 1, prev + cost].min
-            prev = temp
+        def find_similar(path)
+          dir = File.dirname(path)
+          target = File.basename(path)
+          if File.directory?(dir)
+            entries = Dir.entries(dir).reject { |e| e.start_with?(".") }
+            entries.select { |e| levenshtein(e.downcase, target.downcase) <= 3 }
+                   .sort_by { |e| levenshtein(e.downcase, target.downcase) }
+                   .first(3)
+          else
+            []
           end
         end
-        d[m]
-      end
+
+        def levenshtein(a, b)
+          m, n = a.length, b.length
+          d = Array.new(m + 1) { |i| i }
+          (1..n).each do |j|
+            prev = d[0]
+            d[0] = j
+            (1..m).each do |i|
+              if a[i - 1] == b[j - 1]
+                cost = 0
+              else
+                cost = 1
+              end
+              temp = d[i]
+              d[i] = [d[i] + 1, d[i - 1] + 1, prev + cost].min
+              prev = temp
+            end
+          end
+          d[m]
+        end
     end
   end
 end

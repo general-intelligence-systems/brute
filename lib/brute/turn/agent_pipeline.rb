@@ -92,7 +92,11 @@ module Brute
             matcher
           else
             name = matcher.to_s
-            name = name.start_with?("/") ? name : "/#{name}"
+            if name.start_with?("/")
+              name = name
+            else
+              name = "/#{name}"
+            end
             /^#{::Regexp.escape(name)}.*/
           end
         end

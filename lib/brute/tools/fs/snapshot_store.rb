@@ -19,7 +19,11 @@ module Brute
           # If the file doesn't exist yet, records +:did_not_exist+.
           def save(path)
             key = File.expand_path(path)
-            content = File.exist?(key) ? File.read(key) : :did_not_exist
+            if File.exist?(key)
+              content = File.read(key)
+            else
+              content = :did_not_exist
+            end
             @mutex.synchronize { @snapshots[key].push(content) }
           end
 

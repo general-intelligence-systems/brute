@@ -41,7 +41,9 @@ module Brute
       end
 
       def call(env)
-        restore(env) unless env[:metadata][:checkpoint]
+        unless env[:metadata][:checkpoint]
+          restore(env)
+        end
         @app.call(env)
         persist(env)
         env
@@ -50,11 +52,15 @@ module Brute
       # Parsed checkpoint records (symbol keys, messages as plain hashes),
       # oldest first.
       def self.list(path)
-        return [] unless path && File.exist?(path)
-
-        File.foreach(path).filter_map do |line|
-          line = line.strip
-          JSON.parse(line, symbolize_names: true) unless line.empty?
+        if path && File.exist?(path)
+          File.foreach(path).filter_map do |line|
+            line = line.strip
+            unless line.empty?
+              JSON.parse(line, symbolize_names: true)
+            end
+          end
+        else
+          []
         end
       end
 
@@ -62,19 +68,21 @@ module Brute
 
         def restore(env)
           env[:metadata][:checkpoint] = { path: @path }
-          return unless @resume
-
-          record = find_record
-          if record.nil?
-            return if @resume == :latest
-
-            raise KeyError, "no checkpoint #{@resume.inspect} in #{@path}"
+          if @resume
+            record = find_record
+            if record.nil?
+              unless @resume == :latest
+                raise KeyError, "no checkpoint #{@resume.inspect} in #{@path}"
+              end
+            else
+              history = record[:messages].map { |h| Brute::Message.new(**h) }
+              index = env[:messages].index { |m| m.role != :system } || env[:messages].size
+              env[:messages].insert(index, *history)
+              env[:metadata][:checkpoint][:id] = record[:id]
+            end
+          else
+            nil
           end
-
-          history = record[:messages].map { |h| Brute::Message.new(**h) }
-          index = env[:messages].index { |m| m.role != :system } || env[:messages].size
-          env[:messages].insert(index, *history)
-          env[:metadata][:checkpoint][:id] = record[:id]
         end
 
         def find_record
