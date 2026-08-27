@@ -47,6 +47,7 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "open_router_enhanced"
   spec.add_development_dependency "llm.rb"
   spec.add_development_dependency "langchainrb"
+  spec.add_development_dependency "rubocop"
 
   spec.add_development_dependency 'rake', '~> 13.0'
   # The docs site's API reference generator (docs/bin/rdoc_starlight.rb) reaches
