@@ -5,12 +5,30 @@ All notable changes to Brute are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [6.0.0] - 2026-08-27
+
 The events engine is rewritten to make way for tracing providers — Langfuse,
 OpenTelemetry, anything that wants a tree rather than a stream. An event could
 say what happened but not what it happened *inside*: the env is shared by the
 whole turn and a middleware knew only the registry, so there was nothing to
 hang a generation off. Every event now belongs to a trace, and traces nest —
 a completion's inside its layer's, a layer's inside the turn's.
+
+### Added
+
+- `Brute::Hooks::Trace`. Every start/duration/end set is wrapped in
+  `emit_trace`, and the id of the trace an event belongs to reaches subscribers
+  as the last extra. Traces nest by delegation — a completion's inside its
+  layer's, a layer's inside the turn's — which is what a tracing provider needs
+  to hang a generation off the call that asked for it.
+
+- A failure event per set: `TURN_FAILURE_EVENT`, `MIDDLEWARE_FAILURE_EVENT`,
+  `COMPACT_FAILURE_EVENT`, `TOOL_FAILURE_EVENT`, beside the existing
+  `LLM_FAILURE_EVENT`. Each is emitted from inside its own trace, so a failure
+  is attributed to the call that failed.
+
+- `COMPACT_START_EVENT`, and `CONTENT_EVENT` / `REASONING_EVENT` for streaming,
+  `TOOL_CALLS_EVENT` for the batch a completion asked for.
 
 ### Changed
 
@@ -45,21 +63,11 @@ a completion's inside its layer's, a layer's inside the turn's.
 - `Brute::Turn::Pipeline.new` takes `hooks:`, so a nested pipeline either owns
   a registry or reports to the one that built it. One `Registry` per agent.
 
-### Added
-
-- `Brute::Hooks::Trace`. Every start/duration/end set is wrapped in
-  `emit_trace`, and the id of the trace an event belongs to reaches subscribers
-  as the last extra. Traces nest by delegation — a completion's inside its
-  layer's, a layer's inside the turn's — which is what a tracing provider needs
-  to hang a generation off the call that asked for it.
-
-- A failure event per set: `TURN_FAILURE_EVENT`, `MIDDLEWARE_FAILURE_EVENT`,
-  `COMPACT_FAILURE_EVENT`, `TOOL_FAILURE_EVENT`, beside the existing
-  `LLM_FAILURE_EVENT`. Each is emitted from inside its own trace, so a failure
-  is attributed to the call that failed.
-
-- `COMPACT_START_EVENT`, and `CONTENT_EVENT` / `REASONING_EVENT` for streaming,
-  `TOOL_CALLS_EVENT` for the batch a completion asked for.
+- **Licence changed from MIT to Apache-2.0.** The gemspec now advertises
+  `Apache-2.0`, so downstream projects tracking upstream licences need to
+  refresh their attribution. Apache-2.0 adds an explicit patent grant that MIT
+  left implicit; nothing about redistribution or modification changes in
+  practice.
 
 ### Removed
 
