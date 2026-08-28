@@ -12,13 +12,17 @@ module Brute
     end
 
     #  Outbound: one Brute::Message in the library's format. Identity here.
-    def self.dump(message)
+    #
+    # `model:` is what the turn is about to be sent to. A transport that puts
+    # signed reasoning back on the wire needs it: a signature is only valid
+    # against the provider that issued it, and the log outlives any one model.
+    def self.dump(message, model: nil)
       message
     end
 
     # Outbound: the whole log in the library's format.
-    def self.dump_all(messages)
-      messages.map { |message| dump(message) }
+    def self.dump_all(messages, model: nil)
+      messages.map { |message| dump(message, model: model) }
     end
 
     # Inbound: what the provider reported about this call, as a

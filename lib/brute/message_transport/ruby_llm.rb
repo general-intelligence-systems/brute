@@ -15,7 +15,7 @@ module Brute
       end
 
       # Brute::Message -> RubyLLM::Message (tool calls as ruby_llm's id-keyed hash).
-      def self.dump(message)
+      def self.dump(message, model: nil)
         tool_calls = message.tool_calls&.to_h do |tc|
           [tc.id, ::RubyLLM::ToolCall.new(id: tc.id, name: tc.name, arguments: tc.arguments)]
         end
@@ -25,7 +25,16 @@ module Brute
           content:      message.content,
           tool_calls:   tool_calls,
           tool_call_id: message.tool_call_id,
+          thinking:     thinking(message),
         )
+      end
+
+      # RubyLLM::Thinking.build answers nil when there is nothing to say, and
+      # takes the signature back exactly as it came.
+      def self.thinking(message)
+        if message.reasoning
+          ::RubyLLM::Thinking.build(text: message.reasoning.text, signature: message.reasoning.signature)
+        end
       end
 
       private
@@ -52,7 +61,16 @@ module Brute
             content:      message.content&.to_s, # Preserves nil safely
             tool_calls:   tool_calls,
             tool_call_id: message.tool_call_id,
+            reasoning:    reasoning(message),
           )
+        end
+
+        # RubyLLM models it as a Thinking, carrying the text and the
+        # provider's signature for it.
+        def reasoning(message)
+          if message.respond_to?(:thinking) && message.thinking
+            Brute::Reasoning.build(text: message.thinking.text, signature: message.thinking.signature)
+          end
         end
     end
   end

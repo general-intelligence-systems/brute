@@ -27,7 +27,7 @@ module Brute
       # `original_tool_calls` extra (the provider wire format); tool results
       # become an LLM::Function::Return so llm.rb's request adapters emit
       # them correctly.
-      def self.dump(message)
+      def self.dump(message, model: nil)
         case message.role
         when :tool
           ::LLM::Message.new(
@@ -67,7 +67,15 @@ module Brute
             role:       message.role,
             content:    message.content.to_s,
             tool_calls: tool_calls,
+            reasoning:  reasoning(message),
           )
+        end
+
+        # llm.rb hangs it off the message's extras as reasoning_content.
+        def reasoning(message)
+          if message.respond_to?(:reasoning_content)
+            Brute::Reasoning.build(text: message.reasoning_content)
+          end
         end
     end
   end

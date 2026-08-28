@@ -46,7 +46,7 @@ module Brute
         env.emit_trace do |env|
           env.emit(LLM_START_EVENT)
 
-          messages = Brute::MessageTransport::OpenRouter.dump_all(env[:messages])
+          messages = Brute::MessageTransport::OpenRouter.dump_all(env[:messages], model: options(env).model)
 
           ::OpenRouter::Client.new(**@config).then do |client|
             response = nil

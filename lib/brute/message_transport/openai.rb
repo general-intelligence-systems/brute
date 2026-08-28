@@ -22,7 +22,11 @@ module Brute
     #   Brute::MessageTransport::OpenAI.wrap_each(response) { |m| env[:messages] << m }
     class OpenAI < MessageTransport
       # Brute::Message -> a chat.completions message param hash.
-      def self.dump(message)
+      # Chat completions has no field for reasoning -- neither
+      # ChatCompletionMessage nor the assistant message param carries one --
+      # so nothing is sent back here. Reasoning items belong to the Responses
+      # API, which this transport does not speak.
+      def self.dump(message, model: nil)
         case message.role
         when :tool
           { role: "tool", tool_call_id: message.tool_call_id, content: message.content.to_s }

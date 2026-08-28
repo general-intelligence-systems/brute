@@ -91,7 +91,7 @@
       path = ./.;
       type = "path";
     };
-    version = "6.0.2";
+    version = "6.2.0";
   };
   cgi = {
     groups = ["completions" "default"];

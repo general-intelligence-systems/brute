@@ -28,6 +28,9 @@ module Brute
     # a user message — consecutive tool results are folded into one user
     # turn so roles keep alternating.
     class Anthropic < MessageTransport
+      # Whose signatures these are. OpenRouter names the same format when it
+      # proxies Claude, so thinking that came back through it goes home.
+      FORMAT = "anthropic-claude-v1"
       # The :system messages' text, for the top-level `system_:` parameter.
       def self.system_text(messages)
         messages.select { |m| m.role == :system }.map(&:content).join("\n\n")
@@ -35,7 +38,7 @@ module Brute
 
       # Brute log -> the `messages:` array. Drops :system messages (see
       # .system_text) and folds consecutive :tool results into one user turn.
-      def self.dump_all(messages)
+      def self.dump_all(messages, model: nil)
         chat = messages.reject { |m| m.role == :system }
 
         chat.chunk_while { |a, b| a.role == :tool && b.role == :tool }.map do |group|
@@ -48,23 +51,63 @@ module Brute
       end
 
       # Brute::Message -> an Anthropic message param hash.
-      def self.dump(message)
+      def self.dump(message, model: nil)
         case message.role
         when :tool
           { role: "user", content: [tool_result_block(message)] }
         when :assistant
           if message.tool_call?
-            blocks = []
+            blocks = thinking_blocks(message)
             unless message.content.to_s.empty?
               blocks << { type: "text", text: message.content }
             end
             blocks += message.tool_calls.map { |tc| { type: "tool_use", id: tc.id, name: tc.name, input: tc.arguments } }
             { role: "assistant", content: blocks }
           else
-            { role: "assistant", content: message.content }
+            blocks = thinking_blocks(message)
+            unless message.content.to_s.empty?
+              blocks << { type: "text", text: message.content }
+            end
+
+            # Anthropic rejects an empty text block, so a message with nothing
+            # left to send goes as plain content rather than an empty one.
+            if blocks.empty?
+              { role: "assistant", content: message.content }
+            else
+              { role: "assistant", content: blocks }
+            end
           end
         else
           { role: message.role.to_s, content: message.content }
+        end
+      end
+
+      # Thinking goes back first and unmodified. A signature Anthropic did
+      # not issue cannot be verified -- a conversation replayed from another
+      # provider carries thinking that is not Anthropic's -- and an
+      # unverifiable block is a 400, so it sends none rather than a bad one.
+      def self.thinking_blocks(message)
+        if message.reasoning&.signed_by?(FORMAT)
+          message.reasoning.blocks.map do |block|
+            if block.type == :redacted
+              { type: "redacted_thinking", data: block.signature }
+            else
+              { type: "thinking", thinking: block.text.to_s, signature: block.signature }
+            end
+          end
+        else
+          []
+        end
+      end
+
+      # A thinking block, or the redacted one that stands in for it when the
+      # provider will not show its working. Both go back whole.
+      def self.thinking_block(block)
+        case block.type
+        when :thinking
+          Brute::Reasoning::Block.new(type: :text, text: block.thinking, signature: block.signature, format: FORMAT)
+        when :redacted_thinking
+          Brute::Reasoning::Block.new(type: :redacted, signature: block.data, format: FORMAT)
         end
       end
 
@@ -80,6 +123,12 @@ module Brute
           blocks = message.content
 
           text = blocks.select { |b| b.type == :text }.map(&:text).join
+
+          # Thinking is its own block, its signature is what the API checks
+          # when it comes back, and redacted thinking is a block whose payload
+          # is not ours to read. All of them are kept, in order: what goes back
+          # has to match what the model produced.
+          thinking = blocks.filter_map { |b| self.class.thinking_block(b) }
           tool_calls = blocks.select { |b| b.type == :tool_use }.map do |b|
             if b.input.respond_to?(:to_h)
               arguments = b.input.to_h
@@ -97,6 +146,7 @@ module Brute
             role:       :assistant,
             content:    text,
             tool_calls: tool_calls,
+            reasoning:  Brute::Reasoning.build(blocks: thinking),
           )
         end
     end

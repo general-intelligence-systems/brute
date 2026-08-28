@@ -3,7 +3,9 @@ module Brute
     class RubyOpenAI < MessageTransport
 
       # Brute::Message -> ruby-openai Hash payload
-      def self.dump(message)
+      # An OpenAI-compatible proxy may report reasoning, and it is read on the
+      # way in, but the chat completions wire has no field to send it back on.
+      def self.dump(message, model: nil)
         {
           role: message.role.to_s,
         }.tap do |payload|
@@ -67,13 +69,15 @@ module Brute
               role:       :assistant,
               content:    hash[:content],
               tool_calls: tool_calls,
+              reasoning:  hash[:reasoning],
             )
 
           # Branch 3: Standard Assistant text message
           in { role: "assistant" }
             Brute::Message.new(
-              role:    :assistant,
-              content: hash[:content],
+              role:      :assistant,
+              content:   hash[:content],
+              reasoning: hash[:reasoning],
             )
 
           else
