@@ -67,7 +67,20 @@ module Brute
 
     # Whether every block came from this provider. The sequence goes back
     # whole or not at all, so one foreign block disqualifies all of them.
-    def issued_by?(format) = blocks.all? { |block| block.format.nil? || format.nil? || block.format == format }
+    #
+    # A block that names no provider is nobody's to vouch for: unsigned there
+    # is nothing to vouch for and it passes, but signed it is a signature that
+    # cannot be attributed, and offering one the provider did not issue is a
+    # rejected request rather than an unverified one.
+    def issued_by?(format)
+      blocks.all? do |block|
+        if block.format.nil?
+          !block.signed?
+        else
+          format.nil? || block.format == format
+        end
+      end
+    end
 
     def to_h(...) = { blocks: blocks.map(&:to_h) }
   end
@@ -255,6 +268,19 @@ describe "brute/messages" do
     ])
 
     mixed.signed_by?("anthropic-claude-v1").should.be.false
+  end
+
+  it "will not vouch for a signature that names no provider" do
+    # A block with a signature and no format cannot be attributed, and a
+    # signature the provider did not issue is a rejected request rather than
+    # an unverified one. Unsigned and unstamped is nobody's claim to make, so
+    # it passes.
+    unattributed = Brute::Reasoning.build(text: "thought", signature: "sig-1")
+
+    unattributed.issued_by?("anthropic-claude-v1").should.be.false
+    unattributed.signed_by?("anthropic-claude-v1").should.be.false
+
+    Brute::Reasoning.build(text: "just prose").issued_by?("anthropic-claude-v1").should.be.true
   end
 
   it "knows a sequence the model produced from one built around a string" do

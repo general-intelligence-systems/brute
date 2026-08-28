@@ -69,11 +69,23 @@ module Brute
           )
         end
 
+        def answering_model(message)
+          if message.respond_to?(:model)
+            message.model
+          end
+        end
+
         # RubyLLM models it as a Thinking, carrying the text and the
-        # provider's signature for it.
+        # provider's signature for it. It speaks to many providers, so the
+        # model that issued the signature is what stamps the block: unstamped,
+        # it would be offered to whichever provider asked next.
         def reasoning(message)
           if message.respond_to?(:thinking) && message.thinking
-            Brute::Reasoning.build(text: message.thinking.text, signature: message.thinking.signature)
+            Brute::Reasoning.build(
+              text:      message.thinking.text,
+              signature: message.thinking.signature,
+              format:    answering_model(message),
+            )
           end
         end
     end
@@ -109,6 +121,20 @@ describe "brute/message_transport/ruby_llm" do
     thinking = Brute::MessageTransport::RubyLLM.dump(m).thinking
     thinking.text.should == "thought it through"
     thinking.signature.should == "sig-1"
+  end
+
+  it "stamps the model that signed the thinking it wrapped" do
+    # ruby_llm speaks to many providers, so a signature it hands back is only
+    # good against the model that issued it. Unstamped, it would be offered to
+    # whichever provider asked next.
+    thinking = Struct.new(:text, :signature, keyword_init: true)
+    m = fake_message.new(role: :assistant, content: "done")
+    m.define_singleton_method(:thinking) { thinking.new(text: "thought", signature: "sig-1") }
+    m.define_singleton_method(:model) { "claude-sonnet-4" }
+
+    block = Brute::MessageTransport::RubyLLM.new(m).wrap_each.to_a.first.reasoning.blocks.first
+    block.signature.should == "sig-1"
+    block.format.should == "claude-sonnet-4"
   end
 
   it "wraps ruby_llm's id-keyed tool_calls hash into a flat list" do

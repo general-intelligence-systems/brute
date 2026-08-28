@@ -113,6 +113,8 @@ and each is a predicate on `Reasoning`:
   sibling disqualifies the lot rather than going out as `signature: nil`.
 - **`issued_by?(format)`** — *is every block mine?* One foreign block
   disqualifies all of them, because the sequence goes whole or not at all.
+  `signed_by?` asks it first; OpenRouter asks the same question of the model
+  rather than of a format, and so asks its own.
 - **`detailed?`** — *is this the sequence the model emitted, or one built
   around a plaintext string?* Prose lifted out of a `reasoning` field was never
   a sequence, and replaying it as one invents something the provider never
@@ -127,7 +129,8 @@ The model is what decides that, so it travels with the messages:
 `dump(message, model:)` and `dump_all(messages, model:)`. OpenRouter names both
 sides after the provider — a model reads `"anthropic/claude-sonnet-4"`, a
 format `"anthropic-claude-v1"` — so the comparison is the provider on each
-side. Asked about no model in particular, the format is taken at its word.
+side. Asked about no model in particular, or about an id that names no vendor,
+the format is taken at its word rather than dropped without one.
 
 The shape mirrors [`RubyLLM::Thinking`][ruby_llm-thinking], which models text
 and signature for the same reason:
@@ -142,8 +145,8 @@ reasoning and what the wire wants back.
 
 | transport | in | out |
 | --- | --- | --- |
-| `open_router` | `reasoning_details`, each read under the key its type names; or `reasoning` as plain text | `reasoning` string always, and `reasoning_details` whole and in order when the sequence is the model's own and every block belongs to the model being sent to |
-| `anthropic` | every `thinking` and `redacted_thinking` block, in order | `thinking` / `redacted_thinking` blocks, first, before text and `tool_use` — only when Anthropic signed every one of them |
+| `open_router` | `reasoning_details`, each read under the key its type names; or `reasoning` as plain text | `reasoning` string whenever there is prose to put in it, and `reasoning_details` whole and in order when the sequence is the model's own and every block belongs to the model being sent to |
+| `anthropic` | every `thinking` and `redacted_thinking` block, in order | `thinking` / `redacted_thinking` blocks, first, before text and `tool_use` — only when Anthropic signed every one of them, and only when every one is a kind it has a block for |
 | `ruby_llm` | [`message.thinking`][ruby_llm-message] — a `RubyLLM::Thinking` | `RubyLLM::Thinking.build(text:, signature:)` |
 | `openai` | — | — |
 | `ruby_open_ai` | `hash[:reasoning]`, which an OpenAI-compatible proxy may report | — |
@@ -156,12 +159,17 @@ Three details are load-bearing rather than incidental:
 `thinking_blocks` sends nothing when the blocks are not Anthropic's — an
 unverifiable block is a 400, and no thinking beats a failed request — and the
 reasoning-only branch does not emit an empty text block, which Anthropic also
-rejects.
+rejects. `expressible?` refuses the sequence for the same reason when it holds
+a kind Anthropic has no block for: it has `thinking` and `redacted_thinking`
+and no third, and a summary sent as thinking is a block whose signature was
+issued over the thinking rather than the precis — so it would not verify.
 
 **Both forms, for OpenRouter.** The plaintext string is what a reader sees; the
 `reasoning_details` array is what carries the signatures. The string goes
-always; the array goes whole, or not at all — dropping an entry out of the
-middle is modifying the sequence, which is the thing forbidden.
+whenever there is prose to put in it — an encrypted payload has no prose, and
+an empty string is not reasoning, so the details carry it or nothing does. The
+array goes whole, or not at all — dropping an entry out of the middle is
+modifying the sequence, which is the thing forbidden.
 
 **A payload under its own key.** Each detail type names where its content
 lives, and read or written under the wrong key it is simply lost:

@@ -64,10 +64,13 @@ module Brute
       def self.issued_by?(block, model)
         vendor = model.to_s.split("/").first
 
-        if block.format.nil? || vendor.nil? || vendor == model.to_s
-          # No model, no format, or an id that names no vendor: nothing to
-          # contradict the format, so it is taken at its word rather than
-          # dropped without a word.
+        if block.format.nil?
+          # A signature that names no provider cannot be attributed to this
+          # one; unsigned there is nothing to attribute and it passes.
+          !block.signed?
+        elsif vendor.nil? || vendor == model.to_s
+          # No model, or an id that names no vendor: nothing to contradict the
+          # format, so it is taken at its word rather than dropped silently.
           true
         else
           block.format.split("-").first == vendor
@@ -158,6 +161,12 @@ module Brute
           end
         end
 
+        def answering_model
+          if @result.respond_to?(:model)
+            @result.model
+          end
+        end
+
         # The type names the payload's key, so it says which one to read.
         def block(detail)
           type = detail[:type].to_s.split(".").last.to_s
@@ -166,7 +175,10 @@ module Brute
             type:      type.empty? ? :text : type.to_sym,
             text:      detail[:text] || detail[:summary],
             signature: detail[:signature] || detail[:data],
-            format:    detail[:format],
+            # A provider that names no format still answered as some model,
+            # and an unattributed signature is one nobody may replay -- so the
+            # model that produced it stands in for the format it did not send.
+            format:    detail[:format] || answering_model,
             id:        detail[:id],
             index:     detail[:index],
           )
@@ -227,14 +239,18 @@ describe "brute/message_transport/open_router" do
 
     # Signed thinking goes back as the details array, unmodified, which is
     # what carries the signature the provider checks.
-    signed = Struct.new(:choices).new([{ "message" => {
+    # A detail that names no format is stamped with the model that answered,
+    # because a signature nobody claims is one nobody may replay.
+    signed = Struct.new(:choices, :model).new([{ "message" => {
       "role" => "assistant", "content" => "",
       "reasoning_details" => [{ "type" => "reasoning.text", "text" => "step by step", "signature" => "sig-1" }],
-    } }])
+    } }], "anthropic/claude-sonnet-4")
 
     back = Brute::MessageTransport::OpenRouter.dump(Brute::MessageTransport::OpenRouter.new(signed).wrap_each.to_a.first)
     back[:reasoning].should == "step by step"
-    back[:reasoning_details].should == [{ type: "reasoning.text", text: "step by step", signature: "sig-1" }]
+    back[:reasoning_details].should == [
+      { type: "reasoning.text", format: "anthropic/claude-sonnet-4", text: "step by step", signature: "sig-1" },
+    ]
 
     # A tool call is an answer, even with nothing said alongside it.
     calling = Struct.new(:choices).new([
