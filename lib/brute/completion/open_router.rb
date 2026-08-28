@@ -47,8 +47,10 @@ module Brute
           env.emit(LLM_START_EVENT)
 
           messages = Brute::MessageTransport::OpenRouter.dump_all(env[:messages], model: options(env).model)
+          raw = nil
 
           ::OpenRouter::Client.new(**@config).then do |client|
+            client.on(:on_error) { |error| raw = error }
             response = nil
             env.emit(LLM_DURATION_EVENT) { response = client.complete(messages, options(env)) }
 
@@ -76,13 +78,13 @@ module Brute
         # kind of failure. The classes are looked up defensively — the provider
         # gem is only a dependency of the app that uses this middleware.
         rescue => error
-          env.emit(LLM_FAILURE_EVENT)
+          env.emit(LLM_FAILURE_EVENT, raw || error)
 
           if defined?(::Faraday::Error) && error.is_a?(::Faraday::Error)
             env.emit(FARADAY_ERROR_EVENT, error)
 
           elsif defined?(::OpenRouter::ServerError) && error.is_a?(::OpenRouter::ServerError)
-            env.emit(OPEN_ROUTER_SERVER_ERROR_EVENT, error)
+            env.emit(OPEN_ROUTER_SERVER_ERROR_EVENT, raw || error)
 
           else
             env.emit(STANDARD_ERROR_EVENT, error)
@@ -147,6 +149,7 @@ describe "brute/completion/open_router" do
   # Run one turn against a stubbed OpenRouter::Client and hand back the env.
   with_fake_client = lambda do |completion, response|
     fake_client = Object.new
+    fake_client.define_singleton_method(:on) { |_event, &_block| self }
     fake_client.define_singleton_method(:complete) { |_messages, _options| response }
     original = OpenRouter::Client.method(:new)
     OpenRouter::Client.define_singleton_method(:new) { |**_config| fake_client }
@@ -180,6 +183,7 @@ describe "brute/completion/open_router" do
   it "advertises env[:tools] to the provider, and lets a tools: option win" do
     captured = []
     fake_client = Object.new
+    fake_client.define_singleton_method(:on) { |_event, &_block| self }
     fake_client.define_singleton_method(:complete) { |_messages, options| captured << options; FakeUsageResponse.new(nil) }
     original = OpenRouter::Client.method(:new)
     OpenRouter::Client.define_singleton_method(:new) { |**_config| fake_client }
@@ -226,6 +230,7 @@ describe "brute/completion/open_router" do
   it "takes the model from env[:model], and lets a model: option win" do
     captured = []
     fake_client = Object.new
+    fake_client.define_singleton_method(:on) { |_event, &_block| self }
     fake_client.define_singleton_method(:complete) { |_messages, options| captured << options; FakeUsageResponse.new(nil) }
     original = OpenRouter::Client.method(:new)
     OpenRouter::Client.define_singleton_method(:new) { |**_config| fake_client }
@@ -260,6 +265,7 @@ describe "brute/completion/open_router" do
 
     boom = RuntimeError.new("no route to host")
     fake_client = Object.new
+    fake_client.define_singleton_method(:on) { |_event, &_block| self }
     fake_client.define_singleton_method(:complete) { |_messages, _options| raise boom }
     original = OpenRouter::Client.method(:new)
     OpenRouter::Client.define_singleton_method(:new) { |**_config| fake_client }
