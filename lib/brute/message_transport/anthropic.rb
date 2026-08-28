@@ -86,10 +86,19 @@ module Brute
       # not issue cannot be verified -- a conversation replayed from another
       # provider carries thinking that is not Anthropic's -- and an
       # unverifiable block is a 400, so it sends none rather than a bad one.
+      # Anthropic has two kinds of thinking block and no third: a summary is
+      # a precis of thinking the provider would not show, and the signature
+      # was issued over the thinking rather than the precis. Sent as a
+      # thinking block it is a block that does not verify, so a sequence
+      # carrying one is refused whole -- the same as a foreign format.
+      def self.expressible?(reasoning)
+        reasoning.blocks.all? { |block| block.type == :text || block.opaque? }
+      end
+
       def self.thinking_blocks(message)
-        if message.reasoning&.signed_by?(FORMAT)
+        if message.reasoning&.signed_by?(FORMAT) && expressible?(message.reasoning)
           message.reasoning.blocks.map do |block|
-            if block.type == :redacted
+            if block.opaque?
               { type: "redacted_thinking", data: block.signature }
             else
               { type: "thinking", thinking: block.text.to_s, signature: block.signature }
@@ -107,7 +116,7 @@ module Brute
         when :thinking
           Brute::Reasoning::Block.new(type: :text, text: block.thinking, signature: block.signature, format: FORMAT)
         when :redacted_thinking
-          Brute::Reasoning::Block.new(type: :redacted, signature: block.data, format: FORMAT)
+          Brute::Reasoning::Block.new(type: :encrypted, signature: block.data, format: FORMAT)
         end
       end
 
@@ -188,6 +197,52 @@ describe "brute/message_transport/anthropic" do
     dumped.size.should == 2
     dumped.last[:role].should == "user"
     dumped.last[:content].map { |b| b[:tool_use_id] }.should == %w[tc1 tc2]
+  end
+
+  it "sends signed thinking back first, ahead of the text" do
+    # The sequence is part of what is verified, so thinking leads.
+    m = Brute::Message.new(role: :assistant, content: "done", reasoning: {
+      blocks: [{ type: :text, text: "let me think", signature: "sig-1", format: "anthropic-claude-v1" }],
+    })
+
+    Brute::MessageTransport::Anthropic.dump(m)[:content].should == [
+      { type: "thinking", thinking: "let me think", signature: "sig-1" },
+      { type: "text", text: "done" },
+    ]
+  end
+
+  it "sends an opaque payload home as redacted_thinking, under either name" do
+    # Anthropic calls it redacted_thinking; OpenRouter calls the same Claude
+    # payload reasoning.encrypted. A conversation logged through either one
+    # goes back the same way.
+    [:redacted, :encrypted].each do |type|
+      m = Brute::Message.new(role: :assistant, content: "done", reasoning: {
+        blocks: [{ type: type, signature: "blob", format: "anthropic-claude-v1" }],
+      })
+
+      Brute::MessageTransport::Anthropic.dump(m)[:content].first
+        .should == { type: "redacted_thinking", data: "blob" }
+    end
+  end
+
+  it "sends no thinking at all rather than a block it cannot vouch for" do
+    # An unverifiable block is a 400, and no thinking beats a failed request:
+    # a signature Anthropic did not issue, and a block carrying none where it
+    # requires one, are both refused -- and refused whole.
+    foreign = Brute::Message.new(role: :assistant, content: "done", reasoning: {
+      blocks: [{ type: :text, text: "thought", signature: "sig-1", format: "openai-responses-v1" }],
+    })
+
+    partly_signed = Brute::Message.new(role: :assistant, content: "done", reasoning: {
+      blocks: [
+        { type: :text, text: "step one", signature: "sig-1", format: "anthropic-claude-v1" },
+        { type: :text, text: "step two",                     format: "anthropic-claude-v1" },
+      ],
+    })
+
+    [foreign, partly_signed].each do |m|
+      Brute::MessageTransport::Anthropic.dump(m)[:content].should == [{ type: "text", text: "done" }]
+    end
   end
 
   it "wraps text and tool_use blocks into one assistant message" do

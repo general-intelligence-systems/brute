@@ -30,8 +30,16 @@ module Brute
       # rearranged or modified -- so what came back is what goes out.
       def self.dump(message, model: nil)
         message.to_h.tap do |hash|
+          # What Message#to_h holds is brute's own shape, which is not the
+          # wire's: whatever goes out under these keys is put there here.
+          hash.delete(:reasoning)
+
           if message.reasoning
-            hash[:reasoning] = message.reasoning.text
+            # An encrypted payload has no prose in it, and an empty string is
+            # not reasoning: the details carry it, or nothing does.
+            unless message.reasoning.text.empty?
+              hash[:reasoning] = message.reasoning.text
+            end
 
             # The details go back whole, in order, or not at all -- the
             # sequence has to match what the model produced. OpenRouter routes
@@ -39,10 +47,12 @@ module Brute
             # is only good while the turn is still going to Claude. Switch
             # model mid-conversation and the plaintext survives while the
             # signatures, which the new provider cannot verify, do not.
-            details = message.reasoning.blocks.select { |block| block.signed? && issued_by?(block, model) }
-
-            unless details.empty?
-              hash[:reasoning_details] = details.map { |block| detail(block) }
+            # Whole or not at all: dropping an entry out of the middle is
+            # modifying the sequence, which is what the provider forbids. A
+            # plaintext-only reasoning has nothing signed in it, so no array
+            # is invented around it.
+            if message.reasoning.detailed? && message.reasoning.blocks.all? { |block| issued_by?(block, model) }
+              hash[:reasoning_details] = message.reasoning.blocks.map { |block| detail(block) }
             end
           end
         end
@@ -52,21 +62,38 @@ module Brute
       # "anthropic/claude-sonnet-4", a format "anthropic-claude-v1". Asked
       # about no model in particular, the format is taken at its word.
       def self.issued_by?(block, model)
-        if model.nil? || block.format.nil?
+        vendor = model.to_s.split("/").first
+
+        if block.format.nil? || vendor.nil? || vendor == model.to_s
+          # No model, no format, or an id that names no vendor: nothing to
+          # contradict the format, so it is taken at its word rather than
+          # dropped without a word.
           true
         else
-          block.format.split("-").first == model.to_s.split("/").first
+          block.format.split("-").first == vendor
         end
       end
 
+      # Each type names its own payload: reasoning text carries `text` and the
+      # `signature` that verifies it, a summary carries `summary`, and an
+      # encrypted item carries `data`. Written under the wrong key the payload
+      # is simply lost, which for an encrypted item is the whole of it.
       def self.detail(block)
-        {
-          type:      block.type == :encrypted ? "reasoning.encrypted" : "reasoning.text",
-          text:      block.text,
-          signature: block.signature,
-          format:    block.format,
-          id:        block.id,
-        }.compact
+        named = {
+          type:   "reasoning.#{block.type}",
+          format: block.format,
+          id:     block.id,
+          index:  block.index,
+        }
+
+        case block.type
+        when :encrypted
+          named.merge(data: block.signature).compact
+        when :summary
+          named.merge(summary: block.text).compact
+        else
+          named.merge(text: block.text, signature: block.signature).compact
+        end
       end
 
       # An OpenRouter::Response's messages (one per choice; in practice
@@ -131,15 +158,17 @@ module Brute
           end
         end
 
-        # "reasoning.text" / "reasoning.summary" carry what was thought;
-        # "reasoning.encrypted" carries a payload that is not ours to read.
+        # The type names the payload's key, so it says which one to read.
         def block(detail)
+          type = detail[:type].to_s.split(".").last.to_s
+
           Brute::Reasoning::Block.new(
-            type:      detail[:type].to_s.end_with?("encrypted") ? :encrypted : :text,
-            text:      detail[:text],
+            type:      type.empty? ? :text : type.to_sym,
+            text:      detail[:text] || detail[:summary],
             signature: detail[:signature] || detail[:data],
             format:    detail[:format],
             id:        detail[:id],
+            index:     detail[:index],
           )
         end
 
@@ -223,6 +252,74 @@ describe "brute/message_transport/open_router" do
 
     lambda { Brute::MessageTransport::OpenRouter.new(empty).wrap_each.to_a }
       .should.raise(Brute::MessageTransport::OpenRouter::EmptyCompletion)
+  end
+
+  it "round-trips every detail type under its own payload key" do
+    # OpenRouter names each payload after its type: a summary's prose is
+    # `summary`, an encrypted item's payload is `data`, and only reasoning
+    # text carries a `signature`. Read or written under the wrong key, the
+    # payload is simply lost -- and an encrypted item is the case where the
+    # plaintext alone is not enough.
+    details = [
+      { "type" => "reasoning.text", "text" => "step by step", "signature" => "sig-1",
+        "format" => "anthropic-claude-v1", "id" => "r-1", "index" => 0 },
+      { "type" => "reasoning.summary", "summary" => "weighed the constraints",
+        "format" => "anthropic-claude-v1", "id" => "r-2", "index" => 1 },
+      { "type" => "reasoning.encrypted", "data" => "b64blob",
+        "format" => "anthropic-claude-v1", "id" => "r-3", "index" => 2 },
+    ]
+
+    response = Struct.new(:choices).new([
+      { "message" => { "role" => "assistant", "content" => "", "reasoning_details" => details } },
+    ])
+
+    wrapped = Brute::MessageTransport::OpenRouter.new(response).wrap_each.to_a.first
+    wrapped.reasoning.text.should == "step by step\nweighed the constraints"
+
+    back = Brute::MessageTransport::OpenRouter.dump(wrapped, model: "anthropic/claude-sonnet-4")
+    back[:reasoning_details].should == details.map { |detail| detail.transform_keys(&:to_sym) }
+  end
+
+  it "sends an opaque payload out as reasoning.encrypted, under either name" do
+    # The same Claude payload is :redacted when Anthropic logged it and
+    # :encrypted when OpenRouter did. Either way it is not text, and its
+    # payload belongs under data.
+    [:redacted, :encrypted].each do |type|
+      m = Brute::Message.new(role: :assistant, content: "done", reasoning: {
+        blocks: [{ type: type, signature: "b64blob", format: "anthropic-claude-v1" }],
+      })
+
+      Brute::MessageTransport::OpenRouter.dump(m, model: "anthropic/claude-sonnet-4")[:reasoning_details]
+        .should == [{ type: "reasoning.encrypted", data: "b64blob", format: "anthropic-claude-v1" }]
+    end
+  end
+
+  it "sends the details sequence whole, or not at all" do
+    # "The entire sequence of consecutive reasoning blocks must match the
+    # outputs generated by the model; you cannot rearrange or modify the
+    # sequence." A subset of it is a modified sequence, so a turn going to
+    # another provider keeps the plaintext and drops the array entire.
+    response = Struct.new(:choices).new([
+      { "message" => { "role" => "assistant", "content" => "done", "reasoning_details" => [
+        { "type" => "reasoning.text", "text" => "step by step", "signature" => "sig-1",
+          "format" => "anthropic-claude-v1" },
+      ] } },
+    ])
+
+    wrapped = Brute::MessageTransport::OpenRouter.new(response).wrap_each.to_a.first
+
+    elsewhere = Brute::MessageTransport::OpenRouter.dump(wrapped, model: "openai/gpt-5")
+    elsewhere[:reasoning].should == "step by step"
+    elsewhere.key?(:reasoning_details).should.be.false
+  end
+
+  it "does not invent a details sequence around plaintext reasoning" do
+    # A sequence Brute made up is not one the model produced.
+    plain = Brute::Message.new(role: :assistant, content: "done", reasoning: "just thinking")
+
+    back = Brute::MessageTransport::OpenRouter.dump(plain, model: "anthropic/claude-sonnet-4")
+    back[:reasoning].should == "just thinking"
+    back.key?(:reasoning_details).should.be.false
   end
 
   it "unwraps OpenAI-wire tool calls and parses their JSON arguments" do

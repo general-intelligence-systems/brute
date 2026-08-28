@@ -57,32 +57,54 @@ module Brute
     # Whether these blocks may be sent back to this provider as they are. A
     # signature the provider did not issue is worse than no signature: it is
     # a rejected request.
-    def signed_by?(format) = blocks.any?(&:signed?) && blocks.all? { |block| block.format.nil? || block.format == format }
+    def signed_by?(format) = !format.nil? && blocks.any? && issued_by?(format) && blocks.all?(&:signed?)
+
+    # Whether this is the sequence the model emitted rather than one built
+    # around a plaintext string. Only the former may be replayed: a provider
+    # checks what comes back against what it produced, and prose lifted out of
+    # a `reasoning` field was never a sequence at all.
+    def detailed? = blocks.any? { |block| block.signed? || block.format || block.id }
+
+    # Whether every block came from this provider. The sequence goes back
+    # whole or not at all, so one foreign block disqualifies all of them.
+    def issued_by?(format) = blocks.all? { |block| block.format.nil? || format.nil? || block.format == format }
 
     def to_h(...) = { blocks: blocks.map(&:to_h) }
   end
 
   class Reasoning
-    # One block of thinking. :text carries what the model thought; :encrypted
-    # and :redacted carry a payload that is not ours to read -- Anthropic's
-    # redacted_thinking, or an encrypted reasoning item -- and matter only in
-    # that they go back whole.
+    # One block of thinking. :text is what the model thought and :summary is
+    # the provider's precis of it; :encrypted is a payload that is not ours to
+    # read and matters only in that it goes back whole.
+    #
+    # Anthropic calls that payload redacted_thinking and OpenRouter calls the
+    # same thing reasoning.encrypted, so :redacted is taken as a spelling of
+    # :encrypted rather than a second kind -- a conversation logged through
+    # one and replayed to the other has to arrive as what it is.
     Block = Data.define(
       :type,
       :text,
       :signature,
       :format,
       :id,
+      :index,
     ) do
-      def initialize(type: :text, text: nil, signature: nil, format: nil, id: nil)
+      TYPES = { redacted: :encrypted }.freeze
+
+      def initialize(type: :text, text: nil, signature: nil, format: nil, id: nil, index: nil)
+        type = type.to_sym
+
         super(
-          type:      type.to_sym,
+          type:      TYPES.fetch(type, type),
           text:      text,
           signature: signature,
           format:    format,
           id:        id,
+          index:     index,
         )
       end
+
+      def opaque? = type == :encrypted
 
       def signed? = !signature.to_s.empty?
 
@@ -213,5 +235,35 @@ describe "brute/messages" do
 
   it "to_h drops nil fields" do
     Brute::Message.new(role: :user, content: "hi").to_h.should == { role: :user, content: "hi" }
+  end
+
+  it "round-trips reasoning through to_h" do
+    m = Brute::Message.new(role: :assistant, content: "done", reasoning: {
+      blocks: [{ type: :text, text: "thought", signature: "sig-1", format: "anthropic-claude-v1" }],
+    })
+
+    Brute::Message.new(**m.to_h).should == m
+  end
+
+  it "will not vouch for a sequence in which any block is unsigned" do
+    # A provider that verifies signatures rejects a thinking block without
+    # one, so one signed block among several does not make the sequence
+    # sendable: every block has to carry its own signature, or none goes.
+    mixed = Brute::Reasoning.build(blocks: [
+      { type: :text, text: "step one", signature: "sig-1", format: "anthropic-claude-v1" },
+      { type: :text, text: "step two",                     format: "anthropic-claude-v1" },
+    ])
+
+    mixed.signed_by?("anthropic-claude-v1").should.be.false
+  end
+
+  it "knows a sequence the model produced from one built around a string" do
+    # Only what the model actually emitted may be sent back as a sequence, so
+    # reasoning coerced from plaintext is not one to be replayed.
+    Brute::Reasoning.build(text: "just thinking").detailed?.should.be.false
+
+    Brute::Reasoning.build(blocks: [
+      { type: :summary, text: "considered it", format: "anthropic-claude-v1", id: "r-1" },
+    ]).detailed?.should.be.true
   end
 end

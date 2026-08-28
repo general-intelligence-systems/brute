@@ -30,10 +30,14 @@ module Brute
       end
 
       # RubyLLM::Thinking.build answers nil when there is nothing to say, and
-      # takes the signature back exactly as it came.
+      # takes the signature back exactly as it came. The signature lives on
+      # the block that was signed, not on the sequence.
       def self.thinking(message)
         if message.reasoning
-          ::RubyLLM::Thinking.build(text: message.reasoning.text, signature: message.reasoning.signature)
+          ::RubyLLM::Thinking.build(
+            text:      message.reasoning.text,
+            signature: message.reasoning.blocks.find(&:signed?)&.signature,
+          )
         end
       end
 
@@ -91,6 +95,20 @@ describe "brute/message_transport/ruby_llm" do
     out = Brute::MessageTransport::RubyLLM.new(m).wrap_each.to_a
     out.first.should.be.kind_of?(Brute::Message)
     out.first.content.should == "hi"
+  end
+
+  it "sends thinking back with the signature its block carried" do
+    # ruby_llm models thinking as one text and one signature, so a sequence of
+    # blocks flattens to its text and the signature of the block carrying one.
+    require "ruby_llm"
+
+    m = Brute::Message.new(role: :assistant, content: "done", reasoning: {
+      blocks: [{ type: :text, text: "thought it through", signature: "sig-1" }],
+    })
+
+    thinking = Brute::MessageTransport::RubyLLM.dump(m).thinking
+    thinking.text.should == "thought it through"
+    thinking.signature.should == "sig-1"
   end
 
   it "wraps ruby_llm's id-keyed tool_calls hash into a flat list" do

@@ -59,15 +59,38 @@ Two things follow, and they shape the design:
 ## `Brute::Reasoning`
 
 ```ruby
-Reasoning       = Data.define(:blocks)
-Reasoning::Block = Data.define(:type, :text, :signature, :format, :id)
+Reasoning        = Data.define(:blocks)
+Reasoning::Block = Data.define(:type, :text, :signature, :format, :id, :index)
 ```
 
 A sequence, in the order the model produced it, because that is what both
 providers ask for. Each block names its own `format` — who signed it — and its
-`type`: `:text` for thinking that can be read, `:encrypted` and `:redacted` for
-a payload that is not ours to read (Anthropic's `redacted_thinking`, an
-encrypted reasoning item) and matters only in that it goes back whole.
+`type`:
+
+| type | what it carries |
+| --- | --- |
+| `:text` | thinking that can be read, and the `signature` that verifies it |
+| `:summary` | the provider's precis of thinking it will not show in full |
+| `:encrypted` | a payload that is not ours to read, and matters only in that it goes back whole |
+
+`:redacted` is taken as a spelling of `:encrypted` rather than a fourth kind.
+Anthropic calls the payload `redacted_thinking` and OpenRouter calls the same
+Claude payload `reasoning.encrypted`; two names for one thing means a
+conversation logged through one and replayed to the other arrives as something
+neither recognises, so `Block` normalises on the way in and `Block#opaque?` is
+what the transports ask.
+
+Normalising happens at construction, which means it happens on the way *out of
+the log* as well: a session written before this reads back as `:encrypted`
+where it was stored as `:redacted`. Nothing is rewritten on disk and nothing is
+lost — the two named the same payload — but a log does not read back exactly as
+it was written, which is worth knowing before trusting a diff of one.
+
+A type this does not know is left alone rather than folded into `:text`.
+OpenRouter names the wire key after the type (`reasoning.#{type}`) and reads it
+back the same way, so a detail type added tomorrow survives the round trip
+without brute being taught about it — and a transport that cannot express a
+type refuses the sequence rather than guessing at it.
 
 `Reasoning.build` answers `nil` when there is nothing to keep, so a provider
 that reports no thinking costs nothing. `Brute::Message` carries one and
@@ -82,12 +105,29 @@ it. Anthropic verifies its own and 400s on anything it cannot; OpenRouter names
 the format (`"anthropic-claude-v1"`, `"openai-responses-v1"`) precisely because
 the details are only valid against the provider that produced them.
 
-So `Reasoning#signed_by?(format)` is the question every transport asks before
-sending anything opaque: *is this mine?* If it is, the blocks go back whole and
-in order. If it is not, the text survives where the wire has a plain field for
-it, and the signature is dropped rather than asserted. Switch model mid-
-conversation and the thinking stays in the log and in traces — it just stops
-claiming to be verifiable.
+So there are three questions a transport asks before sending anything opaque,
+and each is a predicate on `Reasoning`:
+
+- **`signed_by?(format)`** — *is every block mine, and signed?* Anthropic needs
+  this one: it requires a signature on every thinking block, so one unsigned
+  sibling disqualifies the lot rather than going out as `signature: nil`.
+- **`issued_by?(format)`** — *is every block mine?* One foreign block
+  disqualifies all of them, because the sequence goes whole or not at all.
+- **`detailed?`** — *is this the sequence the model emitted, or one built
+  around a plaintext string?* Prose lifted out of a `reasoning` field was never
+  a sequence, and replaying it as one invents something the provider never
+  produced.
+
+If the answer is yes, the blocks go back whole and in order. If it is no, the
+text survives where the wire has a plain field for it, and the signature is
+dropped rather than asserted. Switch model mid-conversation and the thinking
+stays in the log and in traces — it just stops claiming to be verifiable.
+
+The model is what decides that, so it travels with the messages:
+`dump(message, model:)` and `dump_all(messages, model:)`. OpenRouter names both
+sides after the provider — a model reads `"anthropic/claude-sonnet-4"`, a
+format `"anthropic-claude-v1"` — so the comparison is the provider on each
+side. Asked about no model in particular, the format is taken at its word.
 
 The shape mirrors [`RubyLLM::Thinking`][ruby_llm-thinking], which models text
 and signature for the same reason:
@@ -102,8 +142,8 @@ reasoning and what the wire wants back.
 
 | transport | in | out |
 | --- | --- | --- |
-| `open_router` | `reasoning_details`, each with its own format; or `reasoning` as plain text | `reasoning` string always, `reasoning_details` whole and in order when signed |
-| `anthropic` | every `thinking` and `redacted_thinking` block, in order | `thinking` / `redacted_thinking` blocks, first, before text and `tool_use` — only when Anthropic signed them |
+| `open_router` | `reasoning_details`, each read under the key its type names; or `reasoning` as plain text | `reasoning` string always, and `reasoning_details` whole and in order when the sequence is the model's own and every block belongs to the model being sent to |
+| `anthropic` | every `thinking` and `redacted_thinking` block, in order | `thinking` / `redacted_thinking` blocks, first, before text and `tool_use` — only when Anthropic signed every one of them |
 | `ruby_llm` | [`message.thinking`][ruby_llm-message] — a `RubyLLM::Thinking` | `RubyLLM::Thinking.build(text:, signature:)` |
 | `openai` | — | — |
 | `ruby_open_ai` | `hash[:reasoning]`, which an OpenAI-compatible proxy may report | — |
@@ -120,7 +160,19 @@ rejects.
 
 **Both forms, for OpenRouter.** The plaintext string is what a reader sees; the
 `reasoning_details` array is what carries the signatures. The string goes
-always; the array goes whole, or not at all.
+always; the array goes whole, or not at all — dropping an entry out of the
+middle is modifying the sequence, which is the thing forbidden.
+
+**A payload under its own key.** Each detail type names where its content
+lives, and read or written under the wrong key it is simply lost:
+
+| type | key |
+| --- | --- |
+| `reasoning.text` | `text`, with `signature` |
+| `reasoning.summary` | `summary` |
+| `reasoning.encrypted` | `data` |
+
+`index` comes back with each one, as it went out.
 
 **Nothing, for chat completions.** Neither `ChatCompletionMessage` nor the
 assistant message param in the `openai` gem has a reasoning field — reasoning
