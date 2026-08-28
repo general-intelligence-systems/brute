@@ -5,6 +5,21 @@ All notable changes to Brute are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [6.1.5] - 2026-08-28
+
+### Fixed
+
+- `Brute::MessageTransport::OpenRouter.dump` sends an assistant message's
+  tool calls back out in the shape the wire wants —
+  `{id:, type: "function", function: {name:, arguments: "<json>"}}` — rather
+  than the flat `{id:, name:, arguments: Hash}` `Brute::Message#to_h`
+  produces. What the transport already reads in through `wrap_tool_call` it
+  now writes back out through `call_block`, so a tool call round-tripped
+  through the log goes back to the provider as itself. Before this, a
+  conversation replayed to OpenRouter with any assistant tool call in it —
+  every pass of the tool loop past the first, and every resume from a
+  checkpoint — went out with a payload the provider could not read.
+
 ## [6.1.4] - 2026-08-28
 
 ### Changed
