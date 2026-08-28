@@ -63,7 +63,23 @@ module Brute
     # around a plaintext string. Only the former may be replayed: a provider
     # checks what comes back against what it produced, and prose lifted out of
     # a `reasoning` field was never a sequence at all.
-    def detailed? = blocks.any? { |block| block.signed? || block.format || block.id }
+    def detailed? = blocks.any? { |block| block.signed? || block.format || block.id || block.verbatim? }
+
+    # Whether this whole sequence can go back as the provider issued it,
+    # rather than as something brute reassembled out of the fields it
+    # understood. It goes whole or not at all, so a single block brute had to
+    # rebuild disqualifies the rest: the provider checks the sequence against
+    # what it produced, and a sequence that is verbatim in parts is not.
+    def verbatim? = blocks.any? && blocks.all?(&:verbatim?)
+
+    # The provider's own blocks, in order, for a transport putting them back
+    # on the wire. Nil unless every one of them is the provider's -- there is
+    # no partial answer to this question.
+    def raw
+      if verbatim?
+        blocks.map(&:raw)
+      end
+    end
 
     # Whether every block came from this provider. The sequence goes back
     # whole or not at all, so one foreign block disqualifies all of them.
@@ -94,6 +110,12 @@ module Brute
     # same thing reasoning.encrypted, so :redacted is taken as a spelling of
     # :encrypted rather than a second kind -- a conversation logged through
     # one and replayed to the other has to arrive as what it is.
+    # :raw is the provider's own block, kept as it arrived. The named fields
+    # are a reading of it -- what a transport needs to show thinking to a
+    # human, or to recognise whose it is. They are not what goes back on the
+    # wire: a block rebuilt out of them is a block the provider never issued,
+    # and every field brute was not taught to read is one silently dropped.
+    # Where :raw is present the wire gets :raw; the rest is for us.
     Block = Data.define(
       :type,
       :text,
@@ -101,10 +123,11 @@ module Brute
       :format,
       :id,
       :index,
+      :raw,
     ) do
       TYPES = { redacted: :encrypted }.freeze
 
-      def initialize(type: :text, text: nil, signature: nil, format: nil, id: nil, index: nil)
+      def initialize(type: :text, text: nil, signature: nil, format: nil, id: nil, index: nil, raw: nil)
         type = type.to_sym
 
         super(
@@ -114,8 +137,13 @@ module Brute
           format:    format,
           id:        id,
           index:     index,
+          raw:       raw,
         )
       end
+
+      # Whether this block can go back to the provider as it came, rather
+      # than as something brute reassembled.
+      def verbatim? = !raw.nil?
 
       def opaque? = type == :encrypted
 
