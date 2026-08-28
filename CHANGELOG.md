@@ -5,57 +5,76 @@ All notable changes to Brute are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [6.1.2] - 2026-08-28
+
+### Removed
+
+- `Brute::Reasoning#signed_by?` and `#issued_by?`. Once the transports
+  stopped gating what they sent on which provider issued it — 6.1.1 moved
+  that decision to the caller — the two methods had no reader left. A
+  caller that still wants to check whether a sequence may go back to a
+  given provider walks `reasoning.blocks` and reads `#format` and
+  `#signed?` off each.
+
+  A public name removed outside a major version, against the usual rule:
+  6.1.0 shipped the same day, so nothing has had the chance to depend on
+  it.
+
 ## [6.1.1] - 2026-08-28
 
 ### Added
 
-- ruby_llm 2.0 support in `Brute::MessageTransport::RubyLLM`. 2.0 keeps the
-  provider's own reasoning payload alongside its flattened view
-  (`#raw_reasoning` beside `#thinking`) and its provider adapters send it
-  back untouched, so a sequence of reasoning blocks can go home as the
-  sequence the model produced — 1.x could only carry one text and one
-  signature, so a sequence had nowhere to live. Two shapes, two subclasses:
-  `Brute::MessageTransport::RubyLLM::V1` for the 1.x flattened view and
-  `Brute::MessageTransport::RubyLLM::V2` for the verbatim payload. The
-  parent `RubyLLM` class is now a dispatcher — `.new`, `.dump` and
-  `.thinking` on it pick a subclass by the installed `RubyLLM::VERSION`
-  (the threshold is `Brute::MessageTransport::RubyLLM::VERBATIM`, `2.0`), so
-  anything already built on it keeps working. Build a subclass directly to
-  pin the shape.
+- `Brute::MessageTransport::RubyLLM::V1` and `V2`, and a `VERBATIM` version
+  threshold on the parent. ruby_llm 2.0 adds `#raw_reasoning`, where the
+  whole `reasoning_details` sequence lives and where the provider adapters
+  send it on from, so a sequence of reasoning blocks goes back entry for
+  entry — 1.x models thinking as one `RubyLLM::Thinking` (one text, one
+  signature) and a sequence has nowhere to live. Two shapes, two
+  subclasses: `V1` for 1.x, `V2` for 2.0 and later. The parent `RubyLLM`
+  class is now a dispatcher — `.new`, `.dump` and `.thinking` on it pick a
+  subclass by the installed `RubyLLM::VERSION` (the threshold is
+  `Brute::MessageTransport::RubyLLM::VERBATIM`, `2.0`), so anything
+  already built on it keeps working. Build a subclass directly to pin the
+  shape.
 
-- `Brute::Reasoning#verbatim?` and `#raw`, and
-  `Brute::Reasoning::Block#verbatim?` and a `:raw` field on it. A block that
-  arrived from the provider keeps the provider's own representation at
-  `:raw`, and `verbatim?` says whether it (or the whole sequence) can go
-  back on the wire as it came, rather than as something brute reassembled
-  out of the fields it understood. A sequence goes whole or not at all: one
-  block brute had to rebuild disqualifies the rest, because the provider
-  checks the sequence against what it produced. `Reasoning#raw` answers the
-  ordered `:raw` blocks when the sequence is verbatim, `nil` otherwise, for
-  a transport putting them back on the wire. Only `V2` populates `:raw`
-  today; the field is on the shared base and is available to any transport
-  whose provider hands the payload back untouched.
+- `Brute::MessageTransport::Anthropic::EmptyMessage`, raised on `dump`
+  when an assistant message has nothing Anthropic can put on the wire —
+  no content, no tool calls, and no thinking it can express. What used to
+  happen was quieter and worse: `dump` sent `content: ""`, a 400 that
+  then poisons every later request in the same conversation.
 
 ### Changed
 
-- `Brute::Reasoning#detailed?` also treats a `verbatim?` block as detailed
-  — one that came from the provider is replayable even without a signature,
-  format or id set.
+- **`Brute::Reasoning::Block` is now `Brute::ReasoningBlock`**, a
+  top-level name rather than one nested under `Reasoning`. Code that
+  reached for the old name has to move to the new one; building blocks
+  through `Brute::Reasoning.build(blocks: [...])` is unaffected. A public
+  name renamed outside a major version, against the usual rule: 6.1.0
+  shipped the same day, so nothing has had the chance to depend on the
+  nested spelling.
+
+- `Brute::MessageTransport::OpenRouter.dump` no longer drops reasoning
+  details whose format namespace does not match the outgoing model's
+  vendor. Where the turn is headed is the caller's to decide; the
+  transport turns the stored shape into the wire shape and no more. The
+  `model:` keyword stays and is still accepted, so a subclass override
+  keeps its signature. A caller that wants to strip signatures the
+  destination cannot verify does it before calling.
 
 ### Fixed
 
-- `Brute::MessageTransport::RubyLLM` under ruby_llm 1.x reads the answering
-  model off `#model_id` (its name in 1.x) rather than `#model` (the name
-  2.0 gives it). 6.1.0 asked for the wrong name and stamped nothing, so the
-  signature it sent back went out unattributed and would be offered to
-  whichever provider asked next.
+- `Brute::MessageTransport::RubyLLM` under ruby_llm 1.x reads the
+  answering model off `#model_id` (its name in 1.x) rather than `#model`
+  (the name 2.0 gives it). 6.1.0 asked for the wrong name and stamped
+  nothing, so the signature it sent back went out unattributed and would
+  be offered to whichever provider asked next.
 
 - A sequence of more than one reasoning block is no longer flattened when
-  dumped under ruby_llm 1.x. `RubyLLM::Thinking` has room for one text and
-  one signature, so flattening produced the joined text under the first
-  block's signature — a modified sequence and a 400 from the provider, not
-  a near miss. `V1` sends nothing instead; upgrade to ruby_llm 2.0 (and
-  `V2`) to send the sequence whole.
+  dumped under ruby_llm 1.x. `RubyLLM::Thinking` has room for one text
+  and one signature, so flattening produced the joined text under the
+  first block's signature — a modified sequence and a 400 from the
+  provider, not a near miss. `V1` sends nothing instead; upgrade to
+  ruby_llm 2.0 (and `V2`) to send the sequence whole.
 
 - An encrypted reasoning block dumped under ruby_llm 1.x passes its empty
   text as `nil` rather than `""`, so ruby_llm renders the
