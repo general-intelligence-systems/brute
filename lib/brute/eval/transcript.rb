@@ -60,7 +60,7 @@ module Brute
         if @env[:messages].nil?
           ""
         else
-          @env.extend(Brute::Env).reply&.content.to_s
+          @env.reply&.content.to_s
         end
       end
 

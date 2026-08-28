@@ -58,7 +58,7 @@ module Brute
           metadata:          {},
           current_iteration: 1,
           commands:          @commands || [],
-        }.tap do |turn|
+        }.extend(Brute::Env).tap do |turn|
           Brute::Hooks::Trace.new(turn, hooks: hooks).emit_trace do |env|
             env.emit(TURN_START_EVENT)
             begin
