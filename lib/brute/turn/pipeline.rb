@@ -180,15 +180,21 @@ describe "brute/turn/pipeline" do
     end
 
     pipeline = Brute::Turn::Pipeline.new
-    pipeline.on(:ping) { |env, extra, id| seen << [env[:said], extra, id] }
+    pipeline.on(:ping) { |env, extra, trace| seen << [env, extra, trace] }
     pipeline.use quiet
     pipeline.run Object.new.tap { |o| o.define_singleton_method(:call) { |env| env } }
     pipeline.call({ said: "hello" })
 
-    said, extra, id = seen.first
-    said.should == "hello"
+    env, extra, trace = seen.first
+    env[:said].should == "hello"
     extra.should == :from_layer
-    id.should.not.be.nil
+
+    # The trace itself comes last, not just its id: a subscriber that wants
+    # the call's identity asks it for one, and everything else about the call
+    # is on the same object -- which is the env it was handed first.
+    trace.id.should.not.be.nil
+    trace.__getobj__.should == { said: "hello" }
+    trace.__id__.should == env.__id__
 
     # A lambda is a layer like any other now: it is handed the trace as its env.
     answered = []

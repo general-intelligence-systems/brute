@@ -46,7 +46,10 @@ module Brute
     TOOL_FAILURE_EVENT = :tool_failure
 
     # The env, wrapped, for as long as one call lasts. Everything emitted
-    # through it carries that call's id, and a call opened inside another
+    # through it carries the trace itself as its last argument -- so a
+    # subscriber that wants the call's identity asks it for an id, and one
+    # that wants anything else about the call has it -- and a call opened
+    # inside another
     # delegates to it -- so the wrapper is the parent and unwrapping ends the
     # call. It is still the env: SimpleDelegator forwards the rest.
     class Trace < SimpleDelegator
@@ -68,7 +71,7 @@ module Brute
         event,
         self,
         *extras,
-        @id,
+        self,
         &work
       )
 
