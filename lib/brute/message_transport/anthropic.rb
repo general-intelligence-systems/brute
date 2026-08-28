@@ -28,6 +28,10 @@ module Brute
     # a user message — consecutive tool results are folded into one user
     # turn so roles keep alternating.
     class Anthropic < MessageTransport
+      # An assistant message this cannot put on the wire, because Anthropic
+      # takes no empty content and there is nothing in it to send.
+      EmptyMessage = Class.new(StandardError)
+
       # Whose signatures these are. OpenRouter names the same format when it
       # proxies Claude, so thinking that came back through it goes home.
       FORMAT = "anthropic-claude-v1"
@@ -54,58 +58,75 @@ module Brute
       def self.dump(message, model: nil)
         case message.role
         when :tool
-          { role: "user", content: [tool_result_block(message)] }
+          { role: "user", content: [ tool_result_block(message) ] }
         when :assistant
-          if message.tool_call?
-            blocks = thinking_blocks(message)
-            unless message.content.to_s.empty?
-              blocks << { type: "text", text: message.content }
-            end
-            blocks += message.tool_calls.map { |tc| { type: "tool_use", id: tc.id, name: tc.name, input: tc.arguments } }
-            { role: "assistant", content: blocks }
-          else
-            blocks = thinking_blocks(message)
-            unless message.content.to_s.empty?
-              blocks << { type: "text", text: message.content }
-            end
-
-            # Anthropic rejects an empty text block, so a message with nothing
-            # left to send goes as plain content rather than an empty one.
-            if blocks.empty?
-              { role: "assistant", content: message.content }
-            else
-              { role: "assistant", content: blocks }
-            end
-          end
+          { role: "assistant", content: assistant_content(message) }
         else
           { role: message.role.to_s, content: message.content }
         end
       end
 
-      # Thinking goes back first and unmodified. A signature Anthropic did
-      # not issue cannot be verified -- a conversation replayed from another
-      # provider carries thinking that is not Anthropic's -- and an
-      # unverifiable block is a 400, so it sends none rather than a bad one.
-      # Anthropic has two kinds of thinking block and no third: a summary is
-      # a precis of thinking the provider would not show, and the signature
-      # was issued over the thinking rather than the precis. Sent as a
-      # thinking block it is a block that does not verify, so a sequence
-      # carrying one is refused whole -- the same as a foreign format.
-      def self.expressible?(reasoning)
-        reasoning.blocks.all? { |block| block.type == :text || block.opaque? }
+      # The assistant turn's content blocks, in the order the wire wants
+      # them: thinking first, because the sequence is part of what Anthropic
+      # verifies, then what was said, then what was called.
+      #
+      # Anthropic takes no empty content -- not an empty string, not an empty
+      # block, not an empty array -- so a message with nothing in it is not
+      # one this can express. It says so rather than sending a request that
+      # is already a 400.
+      def self.assistant_content(message)
+        blocks = thinking_blocks(message)
+
+        unless message.content.to_s.empty?
+          blocks << { type: "text", text: message.content }
+        end
+
+        if message.tool_call?
+          blocks += message.tool_calls.map do |tc|
+            { type: "tool_use", id: tc.id, name: tc.name, input: tc.arguments }
+          end
+        end
+
+        if blocks.empty?
+          raise EmptyMessage, "an assistant message with no content, no tool calls and no thinking Anthropic can take: #{message.inspect}"
+        end
+
+        blocks
       end
 
+      # Whether every stored block has an Anthropic form. There are two of
+      # them and no third -- `thinking` and `redacted_thinking` -- and both
+      # carry a payload Anthropic issued and checks on the way back. So a
+      # block another provider signed, one carrying no signature at all, and
+      # a summary (which is a precis, and has no block of its own here) each
+      # have no form to take. The sequence goes whole or not at all, because
+      # what Anthropic verifies is the sequence, so one such block answers
+      # for the rest.
+      def self.expressible?(reasoning)
+        reasoning.blocks.any? && reasoning.blocks.all? do |block|
+          block.format == FORMAT && block.signed? && (block.type == :text || block.opaque?)
+        end
+      end
+
+      # The stored blocks as Anthropic content blocks, in order. Where the
+      # sequence has no Anthropic form there is nothing to send -- an
+      # unverifiable block is a 400, and no thinking beats a failed request.
       def self.thinking_blocks(message)
-        if message.reasoning&.signed_by?(FORMAT) && expressible?(message.reasoning)
-          message.reasoning.blocks.map do |block|
-            if block.opaque?
-              { type: "redacted_thinking", data: block.signature }
-            else
-              { type: "thinking", thinking: block.text.to_s, signature: block.signature }
-            end
-          end
+        if message.reasoning && expressible?(message.reasoning)
+          message.reasoning.blocks.map { |block| thinking_param(block) }
         else
           []
+        end
+      end
+
+      # One stored block as the content block Anthropic named it. The
+      # opaque payload rides under `data`, the readable one under `thinking`
+      # with the signature that verifies it.
+      def self.thinking_param(block)
+        if block.opaque?
+          { type: "redacted_thinking", data: block.signature }
+        else
+          { type: "thinking", thinking: block.text.to_s, signature: block.signature }
         end
       end
 
@@ -114,9 +135,9 @@ module Brute
       def self.thinking_block(block)
         case block.type
         when :thinking
-          Brute::Reasoning::Block.new(type: :text, text: block.thinking, signature: block.signature, format: FORMAT)
+          Brute::ReasoningBlock.new(type: :text, text: block.thinking, signature: block.signature, format: FORMAT)
         when :redacted_thinking
-          Brute::Reasoning::Block.new(type: :encrypted, signature: block.data, format: FORMAT)
+          Brute::ReasoningBlock.new(type: :encrypted, signature: block.data, format: FORMAT)
         end
       end
 
@@ -243,6 +264,27 @@ describe "brute/message_transport/anthropic" do
     [foreign, partly_signed].each do |m|
       Brute::MessageTransport::Anthropic.dump(m)[:content].should == [{ type: "text", text: "done" }]
     end
+  end
+
+  it "says so rather than sending content Anthropic will not take" do
+    # Anthropic takes no empty content -- not an empty string, not an empty
+    # block, not an empty array. An assistant message with nothing said,
+    # nothing called and no thinking it can express has no form here, and
+    # went out as `content: ""`: a 400, and one that poisons every later
+    # request in the same conversation.
+    nothing = Brute::Message.new(role: :assistant, content: "")
+
+    lambda { Brute::MessageTransport::Anthropic.dump(nothing) }
+      .should.raise(Brute::MessageTransport::Anthropic::EmptyMessage)
+
+    # Thinking alone is something said, so it goes as itself.
+    thought = Brute::Message.new(role: :assistant, content: "", reasoning: {
+      blocks: [{ type: :text, text: "let me think", signature: "sig-1", format: "anthropic-claude-v1" }],
+    })
+
+    Brute::MessageTransport::Anthropic.dump(thought)[:content].should == [
+      { type: "thinking", thinking: "let me think", signature: "sig-1" },
+    ]
   end
 
   it "wraps text and tool_use blocks into one assistant message" do

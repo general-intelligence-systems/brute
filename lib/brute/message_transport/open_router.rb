@@ -20,60 +20,31 @@ module Brute
       def self.usage_metrics(response)
         Brute::UsageDetection::OpenRouter.detect(response)
       end
-      # Reasoning goes back up with the message it belongs to: a reasoning
-      # model that called a tool has to see its own thinking on the next pass,
-      # or it answers the tool call without the thinking that asked for it.
+      # OpenRouter takes reasoning back either way: `reasoning_details` is
+      # the sequence the model produced, each entry carrying its own type,
+      # payload and signature, and `reasoning` is the same thinking as plain
+      # prose. The details are the complete form, so they are what goes when
+      # there are details to send; prose that was only ever prose -- read off
+      # a `reasoning` field, or off a library that reports nothing else --
+      # goes as prose, because a details array built around it would be a
+      # sequence the model never produced.
       #
-      # OpenRouter takes it either as the plain `reasoning` string or as the
-      # whole `reasoning_details` array, which is what carries the signature.
-      # The sequence has to match what the model produced -- it may not be
-      # rearranged or modified -- so what came back is what goes out.
+      # Which of the two is a property of what was stored, not a judgement
+      # about where the turn is headed. Where it is headed is the caller's to
+      # decide; this only turns one shape into the other.
       def self.dump(message, model: nil)
         message.to_h.tap do |hash|
           # What Message#to_h holds is brute's own shape, which is not the
           # wire's: whatever goes out under these keys is put there here.
           hash.delete(:reasoning)
 
-          if message.reasoning
-            # An encrypted payload has no prose in it, and an empty string is
-            # not reasoning: the details carry it, or nothing does.
-            unless message.reasoning.text.empty?
-              hash[:reasoning] = message.reasoning.text
-            end
+          reasoning = message.reasoning
 
-            # The details go back whole, in order, or not at all -- the
-            # sequence has to match what the model produced. OpenRouter routes
-            # to many providers, so "signed" is not enough: a Claude signature
-            # is only good while the turn is still going to Claude. Switch
-            # model mid-conversation and the plaintext survives while the
-            # signatures, which the new provider cannot verify, do not.
-            # Whole or not at all: dropping an entry out of the middle is
-            # modifying the sequence, which is what the provider forbids. A
-            # plaintext-only reasoning has nothing signed in it, so no array
-            # is invented around it.
-            if message.reasoning.detailed? && message.reasoning.blocks.all? { |block| issued_by?(block, model) }
-              hash[:reasoning_details] = message.reasoning.blocks.map { |block| detail(block) }
-            end
+          if reasoning&.detailed?
+            hash[:reasoning_details] = reasoning.blocks.map { |block| detail(block) }
+          elsif reasoning && !reasoning.text.empty?
+            hash[:reasoning] = reasoning.text
           end
-        end
-      end
-
-      # OpenRouter names both sides after the provider: a model id reads
-      # "anthropic/claude-sonnet-4", a format "anthropic-claude-v1". Asked
-      # about no model in particular, the format is taken at its word.
-      def self.issued_by?(block, model)
-        vendor = model.to_s.split("/").first
-
-        if block.format.nil?
-          # A signature that names no provider cannot be attributed to this
-          # one; unsigned there is nothing to attribute and it passes.
-          !block.signed?
-        elsif vendor.nil? || vendor == model.to_s
-          # No model, or an id that names no vendor: nothing to contradict the
-          # format, so it is taken at its word rather than dropped silently.
-          true
-        else
-          block.format.split("-").first == vendor
         end
       end
 
@@ -161,24 +132,19 @@ module Brute
           end
         end
 
-        def answering_model
-          if @result.respond_to?(:model)
-            @result.model
-          end
-        end
-
         # The type names the payload's key, so it says which one to read.
         def block(detail)
           type = detail[:type].to_s.split(".").last.to_s
 
-          Brute::Reasoning::Block.new(
+          Brute::ReasoningBlock.new(
             type:      type.empty? ? :text : type.to_sym,
             text:      detail[:text] || detail[:summary],
             signature: detail[:signature] || detail[:data],
-            # A provider that names no format still answered as some model,
-            # and an unattributed signature is one nobody may replay -- so the
-            # model that produced it stands in for the format it did not send.
-            format:    detail[:format] || answering_model,
+            # Straight off the wire. `format` names a structure OpenRouter
+            # documents a closed set of ("anthropic-claude-v1",
+            # "openai-responses-v1", ... "unknown"); a model id is not one of
+            # them, so where the wire named none, none is stored.
+            format:    detail[:format],
             id:        detail[:id],
             index:     detail[:index],
           )
@@ -237,19 +203,19 @@ describe "brute/message_transport/open_router" do
     reasoned.reasoning.text.should == "thought about it"
     Brute::MessageTransport::OpenRouter.dump(reasoned)[:reasoning].should == "thought about it"
 
-    # Signed thinking goes back as the details array, unmodified, which is
-    # what carries the signature the provider checks.
-    # A detail that names no format is stamped with the model that answered,
-    # because a signature nobody claims is one nobody may replay.
+    # Signed thinking goes back as the details array, entry for entry. The
+    # details are the complete form, so they carry the turn on their own --
+    # `reasoning` is the same thinking as prose, and sending both says it
+    # twice.
     signed = Struct.new(:choices, :model).new([{ "message" => {
       "role" => "assistant", "content" => "",
       "reasoning_details" => [{ "type" => "reasoning.text", "text" => "step by step", "signature" => "sig-1" }],
     } }], "anthropic/claude-sonnet-4")
 
     back = Brute::MessageTransport::OpenRouter.dump(Brute::MessageTransport::OpenRouter.new(signed).wrap_each.to_a.first)
-    back[:reasoning].should == "step by step"
+    back.key?(:reasoning).should.be.false
     back[:reasoning_details].should == [
-      { type: "reasoning.text", format: "anthropic/claude-sonnet-4", text: "step by step", signature: "sig-1" },
+      { type: "reasoning.text", text: "step by step", signature: "sig-1" },
     ]
 
     # A tool call is an answer, even with nothing said alongside it.
@@ -310,23 +276,54 @@ describe "brute/message_transport/open_router" do
     end
   end
 
-  it "sends the details sequence whole, or not at all" do
-    # "The entire sequence of consecutive reasoning blocks must match the
-    # outputs generated by the model; you cannot rearrange or modify the
-    # sequence." A subset of it is a modified sequence, so a turn going to
-    # another provider keeps the plaintext and drops the array entire.
-    response = Struct.new(:choices).new([
+  it "stores the format the wire named, and no other" do
+    # `format` names one of a closed set of structures OpenRouter documents
+    # -- "anthropic-claude-v1", "openai-responses-v1", ... "unknown". A model
+    # id is not one of them, so where the wire named no format, none is
+    # stored and none is sent: an invented one is a value the API does not
+    # take, and a value nothing else in here can read back.
+    named = Struct.new(:choices, :model).new([
       { "message" => { "role" => "assistant", "content" => "done", "reasoning_details" => [
         { "type" => "reasoning.text", "text" => "step by step", "signature" => "sig-1",
           "format" => "anthropic-claude-v1" },
+      ] } },
+    ], "anthropic/claude-sonnet-4")
+
+    unnamed = Struct.new(:choices, :model).new([
+      { "message" => { "role" => "assistant", "content" => "done", "reasoning_details" => [
+        { "type" => "reasoning.text", "text" => "step by step", "signature" => "sig-1" },
+      ] } },
+    ], "anthropic/claude-sonnet-4")
+
+    Brute::MessageTransport::OpenRouter.new(named).wrap_each.to_a.first
+      .reasoning.blocks.first.format.should == "anthropic-claude-v1"
+
+    Brute::MessageTransport::OpenRouter.new(unnamed).wrap_each.to_a.first
+      .reasoning.blocks.first.format.should.be.nil
+  end
+
+  it "sends the details sequence whole, entry for entry" do
+    # "The entire sequence of consecutive reasoning blocks must match the
+    # outputs generated by the model; you cannot rearrange or modify the
+    # sequence." So every entry goes, in order, as it was stored -- what the
+    # turn is then sent to is the caller's to decide, not this.
+    response = Struct.new(:choices).new([
+      { "message" => { "role" => "assistant", "content" => "done", "reasoning_details" => [
+        { "type" => "reasoning.text", "text" => "step by step", "signature" => "sig-1",
+          "format" => "anthropic-claude-v1", "index" => 0 },
+        { "type" => "reasoning.encrypted", "data" => "b64blob",
+          "format" => "anthropic-claude-v1", "index" => 1 },
       ] } },
     ])
 
     wrapped = Brute::MessageTransport::OpenRouter.new(response).wrap_each.to_a.first
 
-    elsewhere = Brute::MessageTransport::OpenRouter.dump(wrapped, model: "openai/gpt-5")
-    elsewhere[:reasoning].should == "step by step"
-    elsewhere.key?(:reasoning_details).should.be.false
+    Brute::MessageTransport::OpenRouter.dump(wrapped)[:reasoning_details].should == [
+      { type: "reasoning.text", format: "anthropic-claude-v1", index: 0,
+        text: "step by step", signature: "sig-1" },
+      { type: "reasoning.encrypted", format: "anthropic-claude-v1", index: 1,
+        data: "b64blob" },
+    ]
   end
 
   it "does not invent a details sequence around plaintext reasoning" do

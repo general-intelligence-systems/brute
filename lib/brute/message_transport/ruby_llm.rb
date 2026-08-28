@@ -15,15 +15,15 @@ module Brute
     # decides what this transport can promise. Through 1.x a message models
     # its reasoning as a RubyLLM::Thinking: one text, one signature, and
     # nowhere to put a sequence -- so a sequence cannot come back out of it
-    # the way it went in. 2.0 keeps the provider's own payload alongside
-    # (#raw_reasoning, #raw_content) and hands it back untouched, which is
-    # the whole of what a provider asks for. The model id moved too:
-    # #model_id in 1.x, #model in 2.0.
+    # the way it went in. 2.0 adds #raw_reasoning, which holds the whole
+    # reasoning_details sequence and which the provider adapters send on, so
+    # every entry goes back with the type, payload and signature it had. The
+    # model id moved too: #model_id in 1.x, #model in 2.0.
     #
     # Two shapes, so two subclasses, and .for is the only place that asks
     # which one is installed. Nothing else branches on a version.
     class RubyLLM < MessageTransport
-      # The release that started keeping the provider's own payload.
+      # The release that added somewhere for a whole sequence to live.
       VERBATIM = Gem::Version.new("2.0")
 
       # Which subclass the bundled gem calls for. Read lazily: brute does not
@@ -89,9 +89,8 @@ module Brute
         end
 
         # The thinking ruby_llm flattened: one text and one signature, which
-        # is all 1.x ever has and all 2.0 has when the provider adapter kept
-        # no payload of its own. There is no :raw on it, so it reads but does
-        # not go back out.
+        # is all 1.x ever has, and all 2.0 has when the provider adapter
+        # kept no reasoning_details of its own.
         def flattened(message)
           if message.respond_to?(:thinking) && message.thinking
             Brute::Reasoning.build(
@@ -147,11 +146,10 @@ module Brute
         def reasoning(message) = flattened(message)
     end
 
-    # ruby_llm 2.0 and later. #raw_reasoning is the provider's own reasoning
-    # payload, kept verbatim, and the provider adapters send it back
-    # untouched -- so a sequence goes home as the sequence the model
-    # produced. Where the adapter kept none there is still #thinking, which
-    # reads but does not go back.
+    # ruby_llm 2.0 and later. #raw_reasoning holds the reasoning_details
+    # sequence and the provider adapters send it on, so a sequence goes home
+    # entry for entry. Where the adapter kept none there is still #thinking,
+    # which carries one text and one signature.
     class RubyLLM::V2 < RubyLLM
       def self.dump(message, model: nil)
         ::RubyLLM::Message.new(
@@ -160,8 +158,43 @@ module Brute
           tool_calls:    tool_calls(message),
           tool_call_id:  message.tool_call_id,
           thinking:      thinking(message),
-          raw_reasoning: message.reasoning&.raw,
+          raw_reasoning: raw_reasoning(message),
         )
+      end
+
+      # 2.0 hands #raw_reasoning to the provider as the reasoning_details
+      # array, so the stored sequence goes out in that shape: each block
+      # under the type that names it, and its payload under the key that
+      # type gives it. Prose that was only ever prose has no sequence to
+      # make of itself, and travels on #thinking instead.
+      def self.raw_reasoning(message)
+        reasoning = message.reasoning
+
+        if reasoning&.detailed?
+          reasoning.blocks.map { |block| detail(block) }
+        end
+      end
+
+      # One stored block as a reasoning detail. Reasoning text carries
+      # `text` and the `signature` that verifies it, a summary carries
+      # `summary`, and an encrypted item carries `data` -- written under the
+      # wrong key the payload is simply lost.
+      def self.detail(block)
+        named = {
+          type:   "reasoning.#{block.type}",
+          format: block.format,
+          id:     block.id,
+          index:  block.index,
+        }
+
+        case block.type
+        when :encrypted
+          named.merge(data: block.signature).compact
+        when :summary
+          named.merge(summary: block.text).compact
+        else
+          named.merge(text: block.text, signature: block.signature).compact
+        end
       end
 
       # The readable view. #raw_reasoning is what actually goes back out;
@@ -187,8 +220,8 @@ module Brute
           end
         end
 
-        # The provider's own payload where there is one, so it can go back as
-        # it came; ruby_llm's flattened view where there is not.
+        # The reasoning_details sequence where the adapter kept one, and
+        # ruby_llm's flattened view where it did not.
         def reasoning(message)
           details = []
           if message.respond_to?(:raw_reasoning)
@@ -202,20 +235,20 @@ module Brute
           end
         end
 
-        # A reading of one provider detail. Whatever brute makes of it, :raw
-        # is the detail itself -- that is what goes back on the wire.
+        # One reasoning detail as a stored block. The type names which key
+        # the payload arrived under.
         def block(detail)
           hash = detail.to_h.transform_keys(&:to_sym)
           type = hash[:type].to_s.split(".").last.to_s
 
-          Brute::Reasoning::Block.new(
+          Brute::ReasoningBlock.new(
             type:      type.empty? ? :text : type.to_sym,
             text:      hash[:text] || hash[:summary],
             signature: hash[:signature] || hash[:data],
             format:    hash[:format],
             id:        hash[:id],
             index:     hash[:index],
-            raw:       detail,
+
           )
         end
     end
@@ -237,7 +270,7 @@ describe "brute/message_transport/ruby_llm" do
 
   it "picks the subclass its bundled gem calls for" do
     # 1.x models thinking as one text and one signature; 2.0 keeps the
-    # provider's own payload. Two shapes, two subclasses, one place asking.
+    # whole reasoning_details sequence. Two shapes, two subclasses.
     Brute::MessageTransport::RubyLLM.for("1.14.1").should == Brute::MessageTransport::RubyLLM::V1
     Brute::MessageTransport::RubyLLM.for("1.16.0").should == Brute::MessageTransport::RubyLLM::V1
     Brute::MessageTransport::RubyLLM.for("2.0.0").should  == Brute::MessageTransport::RubyLLM::V2
@@ -316,10 +349,9 @@ describe "brute/message_transport/ruby_llm" do
     thinking.signature.should == "b64blob"
   end
 
-  it "keeps the provider's own payload on the way in, and sends it back whole" do
-    # 2.0 hands #raw_reasoning back to the provider untouched, so what brute
-    # stores is the detail itself and what it makes of the detail is only for
-    # reading. The sequence goes home as the sequence the model produced.
+  it "round-trips a reasoning_details sequence, entry for entry" do
+    # 2.0 hands #raw_reasoning on to the provider, so each entry goes back
+    # under the type that named it with the payload that type gives it.
     details = [
       { "type" => "reasoning.text", "text" => "step one", "signature" => "sig-1",
         "format" => "anthropic-claude-v1", "index" => 0 },
@@ -334,27 +366,30 @@ describe "brute/message_transport/ruby_llm" do
 
     wrapped.reasoning.text.should == "step one"
     wrapped.reasoning.blocks.map(&:type).should == [:text, :encrypted]
-    wrapped.reasoning.verbatim?.should.be.true
-    wrapped.reasoning.raw.should == details
+
+    # ...and back out in the shape it came in, entry for entry.
+    Brute::MessageTransport::RubyLLM::V2.raw_reasoning(wrapped).should == [
+      { type: "reasoning.text", format: "anthropic-claude-v1", index: 0,
+        text: "step one", signature: "sig-1" },
+      { type: "reasoning.encrypted", format: "anthropic-claude-v1", index: 1,
+        data: "b64blob" },
+    ]
   end
 
-  it "will not call a sequence verbatim when any block was rebuilt" do
-    # It goes whole or not at all: one block brute reassembled out of the
-    # fields it understood disqualifies the rest, because the provider checks
-    # the sequence against what it produced.
-    part = Brute::Reasoning.build(blocks: [
-      { type: :text, text: "kept", signature: "sig-1", raw: { "type" => "reasoning.text" } },
-      { type: :text, text: "rebuilt", signature: "sig-2" },
-    ])
+  it "makes no details sequence out of prose that was only ever prose" do
+    # A sequence brute invented is not one the model produced, so plaintext
+    # travels as plaintext -- on #thinking, where a reader finds it -- and no
+    # reasoning_details array is built around it.
+    plain = Brute::Message.new(role: :assistant, content: "done", reasoning: "just thinking")
 
-    part.verbatim?.should.be.false
-    part.raw.should.be.nil
+    Brute::MessageTransport::RubyLLM::V2.raw_reasoning(plain).should.be.nil
+    Brute::MessageTransport::RubyLLM::V2.dump(plain).thinking.text.should == "just thinking"
   end
 
-  it "falls back to the flattened view when the adapter kept no payload" do
-    # Not every 2.0 provider adapter keeps a payload of its own. Where none
-    # was kept there is still #thinking, which reads but carries no :raw --
-    # so it is not offered to the wire as the provider's own.
+  it "falls back to the flattened view when the adapter kept no details" do
+    # Not every 2.0 provider adapter keeps a reasoning_details array of its
+    # own. Where none was kept there is still #thinking, and 2.0 names the
+    # model #model where 1.x named it #model_id.
     m = fake_message.new(role: :assistant, content: "done")
     m.define_singleton_method(:thinking) { fake_thinking.new(text: "thought", signature: "sig-1") }
     m.define_singleton_method(:model) { "anthropic/claude-sonnet-4" }
@@ -363,6 +398,5 @@ describe "brute/message_transport/ruby_llm" do
     reasoning = Brute::MessageTransport::RubyLLM::V2.new(m).wrap_each.to_a.first.reasoning
     reasoning.text.should == "thought"
     reasoning.blocks.first.format.should == "anthropic/claude-sonnet-4"
-    reasoning.verbatim?.should.be.false
   end
 end
