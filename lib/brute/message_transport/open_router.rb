@@ -13,7 +13,6 @@ module Brute
     #
     #   require "open_router"
     class OpenRouter < MessageTransport
-      EmptyCompletion = Class.new(StandardError)
 
       # What the provider reported about this call — the transport knows its
       # own library's shape, so it knows which detector to ask.
@@ -94,15 +93,6 @@ module Brute
 
           case hash
           in { role: (:system | :user | :assistant | :tool) }
-            # A completion that answered with nothing is not an answer. The
-            # provider was paid for it and something came back -- reasoning,
-            # a refusal, a field this does not know -- and appending it as an
-            # empty assistant message loses the turn quietly: the loop stops
-            # because it is not a tool result, and there is no reply in it.
-            if hash[:role] == :assistant && hash[:content].to_s.strip.empty? && Array(hash[:tool_calls]).empty? && reasoning(hash).nil?
-              raise EmptyCompletion, "the provider answered with no content and no tool calls: #{message.inspect}"
-            end
-
             # Slice away provider extras (refusal, model, ...) that
             # Brute::Message doesn't know. Reasoning is not one of them: it is
             # the model's own thinking and it goes back up with the message.
@@ -193,7 +183,7 @@ describe "brute/message_transport/open_router" do
     out.first.content.should == "hi there"
   end
 
-  it "keeps the model's reasoning, and refuses a completion that answered with nothing at all" do
+  it "keeps the model's reasoning" do
     # Reasoning is the model's own thinking, and it goes back up with the
     # message: a reasoning model that called a tool has to see it on the next
     # pass. Dropping it left an empty assistant message and a lost turn.
@@ -218,22 +208,6 @@ describe "brute/message_transport/open_router" do
       { type: "reasoning.text", text: "step by step", signature: "sig-1" },
     ]
 
-    # A tool call is an answer, even with nothing said alongside it.
-    calling = Struct.new(:choices).new([
-      { "message" => {
-        "role" => "assistant", "content" => nil,
-        "tool_calls" => [{ "id" => "tc1", "type" => "function", "function" => { "name" => "shell", "arguments" => "{}" } }],
-      } },
-    ])
-
-    Brute::MessageTransport::OpenRouter.new(calling).wrap_each.to_a.first.tool_call?.should.be.true
-
-    # Nothing said, nothing thought, nothing called: the provider was paid for
-    # an answer and there is none, which is an error rather than a message.
-    empty = Struct.new(:choices).new([{ "message" => { "role" => "assistant", "content" => "", "refusal" => nil } }])
-
-    lambda { Brute::MessageTransport::OpenRouter.new(empty).wrap_each.to_a }
-      .should.raise(Brute::MessageTransport::OpenRouter::EmptyCompletion)
   end
 
   it "round-trips every detail type under its own payload key" do

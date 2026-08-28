@@ -50,6 +50,13 @@ module Brute
       # stops when the LLM answers with text only or env[:should_exit] is set
       # (e.g. by MaxIterations).
       #
+      # It also loops on a completion that only thought: a reasoning model
+      # sometimes returns its thinking and stops — no text, no tool call —
+      # having decided what to do without doing it. That is not an answer, and
+      # the turn is not over; the thinking goes back with the conversation,
+      # which is what the provider asks for anyway, and the model does what it
+      # had already worked out.
+      #
       #   use Brute::Middleware::Loop::ToolResult
       #
       class ToolResult < Loop
@@ -58,13 +65,21 @@ module Brute
             next false
           end
 
-          unless env[:messages].last&.role == :tool
+          unless env[:messages].last&.role == :tool || ToolResult.thought_only?(env[:messages].last)
             next false
           end
 
           env[:current_iteration] += 1
 
           true
+        end
+
+        # Thinking, and nothing done with it.
+        def self.thought_only?(message)
+          message&.role == :assistant &&
+            message.reasoning &&
+            message.content.to_s.strip.empty? &&
+            !message.tool_call?
         end
 
         def initialize(app)
@@ -135,6 +150,26 @@ describe "brute/middleware/006_loop" do
   end
 
   # --- Loop::BackgroundJobs ---
+
+  it "ToolResult reruns on a completion that only thought, so the turn is not lost" do
+    # A reasoning model sometimes returns the thinking and stops, having
+    # decided what to do without doing it. The turn is not over: the thinking
+    # goes back and the model does what it had worked out.
+    thought = Brute::Message.new(role: :assistant, reasoning: "I should list the events")
+
+    env = { messages: Brute.log.tap { |log| log << thought }, current_iteration: 1 }
+    Brute::Middleware::Loop::ToolResult::CONDITION.call(env).should.be.true
+    env[:current_iteration].should == 2
+
+    # An answer, or a tool call it did make, ends the turn as before.
+    answered = { messages: Brute.log.tap { |log| log.assistant("here they are") }, current_iteration: 1 }
+    Brute::Middleware::Loop::ToolResult::CONDITION.call(answered).should.be.false
+
+    calling = Brute::Message.new(role: :assistant, reasoning: "I should list them",
+      tool_calls: [{ id: "tc1", name: "list_events", arguments: {} }])
+    called = { messages: Brute.log.tap { |log| log << calling }, current_iteration: 1 }
+    Brute::Middleware::Loop::ToolResult::CONDITION.call(called).should.be.false
+  end
 
   it "BackgroundJobs reruns while jobs are running" do
     seen = []

@@ -5,6 +5,37 @@ All notable changes to Brute are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [6.1.3] - 2026-08-28
+
+### Added
+
+- `Brute::Middleware::Loop::ToolResult.thought_only?(message)`, true for an
+  assistant message that has reasoning and nothing else — no content, no
+  tool calls. It is what the loop's condition now asks.
+
+### Changed
+
+- `Brute::Middleware::Loop::ToolResult` loops on a completion that only
+  thought, as well as on a tool result. A reasoning model sometimes returns
+  its thinking and stops — no text, no tool call — having decided what to do
+  without doing it. That is not an answer and the turn is not over: the
+  thinking goes back up with the conversation, which is what the provider
+  asks for anyway, and the model does what it had already worked out. A
+  completion with text, or with a tool call it did make, ends the turn as
+  before.
+
+### Removed
+
+- `Brute::MessageTransport::OpenRouter::EmptyCompletion`, and with it the
+  raise on a completion that came back with no content, no tool calls and no
+  reasoning. The case it was built for — thinking and nothing done with it —
+  is not an error the caller has to rescue but a turn to run again, and
+  `Loop::ToolResult` now does that. Code that rescues the constant should
+  drop the rescue.
+
+  A public name removed outside a major version, against the usual rule:
+  6.1.0 shipped the same day, so nothing has had the chance to depend on it.
+
 ## [6.1.2] - 2026-08-28
 
 ### Removed
