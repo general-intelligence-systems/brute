@@ -92,33 +92,11 @@ module Brute
     # What the model thought, for anyone reading rather than replaying.
     def text = blocks.filter_map(&:text).join("\n")
 
-    # Whether these blocks may be sent back to this provider as they are. A
-    # signature the provider did not issue is worse than no signature: it is
-    # a rejected request.
-    def signed_by?(format) = !format.nil? && blocks.any? && issued_by?(format) && blocks.all?(&:signed?)
-
     # Whether this is the sequence the model emitted rather than one built
     # around a plaintext string. Only the former may be replayed: a provider
     # checks what comes back against what it produced, and prose lifted out of
     # a `reasoning` field was never a sequence at all.
     def detailed? = blocks.any? { |block| block.signed? || block.format || block.id }
-
-    # Whether every block came from this provider. The sequence goes back
-    # whole or not at all, so one foreign block disqualifies all of them.
-    #
-    # A block that names no provider is nobody's to vouch for: unsigned there
-    # is nothing to vouch for and it passes, but signed it is a signature that
-    # cannot be attributed, and offering one the provider did not issue is a
-    # rejected request rather than an unverified one.
-    def issued_by?(format)
-      blocks.all? do |block|
-        if block.format.nil?
-          !block.signed?
-        else
-          format.nil? || block.format == format
-        end
-      end
-    end
 
     def to_h(...) = { blocks: blocks.map(&:to_h) }
   end
@@ -254,31 +232,6 @@ describe "brute/messages" do
     })
 
     Brute::Message.new(**m.to_h).should == m
-  end
-
-  it "will not vouch for a sequence in which any block is unsigned" do
-    # A provider that verifies signatures rejects a thinking block without
-    # one, so one signed block among several does not make the sequence
-    # sendable: every block has to carry its own signature, or none goes.
-    mixed = Brute::Reasoning.build(blocks: [
-      { type: :text, text: "step one", signature: "sig-1", format: "anthropic-claude-v1" },
-      { type: :text, text: "step two",                     format: "anthropic-claude-v1" },
-    ])
-
-    mixed.signed_by?("anthropic-claude-v1").should.be.false
-  end
-
-  it "will not vouch for a signature that names no provider" do
-    # A block with a signature and no format cannot be attributed, and a
-    # signature the provider did not issue is a rejected request rather than
-    # an unverified one. Unsigned and unstamped is nobody's claim to make, so
-    # it passes.
-    unattributed = Brute::Reasoning.build(text: "thought", signature: "sig-1")
-
-    unattributed.issued_by?("anthropic-claude-v1").should.be.false
-    unattributed.signed_by?("anthropic-claude-v1").should.be.false
-
-    Brute::Reasoning.build(text: "just prose").issued_by?("anthropic-claude-v1").should.be.true
   end
 
   it "knows a sequence the model produced from one built around a string" do
