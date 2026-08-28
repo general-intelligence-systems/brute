@@ -5,6 +5,59 @@ All notable changes to Brute are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [6.1.0] - 2026-08-28
+
+### Added
+
+- `Brute::Reasoning` and `Brute::Reasoning::Block`, and a `reasoning:` field
+  on `Brute::Message`. A reasoning model does not only answer — it thinks
+  first, and the provider hands that thinking back alongside the answer. When
+  the model answered with a tool call, the thinking is *why it called that
+  tool*, and the next request in the loop has to carry it or the model
+  resumes without the part that made the decision. Every bundled transport
+  now reads reasoning off the provider's response onto the message and dumps
+  it back in the shape the provider expects: thinking blocks for Anthropic,
+  `reasoning` / `reasoning_details` for OpenRouter, a `RubyLLM::Thinking` for
+  ruby_llm, and `reasoning_content` for llm.rb. Chat completions (OpenAI,
+  ruby-openai) has no field to send it back on, so it is read on the way in
+  and not on the way out.
+
+  ```ruby
+  msg = env[:messages].last
+  msg.reasoning&.text                                # what was thought
+  msg.reasoning&.signed_by?("anthropic-claude-v1")   # may it go back to Anthropic?
+  ```
+
+  A signature is only meaningful to the provider that issued it — Anthropic
+  verifies its own and rejects a modified block with a 400, and OpenRouter
+  names the format (`"anthropic-claude-v1"`, `"openai-responses-v1"`) because
+  the details only mean anything against the provider that produced them —
+  so a block carries who signed it, and a transport sends it back only when
+  the format is its own and sends the text alone when it is not. Reasoning
+  read back off disk (a String, or a Hash) is coerced into a `Reasoning` on
+  the way through `Brute::Message.new`.
+
+- `Brute::MessageTransport::OpenRouter::EmptyCompletion`, raised when a
+  provider answers with no content, no tool calls, and no reasoning. What
+  used to happen was quieter and worse: an empty assistant message was
+  appended to the log, the loop stopped because it was not a tool result,
+  and the turn was lost. The provider was paid for an answer and there is
+  none, which is an error rather than a message.
+
+### Changed
+
+- `Brute::MessageTransport.dump` and `.dump_all` take an optional `model:`
+  keyword — what the turn is about to be sent to. A transport that puts
+  signed reasoning back on the wire needs it: a signature is only valid
+  against the provider that issued it, and the log outlives any one model.
+  `Brute::MessageTransport::OpenRouter` uses it to drop reasoning details
+  whose format namespace does not match the model's (`"anthropic-claude-v1"`
+  against `"anthropic/claude-sonnet-4"`), so switching model mid-conversation
+  strips signatures the new provider cannot verify while the plaintext
+  survives. `Completion::OpenRouter` passes the model it is about to call, so
+  callers get this for free; a transport subclass that overrides `dump` or
+  `dump_all` needs to accept the new keyword, though it may ignore it.
+
 ## [6.0.2] - 2026-08-28
 
 ### Added
