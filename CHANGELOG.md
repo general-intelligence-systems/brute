@@ -5,6 +5,30 @@ All notable changes to Brute are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [6.1.4] - 2026-08-28
+
+### Changed
+
+- `Brute::Completion::OpenRouter` registers an `:on_error` callback on the
+  `OpenRouter::Client` it builds, and emits what that callback hands it —
+  the provider's own error object, with the body OpenRouter sent — rather
+  than the exception the gem raised in its place. The raised exception says
+  only that the request failed; the provider says which upstream refused,
+  and why.
+
+- `Brute::Hooks::LLM_FAILURE_EVENT`, emitted from that completion, now
+  carries that error as a second argument, where before it carried nothing:
+  `agent.on(Brute::Hooks::LLM_FAILURE_EVENT) { |env, error| ... }`. A
+  subscriber that takes only `|env|` keeps working — subscribers are blocks,
+  and a block ignores an argument it does not name. The other completions
+  (`RubyLLM`, `LangChain`, `LLMrb`) still emit the event bare.
+
+- `Brute::Hooks::OPEN_ROUTER_SERVER_ERROR_EVENT` carries the provider's
+  error in place of the `OpenRouter::ServerError` when one is available. A
+  subscriber that reads `#message` off it still reads a message; one that
+  matched on the class should match on `OpenRouter::ServerError` or the
+  provider error, since either can arrive.
+
 ## [6.1.3] - 2026-08-28
 
 ### Added
