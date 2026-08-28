@@ -5,6 +5,23 @@ All notable changes to Brute are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [6.0.2] - 2026-08-28
+
+### Added
+
+- `Brute::Hooks::Trace#parent`, the trace a call was opened inside, or `nil`
+  for the outermost one. Traces already nested by delegation — `emit_trace`
+  wraps the running trace — but a subscriber had no way to walk back up: it
+  held the trace an event belonged to and nothing about the call that
+  contained it. A tracing provider can now hang a generation off its parent
+  span without keeping its own stack.
+
+  ```ruby
+  agent.on(Brute::Hooks::LLM_END_EVENT) do |env, trace|
+    langfuse.generation(id: trace.id, parent_id: trace.parent&.id)
+  end
+  ```
+
 ## [6.0.1] - 2026-08-28
 
 ### Changed

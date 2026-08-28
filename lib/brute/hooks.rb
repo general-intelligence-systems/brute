@@ -67,6 +67,12 @@ module Brute
 
       def current_trace = self
 
+      # The trace this one was opened inside, if any: emit_trace wraps, so the
+      # thing wrapped is the call that was already running.
+      def parent
+        __getobj__ if __getobj__.is_a?(Trace)
+      end
+
       def emit(event, *extras, &work) = @hooks.emit(
         event,
         self,
