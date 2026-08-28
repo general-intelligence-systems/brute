@@ -28,6 +28,23 @@ All notable changes to Brute are documented in this file. The format follows
   Subscribers written against 6.0.0 that treat the last extra as an id must
   take `#id` off it.
 
+- **The turn env arrives already extended with `Brute::Env`.** `Agent#start`
+  extends the env it builds, so `#reply` and `#has_reply?` are there for
+  everything that sees it — the caller, every middleware, every subscriber, and
+  the trace that wraps it.
+
+  ```ruby
+  # 6.0.0
+  env = agent.start("hello")
+  env.extend(Brute::Env)
+  env.reply&.content
+
+  # 6.0.1
+  agent.start("hello").reply&.content
+  ```
+
+  An existing `env.extend(Brute::Env)` still works and is now redundant.
+
 ## [6.0.0] - 2026-08-27
 
 The events engine is rewritten to make way for tracing providers — Langfuse,
