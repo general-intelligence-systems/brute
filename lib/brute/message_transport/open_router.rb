@@ -37,6 +37,10 @@ module Brute
           # wire's: whatever goes out under these keys is put there here.
           hash.delete(:reasoning)
 
+          if message.tool_call?
+            hash[:tool_calls] = message.tool_calls.map { |call| call_block(call) }
+          end
+
           reasoning = message.reasoning
 
           if reasoning&.detailed?
@@ -45,6 +49,16 @@ module Brute
             hash[:reasoning] = reasoning.text
           end
         end
+      end
+
+      # The inverse of wrap_tool_call: the wire keeps the name and the
+      # arguments under `function`, and the arguments as a JSON string.
+      def self.call_block(call)
+        {
+          id:       call.id,
+          type:     "function",
+          function: { name: call.name, arguments: JSON.generate(call.arguments) },
+        }
       end
 
       # Each type names its own payload: reasoning text carries `text` and the
@@ -168,6 +182,30 @@ describe "brute/message_transport/open_router" do
   it "dumps a message to the wire format" do
     m = Brute::Message.new(role: :user, content: "hi")
     Brute::MessageTransport::OpenRouter.dump(m).should == { role: :user, content: "hi" }
+  end
+
+  it "dumps a tool call as the wire wants it, and reads its own output back" do
+    call = Brute::ToolCall.new(id: "call_1", name: "search", arguments: { "query" => "cheese" })
+    dumped = Brute::MessageTransport::OpenRouter.dump(
+      Brute::Message.new(role: :assistant, content: "", tool_calls: [call]),
+    )
+
+    dumped[:tool_calls].should == [
+      { id: "call_1", type: "function", function: { name: "search", arguments: '{"query":"cheese"}' } },
+    ]
+
+    echoed = Struct.new(:choices).new([{ "message" => {
+      "role" => "assistant", "content" => "", "tool_calls" => dumped[:tool_calls],
+    } }])
+    back = Brute::MessageTransport::OpenRouter.new(echoed).wrap_each.to_a.first.tool_calls.first
+
+    back.id.should == "call_1"
+    back.name.should == "search"
+    back.arguments.should == { "query" => "cheese" }
+
+    Brute::MessageTransport::OpenRouter.dump(
+      Brute::Message.new(role: :user, content: "hi"),
+    ).key?(:tool_calls).should.be.false
   end
 
   it "wraps a response's choice messages with symbolised roles, dropping provider extras" do
